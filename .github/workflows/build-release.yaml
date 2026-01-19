@@ -49,13 +49,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          # Retry apt-get update in case of transient failures
-          for i in 1 2 3; do
-            sudo apt-get update && break
-            echo "apt-get update failed, retrying in 5s..."
-            sleep 5
-          done
-          
+          sudo apt-get update
           sudo apt-get install -y \
             cmake \
             ninja-build \
@@ -63,12 +57,22 @@ jobs:
             vulkan-tools
 
       - name: Setup CUDA
-        uses: Jimver/cuda-toolkit@v0.2.19
-        id: cuda-toolkit
-        with:
-          cuda: '12.4.1'
-          method: 'network'
-          sub-packages: '["nvcc", "cudart", "cublas", "cublas-dev"]'
+        run: |
+          # Install CUDA toolkit directly via runfile (more reliable than apt)
+          CUDA_VERSION="12.4.1"
+          CUDA_BUILD="550.54.15"
+          
+          wget -q https://developer.download.nvidia.com/compute/cuda/${CUDA_VERSION}/local_installers/cuda_${CUDA_VERSION}_${CUDA_BUILD}_linux.run
+          
+          sudo sh cuda_${CUDA_VERSION}_${CUDA_BUILD}_linux.run --silent --toolkit --no-man-page --no-drm
+          
+          # Add CUDA to PATH
+          echo "/usr/local/cuda-12.4/bin" >> $GITHUB_PATH
+          echo "CUDA_PATH=/usr/local/cuda-12.4" >> $GITHUB_ENV
+          echo "LD_LIBRARY_PATH=/usr/local/cuda-12.4/lib64:$LD_LIBRARY_PATH" >> $GITHUB_ENV
+          
+          # Verify installation
+          /usr/local/cuda-12.4/bin/nvcc --version
 
       - name: Build llama.cpp
         run: |
@@ -199,6 +203,7 @@ jobs:
           cd build-macos-x64
           
           # Cross-compile for x86_64 from ARM runner
+          # IMPORTANT: Disable GGML_NATIVE to prevent -march=native (which would detect ARM)
           cmake ../${{ env.LLAMA_CPP_DIR }} \
             -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
@@ -209,6 +214,7 @@ jobs:
             -DLLAMA_BUILD_SERVER=OFF \
             -DLLAMA_BUILD_TOOLS=OFF \
             -DLLAMA_CURL=OFF \
+            -DGGML_NATIVE=OFF \
             -DGGML_METAL=OFF \
             -DGGML_BLAS=OFF \
             -DGGML_ACCELERATE=ON
@@ -222,7 +228,6 @@ jobs:
           
           mkdir -p dist
           find build-macos-x64 -name "*.dylib" -exec cp {} dist/ \;
-          find build-macos-x64 -name "*.metallib" -exec cp {} dist/ \; 2>/dev/null || true
           
           cd dist
           zip -r ../llm_llamacpp-v${VERSION}-macos-x64.zip *
@@ -256,15 +261,18 @@ jobs:
           Write-Host "Downloading CUDA ${cudaVersion}..."
           Invoke-WebRequest -Uri $cudaUrl -OutFile cuda_installer.exe -UseBasicParsing
           
-          Write-Host "Installing CUDA toolkit (this may take a few minutes)..."
-          Start-Process -FilePath "cuda_installer.exe" -ArgumentList "-s", "nvcc_${cudaVersionShort}", "cudart_${cudaVersionShort}", "cublas_${cudaVersionShort}", "cublas_dev_${cudaVersionShort}" -Wait -NoNewWindow
+          Write-Host "Installing CUDA toolkit with Visual Studio integration..."
+          # Install nvcc, cudart, cublas AND visual_studio_integration for CMake to find CUDA
+          Start-Process -FilePath "cuda_installer.exe" -ArgumentList "-s", "nvcc_${cudaVersionShort}", "cudart_${cudaVersionShort}", "cublas_${cudaVersionShort}", "cublas_dev_${cudaVersionShort}", "visual_studio_integration_${cudaVersionShort}" -Wait -NoNewWindow
           
-          # Add CUDA to PATH
+          # Add CUDA to PATH and environment
           $cudaPath = "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v${cudaVersionShort}"
           echo "CUDA_PATH=${cudaPath}" >> $env:GITHUB_ENV
+          echo "CUDAToolkit_ROOT=${cudaPath}" >> $env:GITHUB_ENV
           echo "${cudaPath}\bin" >> $env:GITHUB_PATH
           
           Write-Host "CUDA installation complete"
+          & "${cudaPath}\bin\nvcc.exe" --version
 
       - name: Setup Vulkan SDK
         shell: pwsh
@@ -292,6 +300,9 @@ jobs:
           mkdir build-windows-x64
           cd build-windows-x64
           
+          # Set CUDA paths explicitly for CMake
+          $cudaPath = "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.4"
+          
           cmake ..\${{ env.LLAMA_CPP_DIR }} `
             -DCMAKE_BUILD_TYPE=Release `
             -DBUILD_SHARED_LIBS=ON `
@@ -301,7 +312,9 @@ jobs:
             -DLLAMA_BUILD_TOOLS=OFF `
             -DLLAMA_CURL=OFF `
             -DGGML_CUDA=ON `
-            -DGGML_VULKAN=ON
+            -DGGML_VULKAN=ON `
+            -DCUDAToolkit_ROOT="$cudaPath" `
+            -DCMAKE_CUDA_COMPILER="$cudaPath\bin\nvcc.exe"
           
           cmake --build . --config Release -j $env:NUMBER_OF_PROCESSORS
 
