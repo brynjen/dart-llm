@@ -121,6 +121,87 @@ class UnsupportedModelException implements Exception {
 }
 
 // ============================================================
+// Backend Exceptions
+// ============================================================
+
+/// Thrown when llama.cpp backend initialization fails.
+class BackendInitException implements Exception {
+  BackendInitException({
+    required this.message,
+    this.details,
+  });
+
+  /// Error message.
+  final String message;
+
+  /// Additional error details, if available.
+  final String? details;
+
+  @override
+  String toString() {
+    if (details != null) {
+      return 'BackendInitException: $message\nDetails: $details';
+    }
+    return 'BackendInitException: $message';
+  }
+}
+
+/// Thrown when inference fails.
+class InferenceException implements Exception {
+  InferenceException({
+    required this.message,
+    this.details,
+  });
+
+  /// Error message.
+  final String message;
+
+  /// Additional error details, if available.
+  final String? details;
+
+  @override
+  String toString() {
+    if (details != null) {
+      return 'InferenceException: $message\nDetails: $details';
+    }
+    return 'InferenceException: $message';
+  }
+}
+
+/// Thrown when context creation fails.
+class ContextCreationException implements Exception {
+  ContextCreationException({
+    required this.message,
+    this.contextSize,
+    this.batchSize,
+  });
+
+  /// Error message.
+  final String message;
+
+  /// The context size that was requested.
+  final int? contextSize;
+
+  /// The batch size that was requested.
+  final int? batchSize;
+
+  @override
+  String toString() {
+    final buffer = StringBuffer('ContextCreationException: $message');
+    if (contextSize != null || batchSize != null) {
+      buffer.write('\nRequested:');
+      if (contextSize != null) {
+        buffer.write(' contextSize=$contextSize');
+      }
+      if (batchSize != null) {
+        buffer.write(' batchSize=$batchSize');
+      }
+    }
+    return buffer.toString();
+  }
+}
+
+// ============================================================
 // LoRA Exceptions
 // ============================================================
 

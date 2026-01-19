@@ -27,25 +27,29 @@ Future<void> main(List<String> args) async {
 
   print('🦙 llama.cpp CLI Example\n');
 
-  // Create repository
-  final repo = LlamaCppChatRepository(
-    contextSize: 2048,
-    nGpuLayers: 0, // Set > 0 if you have GPU support
-  );
+  // Create model repository for model management
+  final modelRepo = LlamaCppRepository();
 
   try {
     // Load the model
     print('📥 Loading model: $modelPath');
-    await repo.loadModel(modelPath);
+    final model = await modelRepo.loadModel(modelPath);
     print('✅ Model loaded successfully!\n');
 
     // Print model info
-    final model = repo.model!;
     print('Model Info:');
     print('  Vocab size: ${model.vocabSize}');
     print('  Context size (train): ${model.contextSizeTrain}');
     print('  Embedding size: ${model.embeddingSize}');
     print('');
+
+    // Create chat repository with the loaded model
+    final chatRepo = LlamaCppChatRepository.withModel(
+      model,
+      modelRepo.bindings,
+      contextSize: 2048,
+      nGpuLayers: 0, // Set > 0 if you have GPU support
+    );
 
     // Interactive chat loop
     print('💬 Chat with the model (type "quit" to exit)\n');
@@ -56,6 +60,13 @@ Future<void> main(List<String> args) async {
         content: 'You are a helpful assistant. Answer questions concisely.',
       ),
     ];
+
+    // Generation options (optional - uses defaults if not specified)
+    final options = GenerationOptions(
+      temperature: 0.7,
+      topP: 0.9,
+      maxTokens: 2048,
+    );
 
     while (true) {
       stdout.write('You: ');
@@ -76,9 +87,10 @@ Future<void> main(List<String> args) async {
       String fullResponse = '';
 
       try {
-        final stream = repo.streamChat(
+        final stream = chatRepo.streamChat(
           modelPath, // Model identifier (not used for loading, just for tracking)
           messages: messages,
+          options: options,
         );
 
         await for (final chunk in stream) {
@@ -94,12 +106,15 @@ Future<void> main(List<String> args) async {
         print('\n❌ Error: $e\n');
       }
     }
+
+    // Cleanup chat repository
+    chatRepo.dispose();
   } catch (e) {
     print('❌ Error: $e');
     exit(1);
   } finally {
-    // Cleanup
-    repo.dispose();
+    // Cleanup model repository
+    modelRepo.dispose();
   }
 }
 

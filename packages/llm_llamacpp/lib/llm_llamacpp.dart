@@ -108,3 +108,6 @@ export 'src/model_converter.dart';
 
 // Prompt templates
 export 'src/prompt_template.dart';
+
+// Generation options
+export 'src/generation_options.dart';

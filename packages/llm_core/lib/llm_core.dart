@@ -36,3 +36,6 @@ export 'src/llm_chat_repository.dart';
 // Exceptions
 export 'src/exceptions.dart';
 
+// Logging
+export 'src/llm_logger.dart';
+

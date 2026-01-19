@@ -2,11 +2,13 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:ffi';
 import 'dart:isolate';
+import 'dart:math' as math;
 
 import 'package:ffi/ffi.dart';
 import 'package:llm_core/llm_core.dart';
 
 import 'bindings/llama_bindings.dart';
+import 'generation_options.dart';
 import 'llamacpp_model.dart';
 import 'llamacpp_repository.dart';
 import 'loader/loader.dart';
@@ -69,6 +71,9 @@ import 'prompt_template.dart';
 /// chatRepo.dispose();
 /// ```
 class LlamaCppChatRepository extends LLMChatRepository {
+  /// Logger instance for this package.
+  static final LLMLogger _log = DefaultLLMLogger('llm_llamacpp');
+
   /// Creates a chat repository with default settings.
   ///
   /// Use [loadModel] to load a model before calling [streamChat].
@@ -252,24 +257,29 @@ class LlamaCppChatRepository extends LLMChatRepository {
     dynamic extra,
     int? toolAttempts,
     bool think = false,
+    GenerationOptions? options,
   }) async* {
     if (_model == null) {
       throw ModelLoadException('No model loaded. Call loadModel() first or use LlamaCppChatRepository.withModel().');
     }
 
     final currentAttempts = toolAttempts ?? maxToolAttempts;
-    print('[LlamaCpp] streamChat called with ${tools.length} tools, attempt ${maxToolAttempts - currentAttempts + 1}');
-    print('[LlamaCpp] Messages count: ${messages.length}');
-    for (final msg in messages) {
-      print('[LlamaCpp]   - ${msg.role.name}: ${msg.content?.substring(0, msg.content!.length.clamp(0, 100))}...');
+    final genOptions = options ?? const GenerationOptions();
+    
+    _log.fine('streamChat called with ${tools.length} tools, attempt ${maxToolAttempts - currentAttempts + 1}');
+    _log.fine('Messages count: ${messages.length}');
+    if (_log.isLoggable(LLMLogLevel.fine)) {
+      for (final msg in messages) {
+        _log.fine('  - ${msg.role.name}: ${msg.content?.substring(0, msg.content!.length.clamp(0, 100))}...');
+      }
     }
 
     // Format messages using the template
     final prompt = template.format(messages);
-    print('[LlamaCpp] Generated prompt (${prompt.length} chars):');
-    print('[LlamaCpp] --- PROMPT START ---');
-    print(prompt);
-    print('[LlamaCpp] --- PROMPT END ---');
+    _log.fine('Generated prompt (${prompt.length} chars)');
+    if (_log.isLoggable(LLMLogLevel.fine)) {
+      _log.fine('--- PROMPT START ---\n$prompt\n--- PROMPT END ---');
+    }
 
     // Create a receive port to get tokens from the isolate
     final receivePort = ReceivePort();
@@ -286,10 +296,7 @@ class LlamaCppChatRepository extends LLMChatRepository {
         batchSize: batchSize,
         threads: threads,
         nGpuLayers: nGpuLayers,
-        temperature: 0.7,
-        topP: 0.9,
-        topK: 40,
-        maxTokens: 2048,
+        options: genOptions,
         loraPath: _loraPath,
         loraScale: _loraScale,
       ),
@@ -311,7 +318,7 @@ class LlamaCppChatRepository extends LLMChatRepository {
           // Look for opening brace that might start a tool call JSON
           if (!inPotentialToolCall && pendingContent.contains('{')) {
             inPotentialToolCall = true;
-            print('[LlamaCpp] Detected potential tool call start');
+            _log.fine('Detected potential tool call start');
           }
 
           // If we're in a potential tool call, buffer the content
@@ -320,10 +327,10 @@ class LlamaCppChatRepository extends LLMChatRepository {
             final braceCount = _countBraces(pendingContent);
             if (braceCount == 0 && pendingContent.contains('}')) {
               // Potential complete JSON - try to parse
-              print('[LlamaCpp] Potential complete JSON, trying to parse: $pendingContent');
+              _log.fine('Potential complete JSON, trying to parse');
               final toolCalls = _parseToolCalls(pendingContent);
               if (toolCalls.isNotEmpty) {
-                print('[LlamaCpp] Found ${toolCalls.length} tool calls in buffered content!');
+                _log.info('Found ${toolCalls.length} tool calls in buffered content');
                 collectedToolCalls.addAll(toolCalls);
                 // Don't yield the tool call JSON to the user
                 pendingContent = '';
@@ -331,7 +338,7 @@ class LlamaCppChatRepository extends LLMChatRepository {
                 continue;
               } else {
                 // Not a valid tool call, yield the buffered content
-                print('[LlamaCpp] Not a valid tool call, yielding buffered content');
+                _log.fine('Not a valid tool call, yielding buffered content');
                 yield LLMChunk(
                   model: model,
                   createdAt: DateTime.now(),
@@ -355,14 +362,14 @@ class LlamaCppChatRepository extends LLMChatRepository {
           );
           pendingContent = '';
         } else if (message is _InferenceComplete) {
-          print('[LlamaCpp] Inference complete. Accumulated content (${accumulatedContent.length} chars):');
-          print('[LlamaCpp] --- RESPONSE START ---');
-          print(accumulatedContent);
-          print('[LlamaCpp] --- RESPONSE END ---');
+          _log.fine('Inference complete. Accumulated content (${accumulatedContent.length} chars)');
+          if (_log.isLoggable(LLMLogLevel.fine)) {
+            _log.fine('--- RESPONSE START ---\n$accumulatedContent\n--- RESPONSE END ---');
+          }
 
           // Yield any remaining buffered content
           if (pendingContent.isNotEmpty) {
-            print('[LlamaCpp] Yielding remaining buffered content: $pendingContent');
+            _log.fine('Yielding remaining buffered content');
             yield LLMChunk(
               model: model,
               createdAt: DateTime.now(),
@@ -373,11 +380,13 @@ class LlamaCppChatRepository extends LLMChatRepository {
 
           // Check for tool calls in the full response if none found during streaming
           if (tools.isNotEmpty && collectedToolCalls.isEmpty) {
-            print('[LlamaCpp] Parsing tool calls from full response...');
+            _log.fine('Parsing tool calls from full response...');
             final parsedToolCalls = _parseToolCalls(accumulatedContent);
-            print('[LlamaCpp] Found ${parsedToolCalls.length} tool calls');
-            for (final tc in parsedToolCalls) {
-              print('[LlamaCpp]   - Tool: ${tc.name}, Args: ${tc.arguments}');
+            _log.info('Found ${parsedToolCalls.length} tool calls');
+            if (_log.isLoggable(LLMLogLevel.fine)) {
+              for (final tc in parsedToolCalls) {
+                _log.fine('  - Tool: ${tc.name}, Args: ${tc.arguments}');
+              }
             }
             if (parsedToolCalls.isNotEmpty) {
               collectedToolCalls.addAll(parsedToolCalls);
@@ -395,7 +404,7 @@ class LlamaCppChatRepository extends LLMChatRepository {
 
           // Handle tool calls if any
           if (collectedToolCalls.isNotEmpty && tools.isNotEmpty) {
-            print('[LlamaCpp] Executing ${collectedToolCalls.length} tool calls...');
+            _log.info('Executing ${collectedToolCalls.length} tool calls...');
             if (currentAttempts > 0) {
               final workingMessages = List<LLMMessage>.from(messages);
 
@@ -404,39 +413,39 @@ class LlamaCppChatRepository extends LLMChatRepository {
 
               // Execute tools and add responses
               for (final toolCall in collectedToolCalls) {
-                print('[LlamaCpp] Executing tool: ${toolCall.name}');
+                _log.fine('Executing tool: ${toolCall.name}');
                 final tool = tools.firstWhere(
                   (t) => t.name == toolCall.name,
                   orElse: () {
-                    print('[LlamaCpp] ERROR: Tool ${toolCall.name} not found!');
+                    _log.severe('Tool ${toolCall.name} not found!');
                     throw Exception('Tool ${toolCall.name} not found');
                   },
                 );
 
                 try {
                   final args = json.decode(toolCall.arguments);
-                  print('[LlamaCpp] Tool args: $args');
+                  _log.fine('Tool args: $args');
                   final toolResponse = await tool.execute(args, extra: extra) ?? 'Tool ${toolCall.name} returned null';
-                  print('[LlamaCpp] Tool response: $toolResponse');
+                  _log.fine('Tool response: $toolResponse');
 
                   workingMessages.add(LLMMessage(role: LLMRole.tool, content: toolResponse.toString(), toolCallId: toolCall.id));
                 } catch (e) {
-                  print('[LlamaCpp] Tool execution error: $e');
+                  _log.warning('Tool execution error: $e');
                   workingMessages.add(LLMMessage(role: LLMRole.tool, content: 'Error executing tool: $e', toolCallId: toolCall.id));
                 }
               }
 
-              print('[LlamaCpp] Continuing conversation with tool results...');
+              _log.fine('Continuing conversation with tool results...');
               // Continue conversation with tool results
-              yield* streamChat(model, messages: workingMessages, tools: tools, extra: extra, toolAttempts: currentAttempts - 1);
+              yield* streamChat(model, messages: workingMessages, tools: tools, extra: extra, toolAttempts: currentAttempts - 1, options: genOptions);
             } else {
-              print('[LlamaCpp] Max tool attempts reached, not continuing');
+              _log.warning('Max tool attempts reached, not continuing');
             }
           }
 
           break;
         } else if (message is _InferenceError) {
-          print('[LlamaCpp] ERROR: ${message.error}');
+          _log.severe('Inference error: ${message.error}');
           throw Exception('Inference error: ${message.error}');
         }
       }
@@ -461,15 +470,15 @@ class LlamaCppChatRepository extends LLMChatRepository {
   /// This looks for JSON-formatted tool calls in the response.
   List<LLMToolCall> _parseToolCalls(String content) {
     final toolCalls = <LLMToolCall>[];
-    print('[LlamaCpp] _parseToolCalls input: $content');
+    _log.fine('_parseToolCalls input: $content');
 
     // Try to find and parse any JSON object that looks like a tool call
     // First, try to find complete JSON objects
     final jsonObjects = _extractJsonObjects(content);
-    print('[LlamaCpp] Found ${jsonObjects.length} JSON objects');
+    _log.fine('Found ${jsonObjects.length} JSON objects');
 
     for (final jsonStr in jsonObjects) {
-      print('[LlamaCpp] Trying to parse JSON: $jsonStr');
+      _log.fine('Trying to parse JSON: $jsonStr');
       try {
         final data = json.decode(jsonStr) as Map<String, dynamic>;
 
@@ -498,11 +507,11 @@ class LlamaCppChatRepository extends LLMChatRepository {
             arguments = json.encode(args);
           }
 
-          print('[LlamaCpp] Parsed tool call: name=$name, args=$arguments');
+          _log.fine('Parsed tool call: name=$name, args=$arguments');
           toolCalls.add(LLMToolCall(id: 'call_${toolCalls.length}', name: name, arguments: arguments));
         }
       } catch (e) {
-        print('[LlamaCpp] Failed to parse JSON: $e');
+        _log.fine('Failed to parse JSON: $e');
       }
     }
 
@@ -512,14 +521,14 @@ class LlamaCppChatRepository extends LLMChatRepository {
     for (final match in xmlPattern.allMatches(content)) {
       try {
         final jsonStr = match.group(1)!;
-        print('[LlamaCpp] Found XML-style tool call: $jsonStr');
+        _log.fine('Found XML-style tool call: $jsonStr');
         final data = json.decode(jsonStr) as Map<String, dynamic>;
 
         toolCalls.add(
           LLMToolCall(id: 'call_${toolCalls.length}', name: data['name'] as String, arguments: json.encode(data['arguments'] ?? data['parameters'] ?? {})),
         );
       } catch (e) {
-        print('[LlamaCpp] Failed to parse XML-style tool call: $e');
+        _log.fine('Failed to parse XML-style tool call: $e');
       }
     }
 
@@ -530,18 +539,18 @@ class LlamaCppChatRepository extends LLMChatRepository {
       try {
         final name = match.group(1)!;
         final argsStr = match.group(2)!;
-        print('[LlamaCpp] Found function-style call: $name($argsStr)');
+        _log.fine('Found function-style call: $name($argsStr)');
 
         // Verify it's valid JSON
         json.decode(argsStr);
 
         toolCalls.add(LLMToolCall(id: 'call_${toolCalls.length}', name: name, arguments: argsStr));
       } catch (e) {
-        print('[LlamaCpp] Failed to parse function-style call: $e');
+        _log.fine('Failed to parse function-style call: $e');
       }
     }
 
-    print('[LlamaCpp] Total tool calls found: ${toolCalls.length}');
+    _log.fine('Total tool calls found: ${toolCalls.length}');
     return toolCalls;
   }
 
@@ -608,10 +617,7 @@ class _InferenceRequest {
     required this.batchSize,
     this.threads,
     required this.nGpuLayers,
-    required this.temperature,
-    required this.topP,
-    required this.topK,
-    required this.maxTokens,
+    required this.options,
     this.loraPath,
     this.loraScale = 1.0,
   });
@@ -624,10 +630,7 @@ class _InferenceRequest {
   final int batchSize;
   final int? threads;
   final int nGpuLayers;
-  final double temperature;
-  final double topP;
-  final int topK;
-  final int maxTokens;
+  final GenerationOptions options;
 
   // LoRA configuration
   final String? loraPath;
@@ -755,12 +758,15 @@ void _runInference(_InferenceRequest request) {
       final samplerParams = bindings.llama_sampler_chain_default_params();
       final sampler = bindings.llama_sampler_chain_init(samplerParams);
 
-      bindings.llama_sampler_chain_add(sampler, bindings.llama_sampler_init_temp(request.temperature));
-      bindings.llama_sampler_chain_add(sampler, bindings.llama_sampler_init_top_k(request.topK));
-      bindings.llama_sampler_chain_add(sampler, bindings.llama_sampler_init_top_p(request.topP, 1));
+      bindings.llama_sampler_chain_add(sampler, bindings.llama_sampler_init_temp(request.options.temperature));
+      bindings.llama_sampler_chain_add(sampler, bindings.llama_sampler_init_top_k(request.options.topK));
+      bindings.llama_sampler_chain_add(sampler, bindings.llama_sampler_init_top_p(request.options.topP, 1));
+      
+      // Use provided seed or generate random one
+      final seed = request.options.seed ?? math.Random().nextInt(0x7FFFFFFF);
       bindings.llama_sampler_chain_add(
         sampler,
-        bindings.llama_sampler_init_dist(42), // seed
+        bindings.llama_sampler_init_dist(seed),
       );
 
       // Generate tokens
@@ -769,7 +775,7 @@ void _runInference(_InferenceRequest request) {
       var generatedTokens = 0;
       final newTokenPtr = calloc<Int32>(1);
 
-      while (generatedTokens < request.maxTokens) {
+      while (generatedTokens < request.options.maxTokens) {
         // Sample next token
         final newToken = bindings.llama_sampler_sample(sampler, ctx, -1);
 
