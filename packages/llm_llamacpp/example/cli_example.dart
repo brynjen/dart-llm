@@ -1,0 +1,105 @@
+import 'dart:io';
+
+import 'package:llm_llamacpp/llm_llamacpp.dart';
+
+/// CLI example demonstrating local inference with llama.cpp.
+///
+/// Usage:
+///   dart run example/cli_example.dart /path/to/model.gguf
+///
+/// Requirements:
+///   - A GGUF model file (e.g., from Hugging Face)
+///   - Native llama.cpp library in the system path or current directory
+Future<void> main(List<String> args) async {
+  if (args.isEmpty) {
+    print('Usage: dart run example/cli_example.dart <model.gguf>');
+    print('');
+    print('Example:');
+    print('  dart run example/cli_example.dart ~/models/qwen2-0.5b-instruct-q4_k_m.gguf');
+    exit(1);
+  }
+
+  final modelPath = args[0];
+  if (!File(modelPath).existsSync()) {
+    print('Error: Model file not found: $modelPath');
+    exit(1);
+  }
+
+  print('🦙 llama.cpp CLI Example\n');
+
+  // Create repository
+  final repo = LlamaCppChatRepository(
+    contextSize: 2048,
+    nGpuLayers: 0, // Set > 0 if you have GPU support
+  );
+
+  try {
+    // Load the model
+    print('📥 Loading model: $modelPath');
+    await repo.loadModel(modelPath);
+    print('✅ Model loaded successfully!\n');
+
+    // Print model info
+    final model = repo.model!;
+    print('Model Info:');
+    print('  Vocab size: ${model.vocabSize}');
+    print('  Context size (train): ${model.contextSizeTrain}');
+    print('  Embedding size: ${model.embeddingSize}');
+    print('');
+
+    // Interactive chat loop
+    print('💬 Chat with the model (type "quit" to exit)\n');
+
+    final messages = <LLMMessage>[
+      LLMMessage(
+        role: LLMRole.system,
+        content: 'You are a helpful assistant. Answer questions concisely.',
+      ),
+    ];
+
+    while (true) {
+      stdout.write('You: ');
+      final input = stdin.readLineSync();
+
+      if (input == null || input.toLowerCase() == 'quit') {
+        print('\nGoodbye! 👋');
+        break;
+      }
+
+      if (input.isEmpty) continue;
+
+      // Add user message
+      messages.add(LLMMessage(role: LLMRole.user, content: input));
+
+      // Stream response
+      stdout.write('Assistant: ');
+      String fullResponse = '';
+
+      try {
+        final stream = repo.streamChat(
+          modelPath, // Model identifier (not used for loading, just for tracking)
+          messages: messages,
+        );
+
+        await for (final chunk in stream) {
+          final content = chunk.message?.content ?? '';
+          stdout.write(content);
+          fullResponse += content;
+        }
+        print('\n');
+
+        // Add assistant response to history
+        messages.add(LLMMessage(role: LLMRole.assistant, content: fullResponse));
+      } catch (e) {
+        print('\n❌ Error: $e\n');
+      }
+    }
+  } catch (e) {
+    print('❌ Error: $e');
+    exit(1);
+  } finally {
+    // Cleanup
+    repo.dispose();
+  }
+}
+

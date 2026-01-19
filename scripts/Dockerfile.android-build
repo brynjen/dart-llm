@@ -1,0 +1,53 @@
+# Dockerfile for building llama.cpp Android libraries
+# Provides a consistent Linux environment for cross-compilation
+#
+# Usage:
+#   docker build -t llamacpp-android-builder -f scripts/Dockerfile.android-build .
+#   docker run --rm -v $(pwd):/workspace llamacpp-android-builder
+
+FROM ubuntu:22.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV ANDROID_SDK_ROOT=/opt/android-sdk
+ENV ANDROID_NDK_HOME=/opt/android-sdk/ndk/26.3.11579264
+ENV PATH="${PATH}:${ANDROID_SDK_ROOT}/cmdline-tools/latest/bin:/opt/cmake/bin"
+
+# Install build dependencies
+RUN apt-get update && apt-get install -y \
+    git \
+    ninja-build \
+    python3 \
+    wget \
+    curl \
+    unzip \
+    openjdk-17-jdk \
+    build-essential \
+    libssl-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install newer CMake (3.28+) for KleidiAI FetchContent support
+RUN wget -q https://github.com/Kitware/CMake/releases/download/v3.28.3/cmake-3.28.3-linux-x86_64.tar.gz && \
+    tar -xzf cmake-3.28.3-linux-x86_64.tar.gz && \
+    mv cmake-3.28.3-linux-x86_64 /opt/cmake && \
+    rm cmake-3.28.3-linux-x86_64.tar.gz && \
+    cmake --version
+
+# Install Android SDK command-line tools
+RUN mkdir -p ${ANDROID_SDK_ROOT}/cmdline-tools && \
+    cd ${ANDROID_SDK_ROOT}/cmdline-tools && \
+    wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -O cmdline-tools.zip && \
+    unzip -q cmdline-tools.zip && \
+    mv cmdline-tools latest && \
+    rm cmdline-tools.zip
+
+# Accept licenses and install NDK
+RUN yes | sdkmanager --licenses && \
+    sdkmanager "ndk;26.3.11579264"
+
+# Configure git to trust mounted workspace
+RUN git config --global --add safe.directory '*'
+
+WORKDIR /workspace
+
+# Run the build script
+CMD ["./scripts/build-android-libs.sh"]

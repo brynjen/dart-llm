@@ -1,0 +1,34 @@
+# Exclude llama.cpp source (prebuilt binaries are downloaded at build time)
+llamacpp/
+
+# Exclude build artifacts
+build-android/
+build-*/
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+*.o
+*.d
+compile_commands.json
+
+# Exclude generated native libraries
+*.so
+*.so.*
+*.dylib
+*.dll
+*.a
+*.lib
+
+# Exclude Android JNI libraries
+android/src/main/jniLibs/
+
+# Exclude test models
+test/models/
+
+# Exclude example app build
+example_app/build/
+example_app/.gradle/
+
+# Exclude Windows libs folder
+windows/libs/

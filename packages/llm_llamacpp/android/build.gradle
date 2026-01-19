@@ -1,0 +1,44 @@
+group 'dev.brynje.llm_llamacpp'
+version '1.0'
+
+buildscript {
+    repositories {
+        google()
+        mavenCentral()
+    }
+
+    dependencies {
+        classpath 'com.android.tools.build:gradle:7.3.0'
+    }
+}
+
+rootProject.allprojects {
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+
+apply plugin: 'com.android.library'
+
+android {
+    if (project.android.hasProperty("namespace")) {
+        namespace 'dev.brynje.llm_llamacpp'
+    }
+
+    compileSdkVersion 34
+
+    // Specify NDK version for consistent builds
+    ndkVersion "26.3.11579264"
+
+    defaultConfig {
+        // Minimum SDK 28 for better native library support
+        minSdkVersion 28
+    }
+
+    sourceSets {
+        main {
+            jniLibs.srcDirs = ['src/main/jniLibs']
+        }
+    }
+}

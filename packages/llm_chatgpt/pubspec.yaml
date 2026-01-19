@@ -1,0 +1,20 @@
+name: llm_chatgpt
+description: OpenAI/ChatGPT backend implementation for LLM interactions. Provides streaming chat, embeddings, and tool calling via the OpenAI API.
+version: 0.1.0
+homepage: https://github.com/brynjen/dart-ollama
+repository: https://github.com/brynjen/dart-ollama
+issue_tracker: https://github.com/brynjen/dart-ollama/issues
+
+environment:
+  sdk: ^3.8.0
+
+dependencies:
+  llm_core:
+    path: ../llm_core
+  http: ^1.2.0
+
+dev_dependencies:
+  lints: ^6.0.0
+  test: ^1.24.0
+  dotenv: ^4.2.0
+

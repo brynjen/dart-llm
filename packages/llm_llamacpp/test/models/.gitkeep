@@ -1,0 +1,1 @@
+# Place test models here\n# text.gguf - Standard text model\n# vision.gguf - Vision model (e.g., Qwen3-VL)\n# small.gguf - Small/fast model for quick tests
