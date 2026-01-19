@@ -597,6 +597,9 @@ jobs:
     permissions:
       contents: write
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
@@ -607,12 +610,41 @@ jobs:
           echo "Downloaded artifacts:"
           find artifacts -type f -name "*.zip" | sort
 
+      - name: Determine version and tag
+        id: version
+        run: |
+          # Use tag name if triggered by tag, otherwise use input version
+          if [[ "${{ github.ref_type }}" == "tag" ]]; then
+            VERSION="${{ github.ref_name }}"
+          else
+            VERSION="v${{ github.event.inputs.version }}"
+          fi
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "Using version: ${VERSION}"
+
+      - name: Create or update tag for manual runs
+        if: ${{ github.ref_type != 'tag' }}
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          
+          # Delete existing tag if present (local and remote)
+          git tag -d "${VERSION}" 2>/dev/null || true
+          git push origin ":refs/tags/${VERSION}" 2>/dev/null || true
+          
+          # Create new tag
+          git tag "${VERSION}"
+          git push origin "${VERSION}"
+          echo "Created tag: ${VERSION}"
+
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ steps.version.outputs.version }}
           files: artifacts/**/*.zip
           generate_release_notes: true
           draft: false
-          prerelease: ${{ contains(github.ref_name, '-') }}
+          prerelease: ${{ contains(steps.version.outputs.version, '-') }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
