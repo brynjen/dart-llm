@@ -100,6 +100,37 @@ final embeddings = await repo.embed(
 );
 ```
 
+### Non-Streaming Response
+
+Get a complete response without streaming:
+
+```dart
+final response = await repo.chatResponse('qwen3:0.6b', messages: [
+  LLMMessage(role: LLMRole.user, content: 'Hello!'),
+]);
+
+print(response.content);
+print('Tokens: ${response.evalCount}');
+```
+
+### Using StreamChatOptions
+
+Encapsulate all options in a single object:
+
+```dart
+import 'package:llm_core/llm_core.dart';
+
+final options = StreamChatOptions(
+  think: true,
+  tools: [MyTool()],
+  toolAttempts: 5,
+  timeout: Duration(minutes: 5),
+  retryConfig: RetryConfig(maxAttempts: 3),
+);
+
+final stream = repo.streamChat('qwen3:0.6b', messages: messages, options: options);
+```
+
 ### Model Management
 
 ```dart
@@ -118,5 +149,66 @@ await for (final progress in ollamaRepo.pullModel('qwen3:0.6b')) {
 
 // Get version
 final version = await ollamaRepo.version();
+```
+
+## Advanced Configuration
+
+### Builder Pattern
+
+Use the builder for complex configurations:
+
+```dart
+import 'package:llm_core/llm_core.dart';
+
+final repo = OllamaChatRepository.builder()
+  .baseUrl('http://localhost:11434')
+  .maxToolAttempts(10)
+  .retryConfig(RetryConfig(
+    maxAttempts: 5,
+    initialDelay: Duration(seconds: 1),
+    maxDelay: Duration(seconds: 30),
+  ))
+  .timeoutConfig(TimeoutConfig(
+    connectionTimeout: Duration(seconds: 10),
+    readTimeout: Duration(minutes: 3),
+    totalTimeout: Duration(minutes: 10),
+  ))
+  .build();
+```
+
+### Retry Configuration
+
+Configure automatic retries for failed requests:
+
+```dart
+import 'package:llm_core/llm_core.dart';
+
+final repo = OllamaChatRepository(
+  baseUrl: 'http://localhost:11434',
+  retryConfig: RetryConfig(
+    maxAttempts: 3,
+    initialDelay: Duration(seconds: 1),
+    maxDelay: Duration(seconds: 30),
+    retryableStatusCodes: [429, 500, 502, 503, 504],
+  ),
+);
+```
+
+### Timeout Configuration
+
+Configure timeouts for different scenarios:
+
+```dart
+import 'package:llm_core/llm_core.dart';
+
+final repo = OllamaChatRepository(
+  baseUrl: 'http://localhost:11434',
+  timeoutConfig: TimeoutConfig(
+    connectionTimeout: Duration(seconds: 10),
+    readTimeout: Duration(minutes: 2),
+    totalTimeout: Duration(minutes: 10),
+    readTimeoutForLargePayloads: Duration(minutes: 5), // For large images
+  ),
+);
 ```
 

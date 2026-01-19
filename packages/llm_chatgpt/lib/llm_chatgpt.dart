@@ -22,6 +22,7 @@ export 'package:llm_core/llm_core.dart';
 
 // Repository
 export 'src/chatgpt_chat_repository.dart';
+export 'src/chatgpt_chat_repository_builder.dart';
 
 // DTOs (for advanced usage)
 export 'src/dto/gpt_response.dart';

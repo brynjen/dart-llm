@@ -39,3 +39,19 @@ export 'src/exceptions.dart';
 // Logging
 export 'src/llm_logger.dart';
 
+// Retry configuration
+export 'src/retry_config.dart';
+export 'src/retry_util.dart';
+
+// Timeout configuration
+export 'src/timeout_config.dart';
+
+// Stream chat options
+export 'src/stream_chat_options.dart';
+
+// Validation
+export 'src/validation.dart';
+
+// Metrics
+export 'src/llm_metrics.dart';
+

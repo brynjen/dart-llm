@@ -13,11 +13,11 @@
 /// ```bash
 /// LD_LIBRARY_PATH=linux/libs dart test test/integration_test.dart
 /// ```
+// ignore_for_file: deprecated_member_use_from_same_package
 library;
 
 import 'dart:io';
 
-import 'package:llm_core/llm_core.dart';
 import 'package:llm_llamacpp/llm_llamacpp.dart';
 import 'package:test/test.dart';
 

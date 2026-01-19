@@ -1,3 +1,5 @@
+// ignore_for_file: deprecated_member_use_from_same_package, deprecated_member_use, avoid_print
+
 import 'package:flutter/material.dart';
 import 'package:llm_llamacpp/llm_llamacpp.dart';
 

@@ -19,9 +19,11 @@ A Dart monorepo for interacting with Large Language Models (LLMs). Supports mult
 * 🔧 **Tool/function calling** - Support for function calling and tool use
 * 🖼️ **Image support** - Send images in chat messages (vision models)
 * 🤖 **Multiple backends** - Ollama, ChatGPT, and local llama.cpp
-* 💭 **Thinking support** - Support for Ollama's thinking feature
+* 💭 **Thinking support** - Support for thinking tokens
 * 📦 **Easy to use** - Simple and intuitive API
 * 📱 **Cross-platform** - Works on mobile (Android/iOS) and desktop
+* ⚙️ **Advanced configuration** - Retry logic, timeouts, and flexible options
+* 📊 **Metrics support** - Optional metrics collection for monitoring
 
 ## Quick Start
 
@@ -199,6 +201,121 @@ final stream = repo.streamChat('model',
   messages: messages,
   tools: [CalculatorTool()],
 );
+```
+
+## Advanced Configuration
+
+### Using StreamChatOptions
+
+For complex configurations, use `StreamChatOptions` to encapsulate all options:
+
+```dart
+import 'package:llm_core/llm_core.dart';
+
+final options = StreamChatOptions(
+  think: true,
+  tools: [CalculatorTool()],
+  toolAttempts: 5,
+  timeout: Duration(minutes: 5),
+  retryConfig: RetryConfig(maxAttempts: 3),
+);
+
+final stream = repo.streamChat('model', messages: messages, options: options);
+```
+
+### Retry Configuration
+
+Configure automatic retries with exponential backoff:
+
+```dart
+import 'package:llm_core/llm_core.dart';
+
+final retryConfig = RetryConfig(
+  maxAttempts: 3,
+  initialDelay: Duration(seconds: 1),
+  maxDelay: Duration(seconds: 30),
+  backoffMultiplier: 2.0,
+  retryableStatusCodes: [429, 500, 502, 503, 504],
+);
+
+// Use with builder pattern
+final repo = OllamaChatRepository.builder()
+  .baseUrl('http://localhost:11434')
+  .retryConfig(retryConfig)
+  .build();
+```
+
+### Timeout Configuration
+
+Configure connection and read timeouts:
+
+```dart
+import 'package:llm_core/llm_core.dart';
+
+final timeoutConfig = TimeoutConfig(
+  connectionTimeout: Duration(seconds: 10),
+  readTimeout: Duration(minutes: 2),
+  totalTimeout: Duration(minutes: 10),
+  readTimeoutForLargePayloads: Duration(minutes: 5),
+);
+
+final repo = ChatGPTChatRepository.builder()
+  .apiKey('your-api-key')
+  .timeoutConfig(timeoutConfig)
+  .build();
+```
+
+### Builder Pattern
+
+Use builders for complex repository configurations:
+
+```dart
+// Ollama with full configuration
+final ollamaRepo = OllamaChatRepository.builder()
+  .baseUrl('http://localhost:11434')
+  .maxToolAttempts(10)
+  .retryConfig(RetryConfig(maxAttempts: 5))
+  .timeoutConfig(TimeoutConfig(readTimeout: Duration(minutes: 3)))
+  .build();
+
+// ChatGPT with full configuration
+final chatgptRepo = ChatGPTChatRepository.builder()
+  .apiKey('your-api-key')
+  .baseUrl('https://api.openai.com')
+  .maxToolAttempts(10)
+  .retryConfig(RetryConfig(maxAttempts: 3))
+  .timeoutConfig(TimeoutConfig(readTimeout: Duration(minutes: 5)))
+  .build();
+```
+
+### Non-Streaming Responses
+
+For use cases where you need the complete response before proceeding:
+
+```dart
+// Get complete response (handles tool execution loop internally)
+final response = await repo.chatResponse('model', messages: [
+  LLMMessage(role: LLMRole.user, content: 'What is 2+2?')
+], tools: [CalculatorTool()]);
+
+print(response.content); // Complete response after all tool calls
+print('Tokens: ${response.evalCount}');
+```
+
+### Metrics Collection
+
+Optional metrics collection for monitoring:
+
+```dart
+import 'package:llm_core/llm_core.dart';
+
+final metrics = DefaultLLMMetrics();
+
+// Metrics are automatically recorded by repositories that support them
+// Access metrics:
+final stats = metrics.getMetrics();
+print('Total requests: ${stats['model.total_requests']}');
+print('Avg latency: ${stats['model.avg_latency_ms']}ms');
 ```
 
 ## Development

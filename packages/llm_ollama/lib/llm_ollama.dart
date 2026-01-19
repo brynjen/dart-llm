@@ -22,6 +22,7 @@ export 'package:llm_core/llm_core.dart';
 
 // Repositories
 export 'src/ollama_chat_repository.dart';
+export 'src/ollama_chat_repository_builder.dart';
 export 'src/ollama_repository.dart';
 
 // DTOs (for advanced usage)

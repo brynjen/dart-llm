@@ -123,14 +123,12 @@ class GgufMetadata {
     final embd = embeddingLength;
     final blocks = blockCount;
     final ff = feedForwardLength;
-    final heads = headCount;
     final vocab = vocabSize;
 
     if (embd == null || blocks == null) return null;
 
     // Rough estimation based on typical transformer architecture
     final ffSize = ff ?? (embd * 4);
-    // Note: headDim = heads != null ? embd ~/ heads : 64 (not used in simplified calc)
 
     // Per layer: attention (4 * embd^2) + FFN (3 * embd * ff) + norms
     final perLayer = 4 * embd * embd + 3 * embd * ffSize + 2 * embd;

@@ -76,9 +76,10 @@ class LlamaCppChatRepository extends LLMChatRepository {
 
   /// Creates a chat repository with default settings.
   ///
-  /// Use [loadModel] to load a model before calling [streamChat].
-  /// For proper separation of concerns, prefer using [LlamaCppChatRepository.withModel]
-  /// and managing models through [LlamaCppRepository].
+  /// Load a model before calling [streamChat] using [LlamaCppRepository.loadModel]
+  /// or use [LlamaCppChatRepository.withModel] for proper separation of concerns.
+  ///
+  /// For managing models, use [LlamaCppRepository] directly.
   LlamaCppChatRepository({
     this.contextSize = 4096,
     this.batchSize = 512,
@@ -253,20 +254,56 @@ class LlamaCppChatRepository extends LLMChatRepository {
   Stream<LLMChunk> streamChat(
     String model, {
     required List<LLMMessage> messages,
+    bool think = false,
     List<LLMTool> tools = const [],
     dynamic extra,
-    int? toolAttempts,
-    bool think = false,
-    GenerationOptions? options,
+    StreamChatOptions? options,
   }) async* {
+    yield* streamChatWithGenerationOptions(
+      model,
+      messages: messages,
+      think: think,
+      tools: tools,
+      extra: extra,
+      options: options,
+      generationOptions: const GenerationOptions(),
+    );
+  }
+
+  /// Streams a chat response with llama.cpp-specific generation options.
+  ///
+  /// This is an extension method that allows specifying [GenerationOptions]
+  /// for llama.cpp-specific generation parameters (temperature, topP, etc.).
+  ///
+  /// [generationOptions] - llama.cpp-specific generation parameters.
+  Stream<LLMChunk> streamChatWithGenerationOptions(
+    String model, {
+    required List<LLMMessage> messages,
+    bool think = false,
+    List<LLMTool> tools = const [],
+    dynamic extra,
+    StreamChatOptions? options,
+    GenerationOptions? generationOptions,
+  }) async* {
+    final genOptions = generationOptions ?? const GenerationOptions();
+    // Validate inputs
+    Validation.validateModelName(model);
+    Validation.validateMessages(messages);
+
     if (_model == null) {
       throw ModelLoadException('No model loaded. Call loadModel() first or use LlamaCppChatRepository.withModel().');
     }
 
-    final currentAttempts = toolAttempts ?? maxToolAttempts;
-    final genOptions = options ?? const GenerationOptions();
+    // Merge options with individual parameters (options take precedence)
+    final effectiveTools = options?.tools.isNotEmpty == true
+        ? options!.tools
+        : tools;
+    final effectiveExtra = options?.extra ?? extra;
+    final effectiveToolAttempts = options?.toolAttempts;
+
+    final currentAttempts = effectiveToolAttempts ?? maxToolAttempts;
     
-    _log.fine('streamChat called with ${tools.length} tools, attempt ${maxToolAttempts - currentAttempts + 1}');
+    _log.fine('streamChat called with ${effectiveTools.length} tools, attempt ${maxToolAttempts - currentAttempts + 1}');
     _log.fine('Messages count: ${messages.length}');
     if (_log.isLoggable(LLMLogLevel.fine)) {
       for (final msg in messages) {
@@ -403,7 +440,7 @@ class LlamaCppChatRepository extends LLMChatRepository {
           );
 
           // Handle tool calls if any
-          if (collectedToolCalls.isNotEmpty && tools.isNotEmpty) {
+          if (collectedToolCalls.isNotEmpty && effectiveTools.isNotEmpty) {
             _log.info('Executing ${collectedToolCalls.length} tool calls...');
             if (currentAttempts > 0) {
               final workingMessages = List<LLMMessage>.from(messages);
@@ -414,7 +451,7 @@ class LlamaCppChatRepository extends LLMChatRepository {
               // Execute tools and add responses
               for (final toolCall in collectedToolCalls) {
                 _log.fine('Executing tool: ${toolCall.name}');
-                final tool = tools.firstWhere(
+                final tool = effectiveTools.firstWhere(
                   (t) => t.name == toolCall.name,
                   orElse: () {
                     _log.severe('Tool ${toolCall.name} not found!');
@@ -425,7 +462,7 @@ class LlamaCppChatRepository extends LLMChatRepository {
                 try {
                   final args = json.decode(toolCall.arguments);
                   _log.fine('Tool args: $args');
-                  final toolResponse = await tool.execute(args, extra: extra) ?? 'Tool ${toolCall.name} returned null';
+                  final toolResponse = await tool.execute(args, extra: effectiveExtra) ?? 'Tool ${toolCall.name} returned null';
                   _log.fine('Tool response: $toolResponse');
 
                   workingMessages.add(LLMMessage(role: LLMRole.tool, content: toolResponse.toString(), toolCallId: toolCall.id));
@@ -437,7 +474,9 @@ class LlamaCppChatRepository extends LLMChatRepository {
 
               _log.fine('Continuing conversation with tool results...');
               // Continue conversation with tool results
-              yield* streamChat(model, messages: workingMessages, tools: tools, extra: extra, toolAttempts: currentAttempts - 1, options: genOptions);
+              final nextOptions = options?.copyWith(toolAttempts: currentAttempts - 1) ??
+                  StreamChatOptions(tools: effectiveTools, extra: effectiveExtra, toolAttempts: currentAttempts - 1);
+              yield* streamChatWithGenerationOptions(model, messages: workingMessages, tools: effectiveTools, extra: effectiveExtra, options: nextOptions, generationOptions: genOptions);
             } else {
               _log.warning('Max tool attempts reached, not continuing');
             }
@@ -578,13 +617,56 @@ class LlamaCppChatRepository extends LLMChatRepository {
   }
 
   @override
-  Future<List<LLMEmbedding>> embed({required String model, required List<String> messages, Map<String, dynamic> options = const {}}) async {
-    // Embeddings require a different approach with llama.cpp
-    // For now, throw unsupported
-    throw UnsupportedError(
-      'Embeddings are not yet implemented for llama.cpp backend. '
-      'Use a dedicated embedding model or the Ollama/ChatGPT backends.',
+  Future<List<LLMEmbedding>> embed({
+    required String model,
+    required List<String> messages,
+    Map<String, dynamic> options = const {},
+  }) async {
+    if (_model == null) {
+      throw ModelLoadException(
+        'No model loaded. Call loadModel() first or use LlamaCppChatRepository.withModel().',
+      );
+    }
+
+    // Validate inputs
+    if (messages.isEmpty) {
+      throw LLMApiException('Messages list cannot be empty', statusCode: 400);
+    }
+
+    // Create a receive port to get embeddings from the isolate
+    final receivePort = ReceivePort();
+
+    // Start embedding extraction in an isolate
+    final isolate = await Isolate.spawn(
+      _runEmbedding,
+      _EmbeddingRequest(
+        sendPort: receivePort.sendPort,
+        modelPath: _model!.path,
+        messages: messages,
+        contextSize: contextSize,
+        batchSize: batchSize,
+        threads: threads,
+        nGpuLayers: nGpuLayers,
+      ),
     );
+
+    try {
+      final results = <LLMEmbedding>[];
+      await for (final message in receivePort) {
+        if (message is _EmbeddingResult) {
+          results.add(message.embedding);
+        } else if (message is _EmbeddingError) {
+          throw Exception('Embedding error: ${message.error}');
+        } else if (message is _EmbeddingComplete) {
+          break;
+        }
+      }
+
+      return results;
+    } finally {
+      receivePort.close();
+      isolate.kill();
+    }
   }
 
   /// Releases all resources.
@@ -593,6 +675,7 @@ class LlamaCppChatRepository extends LLMChatRepository {
   /// are released. The model should be unloaded via [LlamaCppRepository].
   void dispose() {
     if (_ownsModel) {
+      // ignore: deprecated_member_use_from_same_package
       unloadModel();
       if (_backendInitialized && _bindings != null) {
         _bindings!.llama_backend_free();
@@ -651,6 +734,41 @@ class _InferenceComplete {
 class _InferenceError {
   _InferenceError(this.error);
   final String error;
+}
+
+// Embedding request/response classes
+class _EmbeddingRequest {
+  _EmbeddingRequest({
+    required this.sendPort,
+    required this.modelPath,
+    required this.messages,
+    required this.contextSize,
+    required this.batchSize,
+    this.threads,
+    required this.nGpuLayers,
+  });
+
+  final SendPort sendPort;
+  final String modelPath;
+  final List<String> messages;
+  final int contextSize;
+  final int batchSize;
+  final int? threads;
+  final int nGpuLayers;
+}
+
+class _EmbeddingResult {
+  _EmbeddingResult(this.embedding);
+  final LLMEmbedding embedding;
+}
+
+class _EmbeddingError {
+  _EmbeddingError(this.error);
+  final String error;
+}
+
+class _EmbeddingComplete {
+  _EmbeddingComplete();
 }
 
 /// Runs inference in an isolate.
@@ -840,5 +958,136 @@ void _runInference(_InferenceRequest request) {
     }
   } catch (e) {
     request.sendPort.send(_InferenceError(e.toString()));
+  }
+}
+
+/// Runs embedding extraction in an isolate.
+void _runEmbedding(_EmbeddingRequest request) {
+  try {
+    // Initialize llama.cpp in this isolate
+    final lib = loadLlamaLibrary();
+    final bindings = LlamaBindings(lib);
+    bindings.llama_backend_init();
+
+    // Load the model
+    final modelParams = bindings.llama_model_default_params();
+    modelParams.n_gpu_layers = request.nGpuLayers;
+
+    final modelPathPtr = request.modelPath.toNativeUtf8();
+    final model = bindings.llama_load_model_from_file(modelPathPtr.cast(), modelParams);
+    calloc.free(modelPathPtr);
+
+    if (model == nullptr) {
+      request.sendPort.send(_EmbeddingError('Failed to load model'));
+      return;
+    }
+
+    // Get embedding dimension
+    final nEmb = bindings.llama_model_n_embd(model);
+
+    // Create context
+    final ctxParams = bindings.llama_context_default_params();
+    ctxParams.n_ctx = request.contextSize;
+    ctxParams.n_batch = request.batchSize;
+    if (request.threads != null) {
+      ctxParams.n_threads = request.threads!;
+      ctxParams.n_threads_batch = request.threads!;
+    }
+
+    final ctx = bindings.llama_new_context_with_model(model, ctxParams);
+    if (ctx == nullptr) {
+      bindings.llama_free_model(model);
+      request.sendPort.send(_EmbeddingError('Failed to create context'));
+      return;
+    }
+
+    try {
+      // Get vocab from model for tokenization
+      final vocab = bindings.llama_model_get_vocab(model);
+      final poolingType = bindings.llama_pooling_type$1(ctx);
+
+      // Process each message
+      for (final message in request.messages) {
+        // Tokenize message
+        final messagePtr = message.toNativeUtf8();
+        final maxTokens = message.length + 256;
+        final tokensPtr = calloc<Int32>(maxTokens);
+
+        final nTokens = bindings.llama_tokenize(
+          vocab,
+          messagePtr.cast(),
+          message.length,
+          tokensPtr,
+          maxTokens,
+          true, // add_special
+          true, // parse_special
+        );
+        calloc.free(messagePtr);
+
+        if (nTokens < 0) {
+          calloc.free(tokensPtr);
+          request.sendPort.send(_EmbeddingError('Failed to tokenize message'));
+          continue;
+        }
+
+        // Clear KV cache (irrelevant for embeddings)
+        bindings.llama_memory_clear(bindings.llama_get_memory(ctx), true);
+
+        // Create batch and decode
+        final batch = bindings.llama_batch_get_one(tokensPtr, nTokens);
+        if (bindings.llama_decode(ctx, batch) != 0) {
+          calloc.free(tokensPtr);
+          request.sendPort.send(_EmbeddingError('Failed to decode message'));
+          continue;
+        }
+
+        // Get embeddings based on pooling type
+        Pointer<Float>? embdPtr;
+        if (poolingType.value == 0) {
+          // LLAMA_POOLING_TYPE_NONE - use token embeddings
+          // For simplicity, use the last token's embedding
+          embdPtr = bindings.llama_get_embeddings_ith(ctx, -1);
+        } else {
+          // Use sequence embedding (pooled)
+          embdPtr = bindings.llama_get_embeddings_seq(ctx, 0);
+        }
+
+        if (embdPtr == nullptr) {
+          calloc.free(tokensPtr);
+          request.sendPort.send(_EmbeddingError('Failed to get embeddings'));
+          continue;
+        }
+
+        // Copy embedding to Dart list
+        final embedding = embdPtr.asTypedList(nEmb).map((f) => f.toDouble()).toList();
+
+        // Normalize embedding (L2 normalization)
+        final norm = math.sqrt(embedding.map((e) => e * e).reduce((a, b) => a + b));
+        if (norm > 0) {
+          for (int i = 0; i < embedding.length; i++) {
+            embedding[i] = embedding[i] / norm;
+          }
+        }
+
+        // Send embedding result
+        request.sendPort.send(_EmbeddingResult(
+          LLMEmbedding(
+            model: request.modelPath,
+            embedding: embedding,
+            promptEvalCount: nTokens,
+          ),
+        ));
+
+        calloc.free(tokensPtr);
+      }
+
+      request.sendPort.send(_EmbeddingComplete());
+    } finally {
+      bindings.llama_free(ctx);
+      bindings.llama_free_model(model);
+      bindings.llama_backend_free();
+    }
+  } catch (e) {
+    request.sendPort.send(_EmbeddingError(e.toString()));
   }
 }

@@ -87,10 +87,10 @@ Future<void> main(List<String> args) async {
       String fullResponse = '';
 
       try {
-        final stream = chatRepo.streamChat(
+        final stream = chatRepo.streamChatWithGenerationOptions(
           modelPath, // Model identifier (not used for loading, just for tracking)
           messages: messages,
-          options: options,
+          generationOptions: options,
         );
 
         await for (final chunk in stream) {

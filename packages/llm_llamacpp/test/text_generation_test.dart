@@ -1,6 +1,7 @@
+// ignore_for_file: deprecated_member_use_from_same_package
+
 import 'dart:io';
 
-import 'package:llm_core/llm_core.dart';
 import 'package:llm_llamacpp/llm_llamacpp.dart';
 import 'package:test/test.dart';
 

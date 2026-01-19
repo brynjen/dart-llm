@@ -11,6 +11,10 @@ import 'dto/ollama_response.dart';
 ///
 /// Defaults to the standard Ollama base URL of http://localhost:11434.
 ///
+/// **Connection Pooling**: The `http.Client` automatically handles connection
+/// pooling. To reuse connections across multiple repository instances, pass
+/// the same `httpClient` to each repository.
+///
 /// Example:
 /// ```dart
 /// final repo = OllamaChatRepository(baseUrl: 'http://localhost:11434');
@@ -25,6 +29,8 @@ class OllamaChatRepository extends LLMChatRepository {
   OllamaChatRepository({
     this.baseUrl = "http://localhost:11434",
     this.maxToolAttempts = 25,
+    this.retryConfig,
+    this.timeoutConfig,
     http.Client? httpClient,
   }) : httpClient = httpClient ?? http.Client();
 
@@ -36,6 +42,12 @@ class OllamaChatRepository extends LLMChatRepository {
 
   /// The maximum number of tool attempts to make for a single request.
   final int maxToolAttempts;
+
+  /// Retry configuration for transient failures.
+  final RetryConfig? retryConfig;
+
+  /// Timeout configuration for requests.
+  final TimeoutConfig? timeoutConfig;
 
   Uri get uri => Uri.parse('$baseUrl/api/chat');
 
@@ -75,7 +87,20 @@ class OllamaChatRepository extends LLMChatRepository {
     dynamic extra,
     int? toolAttempts,
     bool think = false,
+    StreamChatOptions? options,
   }) async* {
+    // Validate inputs
+    Validation.validateModelName(model);
+    Validation.validateMessages(messages);
+
+    // Merge options with individual parameters (options take precedence)
+    final effectiveThink = options?.think ?? think;
+    final effectiveTools = options?.tools.isNotEmpty == true
+        ? options!.tools
+        : tools;
+    final effectiveExtra = options?.extra ?? extra;
+    final effectiveToolAttempts = options?.toolAttempts ?? toolAttempts;
+
     // If images are present, check if the model supports vision
     if (messages.any((msg) => msg.images != null && msg.images!.isNotEmpty)) {
       if (!(await _supportsVision(model))) {
@@ -92,12 +117,26 @@ class OllamaChatRepository extends LLMChatRepository {
           .map((msg) => _ollamaMessageToJson(msg))
           .toList(growable: false),
       'stream': true,
-      'think': think,
+      'think': effectiveThink,
     };
-    if (tools.isNotEmpty) {
-      body['tools'] = tools.map((tool) => tool.toJson).toList(growable: false);
+    if (effectiveTools.isNotEmpty) {
+      body['tools'] =
+          effectiveTools.map((tool) => tool.toJson).toList(growable: false);
     }
-    final response = await _sendRequest('POST', uri, body: body);
+
+    final response = await RetryUtil.executeWithRetry(
+      operation: () => _sendRequest('POST', uri, body: body),
+      config: retryConfig,
+      isRetryable: (error) {
+        // Retry on network errors and retryable HTTP status codes
+        if (error is LLMApiException && error.statusCode != null) {
+          return retryConfig?.shouldRetryForStatusCode(error.statusCode!) ?? false;
+        }
+        return error is TimeoutException ||
+            error.toString().toLowerCase().contains('connection') ||
+            error.toString().toLowerCase().contains('network');
+      },
+    );
 
     try {
       switch (response.statusCode) {
@@ -105,10 +144,10 @@ class OllamaChatRepository extends LLMChatRepository {
           yield* toLLMStream(
             response,
             model: model,
-            tools: tools,
+            tools: effectiveTools,
             messages: messages,
-            toolAttempts: toolAttempts ?? maxToolAttempts,
-            extra: extra,
+            toolAttempts: effectiveToolAttempts ?? maxToolAttempts,
+            extra: effectiveExtra,
           );
         case 400: // HttpStatus.badRequest
           // Handle 400 errors which might be feature not supported
@@ -209,16 +248,18 @@ class OllamaChatRepository extends LLMChatRepository {
     }
     request.sink.close();
 
-    // Add timeout for large requests - adjust based on payload size
-    final timeoutDuration =
-        body != null && json.encode(body).length > 1024 * 1024
-            ? const Duration(seconds: 300) // 5 minutes for large images
-            : const Duration(minutes: 2);
+    // Use configured timeout or default
+    final config = timeoutConfig ?? TimeoutConfig.defaultConfig;
+    final payloadSize = body != null ? json.encode(body).length : 0;
+    final readTimeout = config.getReadTimeoutForPayload(payloadSize);
 
     return httpClient.send(request).timeout(
-      timeoutDuration,
+      readTimeout,
       onTimeout: () {
-        throw TimeoutException('Request timed out', timeoutDuration);
+        throw TimeoutException(
+          'Request timed out after ${readTimeout.inSeconds} seconds',
+          readTimeout,
+        );
       },
     );
   }
@@ -327,10 +368,21 @@ class OllamaChatRepository extends LLMChatRepository {
     Map<String, dynamic> options = const {},
   }) async {
     final body = {'model': model, 'input': messages, 'options': options};
-    final response = await _sendNonStreamingRequest(
-      'POST',
-      Uri.parse('$baseUrl/api/embed'),
-      body: body,
+    final response = await RetryUtil.executeWithRetry(
+      operation: () => _sendNonStreamingRequest(
+        'POST',
+        Uri.parse('$baseUrl/api/embed'),
+        body: body,
+      ),
+      config: retryConfig,
+      isRetryable: (error) {
+        if (error is LLMApiException && error.statusCode != null) {
+          return retryConfig?.shouldRetryForStatusCode(error.statusCode!) ?? false;
+        }
+        return error is TimeoutException ||
+            error.toString().toLowerCase().contains('connection') ||
+            error.toString().toLowerCase().contains('network');
+      },
     );
     switch (response.statusCode) {
       case 200: // HttpStatus.ok

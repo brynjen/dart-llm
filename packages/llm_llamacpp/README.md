@@ -113,6 +113,31 @@ Download the model directly from HuggingFace instead of using Ollama's blob.
 
 ## Usage
 
+### Example App (Recommended)
+
+For a complete, production-ready example demonstrating real-world usage, see the [example_app](example_app/README.md):
+
+- **Full Flutter app** with chat interface
+- **Model download** from HuggingFace with progress tracking
+- **Tool calling** demonstration (calculator tool)
+- **Mobile platform support** (Android/iOS)
+- **Offline inference** after model download
+
+```bash
+cd example_app
+flutter run
+```
+
+The example app is the recommended starting point for understanding how to integrate `llm_llamacpp` into a Flutter application.
+
+### CLI Example (Simple)
+
+For a minimal command-line example, see [example/cli_example.dart](example/cli_example.dart):
+
+```bash
+dart run example/cli_example.dart /path/to/model.gguf
+```
+
 ### Simplified Model Acquisition (getModel)
 
 The easiest way to get models from HuggingFace - **deterministic, no guessing**:

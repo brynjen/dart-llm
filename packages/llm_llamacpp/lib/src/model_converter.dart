@@ -4,6 +4,8 @@ import 'dart:io';
 
 import 'package:http/http.dart' as http;
 
+// ignore_for_file: constant_identifier_names
+
 /// Quantization types supported by llama.cpp
 enum QuantizationType {
   /// 32-bit float (no quantization, largest)

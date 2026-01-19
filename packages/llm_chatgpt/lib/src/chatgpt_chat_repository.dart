@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
@@ -11,6 +12,10 @@ import 'dto/gpt_stream_decoder.dart';
 ///
 /// Add an API key and it should just work. For a reference of model names,
 /// see https://platform.openai.com/docs/models/overview
+///
+/// **Connection Pooling**: The `http.Client` automatically handles connection
+/// pooling. To reuse connections across multiple repository instances, pass
+/// the same `httpClient` to each repository.
 ///
 /// Example:
 /// ```dart
@@ -27,6 +32,8 @@ class ChatGPTChatRepository extends LLMChatRepository {
     required this.apiKey,
     this.baseUrl = "https://api.openai.com",
     this.maxToolAttempts = 25,
+    this.retryConfig,
+    this.timeoutConfig,
     http.Client? httpClient,
   }) : httpClient = httpClient ?? http.Client();
 
@@ -42,6 +49,12 @@ class ChatGPTChatRepository extends LLMChatRepository {
   /// The maximum number of tool attempts to make for a single request.
   final int maxToolAttempts;
 
+  /// Retry configuration for transient failures.
+  final RetryConfig? retryConfig;
+
+  /// Timeout configuration for requests.
+  final TimeoutConfig? timeoutConfig;
+
   Uri get uri => Uri.parse('$baseUrl/v1/chat/completions');
 
   @override
@@ -52,26 +65,51 @@ class ChatGPTChatRepository extends LLMChatRepository {
     dynamic extra,
     int? toolAttempts,
     bool think = false,
+    StreamChatOptions? options,
   }) async* {
+    // Validate inputs
+    Validation.validateModelName(model);
+    Validation.validateMessages(messages);
+
+    // Merge options with individual parameters (options take precedence)
+    final effectiveTools = options?.tools.isNotEmpty == true
+        ? options!.tools
+        : tools;
+    final effectiveExtra = options?.extra ?? extra;
+    final effectiveToolAttempts = options?.toolAttempts ?? toolAttempts;
+
     final body = {
       'model': model,
       'messages': messages.map((msg) => msg.toJson()).toList(growable: false),
       'stream': true
     };
-    if (tools.isNotEmpty) {
-      body['tools'] = tools.map((tool) => tool.toJson).toList(growable: false);
+    if (effectiveTools.isNotEmpty) {
+      body['tools'] =
+          effectiveTools.map((tool) => tool.toJson).toList(growable: false);
     }
-    final response = await _sendStreamingRequest('POST', uri, body: body);
+
+    final response = await RetryUtil.executeWithRetry(
+      operation: () => _sendStreamingRequest('POST', uri, body: body),
+      config: retryConfig,
+      isRetryable: (error) {
+        if (error is LLMApiException && error.statusCode != null) {
+          return retryConfig?.shouldRetryForStatusCode(error.statusCode!) ?? false;
+        }
+        return error is TimeoutException ||
+            error.toString().toLowerCase().contains('connection') ||
+            error.toString().toLowerCase().contains('network');
+      },
+    );
     try {
       switch (response.statusCode) {
         case 200: // HttpStatus.ok
           yield* toLLMStream(
             response,
             model: model,
-            tools: tools,
+            tools: effectiveTools,
             messages: messages,
-            extra: extra,
-            toolAttempts: toolAttempts ?? maxToolAttempts,
+            extra: effectiveExtra,
+            toolAttempts: effectiveToolAttempts ?? maxToolAttempts,
           );
         default:
           // Read the error response body
@@ -105,7 +143,20 @@ class ChatGPTChatRepository extends LLMChatRepository {
     }
     request.sink.close();
 
-    return httpClient.send(request);
+    // Use configured timeout or default
+    final config = timeoutConfig ?? TimeoutConfig.defaultConfig;
+    final payloadSize = body != null ? json.encode(body).length : 0;
+    final readTimeout = config.getReadTimeoutForPayload(payloadSize);
+
+    return httpClient.send(request).timeout(
+      readTimeout,
+      onTimeout: () {
+        throw TimeoutException(
+          'Request timed out after ${readTimeout.inSeconds} seconds',
+          readTimeout,
+        );
+      },
+    );
   }
 
   Future<http.Response> _sendNonStreamingRequest(
@@ -119,10 +170,16 @@ class ChatGPTChatRepository extends LLMChatRepository {
       'authorization': 'Bearer $apiKey'
     };
 
+    final config = timeoutConfig ?? TimeoutConfig.defaultConfig;
+    final payloadSize = body != null ? json.encode(body).length : 0;
+    final readTimeout = config.getReadTimeoutForPayload(payloadSize);
+
     final response = method.toUpperCase() == 'POST'
-        ? await httpClient.post(uri,
-            headers: headers, body: body != null ? json.encode(body) : null)
-        : await httpClient.get(uri, headers: headers);
+        ? await httpClient
+            .post(uri,
+                headers: headers, body: body != null ? json.encode(body) : null)
+            .timeout(readTimeout)
+        : await httpClient.get(uri, headers: headers).timeout(readTimeout);
 
     return response;
   }
@@ -229,9 +286,22 @@ class ChatGPTChatRepository extends LLMChatRepository {
     Map<String, dynamic> options = const {},
   }) async {
     final body = {'model': model, 'input': messages};
-    final response = await _sendNonStreamingRequest(
-        'POST', Uri.parse('$baseUrl/v1/embeddings'),
-        body: body);
+    final response = await RetryUtil.executeWithRetry(
+      operation: () => _sendNonStreamingRequest(
+        'POST',
+        Uri.parse('$baseUrl/v1/embeddings'),
+        body: body,
+      ),
+      config: retryConfig,
+      isRetryable: (error) {
+        if (error is LLMApiException && error.statusCode != null) {
+          return retryConfig?.shouldRetryForStatusCode(error.statusCode!) ?? false;
+        }
+        return error is TimeoutException ||
+            error.toString().toLowerCase().contains('connection') ||
+            error.toString().toLowerCase().contains('network');
+      },
+    );
     switch (response.statusCode) {
       case 200: // HttpStatus.ok
         return ChatGPTEmbeddingsResponse.fromJson(json.decode(response.body))
