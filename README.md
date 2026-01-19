@@ -1,4 +1,4 @@
-[![CI](https://github.com/brynjen/dart-ollama/actions/workflows/ci.yaml/badge.svg)](https://github.com/brynjen/dart-ollama/actions/workflows/ci.yaml)
+[![CI](https://github.com/brynjen/dart-llm/actions/workflows/ci.yaml/badge.svg)](https://github.com/brynjen/dart-llm/actions/workflows/ci.yaml)
 
 # Dart LLM
 
@@ -98,19 +98,19 @@ dependencies:
   # For Ollama backend
   llm_ollama:
     git:
-      url: https://github.com/brynjen/dart-ollama.git
+      url: https://github.com/brynjen/dart-llm.git
       path: packages/llm_ollama
 
   # For ChatGPT/OpenAI backend
   llm_chatgpt:
     git:
-      url: https://github.com/brynjen/dart-ollama.git
+      url: https://github.com/brynjen/dart-llm.git
       path: packages/llm_chatgpt
 
   # For local llama.cpp inference
   llm_llamacpp:
     git:
-      url: https://github.com/brynjen/dart-ollama.git
+      url: https://github.com/brynjen/dart-llm.git
       path: packages/llm_llamacpp
 ```
 

@@ -10,7 +10,7 @@ This package provides the foundational interfaces and models used by LLM backend
 dependencies:
   llm_core:
     git:
-      url: https://github.com/brynjen/dart-ollama.git
+      url: https://github.com/brynjen/dart-llm.git
       path: packages/llm_core
 ```
 

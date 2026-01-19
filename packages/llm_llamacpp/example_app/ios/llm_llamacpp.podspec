@@ -5,7 +5,7 @@ Pod::Spec.new do |s|
   s.description      = <<-DESC
 llama.cpp backend implementation for LLM interactions. Enables local on-device inference with GGUF models.
                        DESC
-  s.homepage         = 'https://github.com/brynjen/dart-ollama'
+  s.homepage         = 'https://github.com/brynjen/dart-llm'
   s.license          = { :file => '../LICENSE' }
   s.author           = { 'brynjen' => 'brynjen@example.com' }
   s.source           = { :path => '.' }

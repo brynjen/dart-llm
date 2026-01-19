@@ -9,7 +9,7 @@ Flutter test app for llm_llamacpp on Android and iOS.
 Before running, you need the llama.cpp native libraries:
 
 **Option A: Download from CI**
-1. Go to [GitHub Actions](https://github.com/brynjen/dart-ollama/actions/workflows/build-llamacpp.yaml)
+1. Go to [GitHub Actions](https://github.com/brynjen/dart-llm/actions/workflows/build-llamacpp.yaml)
 2. Run the "Build llama.cpp" workflow
 3. Download the `llm-llamacpp-native-libs` artifact
 4. Extract and copy libraries:

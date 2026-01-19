@@ -1,9 +1,9 @@
 name: llm_ollama
 description: Ollama backend implementation for LLM interactions. Provides streaming chat, embeddings, tool calling, vision support, and model management.
 version: 0.1.0
-homepage: https://github.com/brynjen/dart-ollama
-repository: https://github.com/brynjen/dart-ollama
-issue_tracker: https://github.com/brynjen/dart-ollama/issues
+homepage: https://github.com/brynjen/dart-llm
+repository: https://github.com/brynjen/dart-llm
+issue_tracker: https://github.com/brynjen/dart-llm/issues
 
 environment:
   sdk: ^3.8.0

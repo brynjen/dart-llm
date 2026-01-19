@@ -17,7 +17,7 @@ Ollama backend implementation for LLM interactions in Dart.
 dependencies:
   llm_ollama:
     git:
-      url: https://github.com/brynjen/dart-ollama.git
+      url: https://github.com/brynjen/dart-llm.git
       path: packages/llm_ollama
 ```
 

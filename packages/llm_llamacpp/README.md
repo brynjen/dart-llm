@@ -20,7 +20,7 @@ Local LLM inference via llama.cpp for Dart and Flutter.
 dependencies:
   llm_llamacpp:
     git:
-      url: https://github.com/brynjen/dart-ollama.git
+      url: https://github.com/brynjen/dart-llm.git
       path: packages/llm_llamacpp
 ```
 

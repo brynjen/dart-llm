@@ -52,6 +52,6 @@ comments:
 silence-enum-warning: true
 
 compiler-opts:
-  - '-I/home/brynje/git/dart-ollama/packages/llm_llamacpp/src/include'
+  - '-I/home/brynje/git/dart-llm/packages/llm_llamacpp/src/include'
   - '-I/usr/include'
   - '-DGGML_SHARED'

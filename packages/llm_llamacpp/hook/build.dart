@@ -1,4 +1,4 @@
-// Copyright 2024 The dart-ollama Authors. All rights reserved.
+// Copyright 2024 The dart-llm Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
