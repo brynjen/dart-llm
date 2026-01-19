@@ -40,6 +40,27 @@
 /// modelRepo.dispose();
 /// ```
 ///
+/// ## LoRA Adapter Support
+///
+/// This package supports LoRA (Low-Rank Adaptation) adapters for fine-tuning:
+///
+/// ```dart
+/// // Load a LoRA adapter
+/// final lora = modelRepo.loadLora('/path/to/lora.gguf', model);
+///
+/// // Use with chat repository
+/// final chatRepo = LlamaCppChatRepository.withModel(
+///   model,
+///   modelRepo.bindings,
+///   loraPath: lora.path,
+///   loraScale: 0.8,
+/// );
+///
+/// // Or set/switch LoRA at runtime
+/// chatRepo.setLora('/path/to/other-lora.gguf', scale: 0.5);
+/// chatRepo.clearLora();
+/// ```
+///
 /// ## Legacy Usage (Backwards Compatible)
 ///
 /// For simpler use cases, you can still load models directly via LlamaCppChatRepository:
@@ -61,6 +82,23 @@ export 'src/llamacpp_repository.dart';
 
 // Model management
 export 'src/llamacpp_model.dart' show LlamaCppModel, ModelLoadOptions;
+
+// Model info and data classes
+export 'src/model_info.dart';
+export 'src/backend_info.dart';
+export 'src/exceptions.dart';
+
+// LoRA adapter support
+export 'src/lora_adapter.dart';
+
+// Model discovery
+export 'src/model_discovery.dart';
+
+// Model loading
+export 'src/model_loader.dart';
+
+// HuggingFace integration
+export 'src/huggingface_client.dart';
 
 // GGUF metadata
 export 'src/gguf_metadata.dart';

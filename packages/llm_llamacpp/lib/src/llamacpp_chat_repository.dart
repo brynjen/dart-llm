@@ -35,6 +35,25 @@ import 'prompt_template.dart';
 /// }
 /// ```
 ///
+/// Example with LoRA adapter:
+/// ```dart
+/// final modelRepo = LlamaCppRepository();
+/// final model = await modelRepo.loadModel('/path/to/model.gguf');
+/// final lora = modelRepo.loadLora('/path/to/lora.gguf', model);
+///
+/// // Create chat repo with LoRA
+/// final chatRepo = LlamaCppChatRepository.withModel(
+///   model,
+///   modelRepo.bindings,
+///   loraPath: lora.path,
+///   loraScale: 0.8,
+/// );
+///
+/// // Or set LoRA at runtime
+/// chatRepo.setLora(lora.path, scale: 0.5);
+/// chatRepo.clearLora();
+/// ```
+///
 /// Example standalone (loads model internally - for backwards compatibility):
 /// ```dart
 /// final chatRepo = LlamaCppChatRepository();
@@ -62,7 +81,11 @@ class LlamaCppChatRepository extends LLMChatRepository {
     this.nGpuLayers = 0,
     this.maxToolAttempts = 25,
     PromptTemplate? template,
+    String? loraPath,
+    double loraScale = 1.0,
   }) : _template = template,
+       _loraPath = loraPath,
+       _loraScale = loraScale,
        _ownsModel = true;
 
   /// Creates a chat repository with an already-loaded model.
@@ -72,6 +95,8 @@ class LlamaCppChatRepository extends LLMChatRepository {
   ///
   /// [model] - A model loaded via [LlamaCppRepository.loadModel].
   /// [bindings] - The bindings from [LlamaCppRepository.bindings].
+  /// [loraPath] - Optional path to a LoRA adapter file to apply during inference.
+  /// [loraScale] - Scale factor for the LoRA adapter (0.0 to 1.0+). Default is 1.0.
   LlamaCppChatRepository.withModel(
     LlamaCppModel model,
     LlamaBindings bindings, {
@@ -81,10 +106,14 @@ class LlamaCppChatRepository extends LLMChatRepository {
     this.nGpuLayers = 0,
     this.maxToolAttempts = 25,
     PromptTemplate? template,
+    String? loraPath,
+    double loraScale = 1.0,
   }) : _template = template,
        _model = model,
        _bindings = bindings,
        _backendInitialized = true,
+       _loraPath = loraPath,
+       _loraScale = loraScale,
        _ownsModel = false;
 
   /// The context size (number of tokens).
@@ -110,6 +139,10 @@ class LlamaCppChatRepository extends LLMChatRepository {
   LlamaCppModel? _model;
   bool _backendInitialized = false;
 
+  // LoRA configuration
+  String? _loraPath;
+  double _loraScale;
+
   /// The currently loaded model, if any.
   @Deprecated('Use LlamaCppRepository for model management')
   LlamaCppModel? get model => _model;
@@ -122,6 +155,47 @@ class LlamaCppChatRepository extends LLMChatRepository {
 
   /// Sets the prompt template to use.
   set template(PromptTemplate value) => _template = value;
+
+  // ============================================================
+  // LoRA Management (llama.cpp-specific, not in base interface)
+  // ============================================================
+
+  /// The current LoRA adapter path, if any.
+  String? get loraPath => _loraPath;
+
+  /// The current LoRA scale factor.
+  double get loraScale => _loraScale;
+
+  /// Whether a LoRA adapter is configured.
+  bool get hasLora => _loraPath != null;
+
+  /// Set a LoRA adapter to use during inference.
+  ///
+  /// [path] - Path to the LoRA GGUF file.
+  /// [scale] - Scale factor (0.0 to 1.0+). Default is 1.0.
+  ///
+  /// The LoRA will be applied to the context during each inference call.
+  /// To switch LoRAs, simply call this method again with a different path.
+  ///
+  /// Note: This is a llama.cpp-specific feature not available in the base
+  /// [LLMChatRepository] interface.
+  void setLora(String path, {double scale = 1.0}) {
+    _loraPath = path;
+    _loraScale = scale;
+  }
+
+  /// Set a LoRA adapter from a [LoraConfig].
+  void setLoraConfig(LoraConfig config) {
+    setLora(config.path, scale: config.scale);
+  }
+
+  /// Clear the LoRA adapter.
+  ///
+  /// After calling this, inference will run without any LoRA applied.
+  void clearLora() {
+    _loraPath = null;
+    _loraScale = 1.0;
+  }
 
   /// Initializes the llama.cpp backend.
   ///
@@ -216,6 +290,8 @@ class LlamaCppChatRepository extends LLMChatRepository {
         topP: 0.9,
         topK: 40,
         maxTokens: 2048,
+        loraPath: _loraPath,
+        loraScale: _loraScale,
       ),
     );
 
@@ -536,6 +612,8 @@ class _InferenceRequest {
     required this.topP,
     required this.topK,
     required this.maxTokens,
+    this.loraPath,
+    this.loraScale = 1.0,
   });
 
   final SendPort sendPort;
@@ -550,6 +628,10 @@ class _InferenceRequest {
   final double topP;
   final int topK;
   final int maxTokens;
+
+  // LoRA configuration
+  final String? loraPath;
+  final double loraScale;
 }
 
 class _InferenceToken {
@@ -570,6 +652,8 @@ class _InferenceError {
 
 /// Runs inference in an isolate.
 void _runInference(_InferenceRequest request) {
+  Pointer<llama_adapter_lora>? loraAdapter;
+
   try {
     // Initialize llama.cpp in this isolate
     final lib = loadLlamaLibrary();
@@ -589,6 +673,19 @@ void _runInference(_InferenceRequest request) {
       return;
     }
 
+    // Load LoRA adapter if specified
+    if (request.loraPath != null) {
+      final loraPathPtr = request.loraPath!.toNativeUtf8();
+      loraAdapter = bindings.llama_adapter_lora_init(model, loraPathPtr.cast());
+      calloc.free(loraPathPtr);
+
+      if (loraAdapter == nullptr) {
+        bindings.llama_free_model(model);
+        request.sendPort.send(_InferenceError('Failed to load LoRA adapter: ${request.loraPath}'));
+        return;
+      }
+    }
+
     // Get vocab from model for tokenization
     final vocab = bindings.llama_model_get_vocab(model);
 
@@ -603,9 +700,24 @@ void _runInference(_InferenceRequest request) {
 
     final ctx = bindings.llama_new_context_with_model(model, ctxParams);
     if (ctx == nullptr) {
+      if (loraAdapter != null) {
+        bindings.llama_adapter_lora_free(loraAdapter);
+      }
       bindings.llama_free_model(model);
       request.sendPort.send(_InferenceError('Failed to create context'));
       return;
+    }
+
+    // Apply LoRA adapter to context if loaded
+    if (loraAdapter != null) {
+      final result = bindings.llama_set_adapter_lora(ctx, loraAdapter, request.loraScale);
+      if (result != 0) {
+        bindings.llama_free(ctx);
+        bindings.llama_adapter_lora_free(loraAdapter);
+        bindings.llama_free_model(model);
+        request.sendPort.send(_InferenceError('Failed to apply LoRA adapter'));
+        return;
+      }
     }
 
     try {
@@ -711,6 +823,11 @@ void _runInference(_InferenceRequest request) {
 
       request.sendPort.send(_InferenceComplete(promptTokens: nTokens, generatedTokens: generatedTokens));
     } finally {
+      // Clear LoRA from context before freeing
+      if (loraAdapter != null) {
+        bindings.llama_clear_adapter_lora(ctx);
+        bindings.llama_adapter_lora_free(loraAdapter);
+      }
       bindings.llama_free(ctx);
       bindings.llama_free_model(model);
       bindings.llama_backend_free();
