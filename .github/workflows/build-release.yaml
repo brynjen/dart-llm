@@ -54,7 +54,8 @@ jobs:
             cmake \
             ninja-build \
             libvulkan-dev \
-            vulkan-tools
+            vulkan-tools \
+            glslc
 
       - name: Setup CUDA
         run: |
@@ -239,7 +240,9 @@ jobs:
           path: llm_llamacpp-*.zip
 
   # ============================================
-  # Windows x64 Build (with CUDA and Vulkan)
+  # Windows x64 Build (CPU + Vulkan)
+  # Note: CUDA support skipped due to CI integration issues
+  # Users needing CUDA can build from source
   # ============================================
   build-windows-x64:
     if: ${{ !inputs.skip_windows }}
@@ -249,30 +252,6 @@ jobs:
         uses: actions/checkout@v4
         with:
           submodules: recursive
-
-      - name: Setup CUDA
-        shell: pwsh
-        run: |
-          # Download and install CUDA toolkit silently
-          $cudaVersion = "12.4.1"
-          $cudaVersionShort = "12.4"
-          $cudaUrl = "https://developer.download.nvidia.com/compute/cuda/${cudaVersion}/local_installers/cuda_${cudaVersion}_551.78_windows.exe"
-          
-          Write-Host "Downloading CUDA ${cudaVersion}..."
-          Invoke-WebRequest -Uri $cudaUrl -OutFile cuda_installer.exe -UseBasicParsing
-          
-          Write-Host "Installing CUDA toolkit with Visual Studio integration..."
-          # Install nvcc, cudart, cublas AND visual_studio_integration for CMake to find CUDA
-          Start-Process -FilePath "cuda_installer.exe" -ArgumentList "-s", "nvcc_${cudaVersionShort}", "cudart_${cudaVersionShort}", "cublas_${cudaVersionShort}", "cublas_dev_${cudaVersionShort}", "visual_studio_integration_${cudaVersionShort}" -Wait -NoNewWindow
-          
-          # Add CUDA to PATH and environment
-          $cudaPath = "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v${cudaVersionShort}"
-          echo "CUDA_PATH=${cudaPath}" >> $env:GITHUB_ENV
-          echo "CUDAToolkit_ROOT=${cudaPath}" >> $env:GITHUB_ENV
-          echo "${cudaPath}\bin" >> $env:GITHUB_PATH
-          
-          Write-Host "CUDA installation complete"
-          & "${cudaPath}\bin\nvcc.exe" --version
 
       - name: Setup Vulkan SDK
         shell: pwsh
@@ -300,9 +279,6 @@ jobs:
           mkdir build-windows-x64
           cd build-windows-x64
           
-          # Set CUDA paths explicitly for CMake
-          $cudaPath = "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.4"
-          
           cmake ..\${{ env.LLAMA_CPP_DIR }} `
             -DCMAKE_BUILD_TYPE=Release `
             -DBUILD_SHARED_LIBS=ON `
@@ -311,10 +287,8 @@ jobs:
             -DLLAMA_BUILD_SERVER=OFF `
             -DLLAMA_BUILD_TOOLS=OFF `
             -DLLAMA_CURL=OFF `
-            -DGGML_CUDA=ON `
-            -DGGML_VULKAN=ON `
-            -DCUDAToolkit_ROOT="$cudaPath" `
-            -DCMAKE_CUDA_COMPILER="$cudaPath\bin\nvcc.exe"
+            -DGGML_CUDA=OFF `
+            -DGGML_VULKAN=ON
           
           cmake --build . --config Release -j $env:NUMBER_OF_PROCESSORS
 
