@@ -1,0 +1,71 @@
+name: dart-llm
+repository: https://github.com/brynjen/dart-llm
+
+packages:
+  - packages/llm_core
+  - packages/llm_ollama
+  - packages/llm_chatgpt
+  - packages/llm_llamacpp
+
+command:
+  bootstrap:
+    # Run `dart pub get` in all packages
+    runPubGetInParallel: true
+  
+  version:
+    # Use conventional commits for versioning
+    conventionalCommits: true
+    # Update changelog automatically
+    changelog: true
+    # Update pubspec versions
+    updatePubspecs: true
+    # Create git tag
+    gitTag: true
+    # Create GitHub release
+    githubRelease: true
+    # Prerelease support
+    prerelease: true
+
+scripts:
+  # Get dependencies for all packages
+  get:
+    run: melos bootstrap
+    description: Install dependencies for all packages
+  
+  # Run tests for all packages
+  test:
+    run: melos exec -- "dart test"
+    description: Run tests for all packages
+  
+  # Analyze all packages
+  analyze:
+    run: melos exec -- "dart analyze"
+    description: Analyze code for all packages
+  
+  # Format all packages
+  format:
+    run: melos exec -- "dart format ."
+    description: Format code for all packages
+  
+  # Check formatting
+  format:check:
+    run: melos exec -- "dart format --set-exit-if-changed ."
+    description: Check code formatting for all packages
+  
+  # Clean build artifacts
+  clean:
+    run: melos exec -- "dart pub cache clean"
+    description: Clean build artifacts
+  
+  # Verify packages can be published
+  publish:check:
+    run: melos exec -- "dart pub publish --dry-run"
+    description: Verify all packages can be published
+  
+  # Run all checks (format, analyze, test)
+  check:
+    run: |
+      melos format:check
+      melos analyze
+      melos test
+    description: Run all code quality checks

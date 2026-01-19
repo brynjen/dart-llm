@@ -1,0 +1,177 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  analyze:
+    name: Analyze Code
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Dart SDK
+        uses: dart-lang/setup-dart@v1
+        with:
+          sdk: stable
+      
+      - name: Install dependencies
+        run: |
+          cd packages/llm_core && dart pub get
+          cd ../llm_ollama && dart pub get
+          cd ../llm_chatgpt && dart pub get
+          cd ../llm_llamacpp && dart pub get || true
+      
+      - name: Verify formatting
+        run: |
+          cd packages/llm_core && dart format --set-exit-if-changed .
+          cd ../llm_ollama && dart format --set-exit-if-changed .
+          cd ../llm_chatgpt && dart format --set-exit-if-changed .
+          cd ../llm_llamacpp && dart format --set-exit-if-changed . || true
+      
+      - name: Analyze code
+        run: |
+          cd packages/llm_core && dart analyze
+          cd ../llm_ollama && dart analyze
+          cd ../llm_chatgpt && dart analyze
+          cd ../llm_llamacpp && dart analyze || true
+
+  test:
+    name: Test Packages
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        package: [llm_core, llm_ollama, llm_chatgpt]
+        exclude:
+          # Skip llm_llamacpp on CI as it requires native libraries
+          - package: llm_llamacpp
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Dart SDK
+        uses: dart-lang/setup-dart@v1
+        with:
+          sdk: stable
+      
+      - name: Install dependencies
+        run: |
+          cd packages/llm_core && dart pub get
+          cd ../${{ matrix.package }} && dart pub get
+      
+      - name: Run tests
+        run: |
+          cd packages/llm_core && dart test
+          cd ../${{ matrix.package }} && dart test
+
+  test-llm_core:
+    name: Test llm_core
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Dart SDK
+        uses: dart-lang/setup-dart@v1
+        with:
+          sdk: stable
+      
+      - name: Install dependencies
+        run: cd packages/llm_core && dart pub get
+      
+      - name: Run tests
+        run: cd packages/llm_core && dart test
+
+  test-llm_ollama:
+    name: Test llm_ollama
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Dart SDK
+        uses: dart-lang/setup-dart@v1
+        with:
+          sdk: stable
+      
+      - name: Install dependencies
+        run: |
+          cd packages/llm_core && dart pub get
+          cd ../llm_ollama && dart pub get
+      
+      - name: Run tests
+        run: cd packages/llm_ollama && dart test
+
+  test-llm_chatgpt:
+    name: Test llm_chatgpt
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Dart SDK
+        uses: dart-lang/setup-dart@v1
+        with:
+          sdk: stable
+      
+      - name: Install dependencies
+        run: |
+          cd packages/llm_core && dart pub get
+          cd ../llm_chatgpt && dart pub get
+      
+      - name: Run tests
+        run: cd packages/llm_chatgpt && dart test
+
+  check-dependencies:
+    name: Check Dependencies
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Dart SDK
+        uses: dart-lang/setup-dart@v1
+        with:
+          sdk: stable
+      
+      - name: Check for outdated dependencies
+        run: |
+          cd packages/llm_core && dart pub outdated
+          cd ../llm_ollama && dart pub outdated
+          cd ../llm_chatgpt && dart pub outdated
+          cd ../llm_llamacpp && dart pub outdated || true
+      
+      - name: Check for security issues
+        run: |
+          cd packages/llm_core && dart pub outdated --security || true
+          cd ../llm_ollama && dart pub outdated --security || true
+          cd ../llm_chatgpt && dart pub outdated --security || true
+          cd ../llm_llamacpp && dart pub outdated --security || true
+
+  verify-publish:
+    name: Verify Package Publishing
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Dart SDK
+        uses: dart-lang/setup-dart@v1
+        with:
+          sdk: stable
+      
+      - name: Verify llm_core can be published
+        run: |
+          cd packages/llm_core
+          dart pub get
+          dart pub publish --dry-run
+      
+      - name: Verify llm_ollama can be published
+        run: |
+          cd packages/llm_ollama
+          dart pub get
+          dart pub publish --dry-run
+      
+      - name: Verify llm_chatgpt can be published
+        run: |
+          cd packages/llm_chatgpt
+          dart pub get
+          dart pub publish --dry-run

@@ -3,4 +3,50 @@ include: package:lints/recommended.yaml
 analyzer:
   exclude:
     - lib/src/bindings/**
+    - "**/*.g.dart"
+    - "**/*.freezed.dart"
+  errors:
+    missing_required_param: error
+    invalid_assignment: error
+    invalid_null_aware_operator: error
+    unused_element: warning
+    unused_field: warning
+    unused_import: warning
+    unused_local_variable: warning
+  language:
+    # Use strict mode but allow some flexibility for dynamic types from JSON
+    strict-casts: false
+    strict-inference: false
+    strict-raw-types: false
+
+linter:
+  rules:
+    - always_declare_return_types
+    - always_put_required_named_parameters_first
+    - avoid_empty_else
+    - avoid_relative_lib_imports
+    - avoid_returning_null_for_future
+    - avoid_slow_async_io
+    - cancel_subscriptions
+    - close_sinks
+    - prefer_const_constructors
+    - prefer_const_declarations
+    - prefer_final_fields
+    - prefer_final_locals
+    - prefer_single_quotes
+    - unawaited_futures
+    - always_use_package_imports
+    - avoid_print
+    - camel_case_types
+    - prefer_collection_literals
+    - prefer_contains
+    - prefer_final_in_for_each
+    - prefer_if_null_operators
+    - prefer_is_empty
+    - prefer_is_not_empty
+    - prefer_null_aware_operators
+    - prefer_spread_collections
+    - require_trailing_commas
+    - use_rethrow_when_possible
+
 
