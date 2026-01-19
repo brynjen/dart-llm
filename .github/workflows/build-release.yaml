@@ -10,6 +10,26 @@ on:
         description: 'Version to build (e.g., 0.1.0)'
         required: true
         default: '0.1.0'
+      skip_linux:
+        description: 'Skip Linux build'
+        type: boolean
+        default: false
+      skip_macos:
+        description: 'Skip macOS builds (arm64 and x64)'
+        type: boolean
+        default: false
+      skip_windows:
+        description: 'Skip Windows build'
+        type: boolean
+        default: false
+      skip_android:
+        description: 'Skip Android builds'
+        type: boolean
+        default: false
+      skip_ios:
+        description: 'Skip iOS build'
+        type: boolean
+        default: false
 
 env:
   LLAMA_CPP_DIR: packages/llm_llamacpp/llamacpp
@@ -19,6 +39,7 @@ jobs:
   # Linux x64 Build (with CUDA and Vulkan)
   # ============================================
   build-linux-x64:
+    if: ${{ !inputs.skip_linux }}
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout
@@ -36,10 +57,10 @@ jobs:
             vulkan-tools
 
       - name: Setup CUDA
-        uses: Jimver/cuda-toolkit@v0.2.18
+        uses: Jimver/cuda-toolkit@v0.2.19
         id: cuda-toolkit
         with:
-          cuda: '12.6.3'
+          cuda: '12.4.1'
           method: 'network'
           sub-packages: '["nvcc", "cudart", "cublas", "cublas-dev"]'
 
@@ -96,6 +117,7 @@ jobs:
   # macOS arm64 Build (with Metal)
   # ============================================
   build-macos-arm64:
+    if: ${{ !inputs.skip_macos }}
     runs-on: macos-14  # M1/M2 runner
     steps:
       - name: Checkout
@@ -153,7 +175,8 @@ jobs:
   # macOS x64 Build (with Metal)
   # ============================================
   build-macos-x64:
-    runs-on: macos-13  # Intel runner
+    if: ${{ !inputs.skip_macos }}
+    runs-on: macos-15-large  # Intel runner (macos-13 retired)
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -206,6 +229,7 @@ jobs:
   # Windows x64 Build (with CUDA and Vulkan)
   # ============================================
   build-windows-x64:
+    if: ${{ !inputs.skip_windows }}
     runs-on: windows-latest
     steps:
       - name: Checkout
@@ -214,18 +238,31 @@ jobs:
           submodules: recursive
 
       - name: Setup CUDA
-        uses: Jimver/cuda-toolkit@v0.2.18
-        id: cuda-toolkit
-        with:
-          cuda: '12.6.3'
-          method: 'network'
-          sub-packages: '["nvcc", "cudart", "cublas", "cublas_dev"]'
+        shell: pwsh
+        run: |
+          # Download and install CUDA toolkit silently
+          $cudaVersion = "12.4.1"
+          $cudaVersionShort = "12.4"
+          $cudaUrl = "https://developer.download.nvidia.com/compute/cuda/${cudaVersion}/local_installers/cuda_${cudaVersion}_551.78_windows.exe"
+          
+          Write-Host "Downloading CUDA ${cudaVersion}..."
+          Invoke-WebRequest -Uri $cudaUrl -OutFile cuda_installer.exe -UseBasicParsing
+          
+          Write-Host "Installing CUDA toolkit (this may take a few minutes)..."
+          Start-Process -FilePath "cuda_installer.exe" -ArgumentList "-s", "nvcc_${cudaVersionShort}", "cudart_${cudaVersionShort}", "cublas_${cudaVersionShort}", "cublas_dev_${cudaVersionShort}" -Wait -NoNewWindow
+          
+          # Add CUDA to PATH
+          $cudaPath = "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v${cudaVersionShort}"
+          echo "CUDA_PATH=${cudaPath}" >> $env:GITHUB_ENV
+          echo "${cudaPath}\bin" >> $env:GITHUB_PATH
+          
+          Write-Host "CUDA installation complete"
 
       - name: Setup Vulkan SDK
         uses: humbletim/install-vulkan-sdk@v1.1.1
         with:
-          version: latest
-          cache: true
+          version: 1.3.290.0
+          cache: false
 
       - name: Build llama.cpp
         shell: pwsh
@@ -270,6 +307,7 @@ jobs:
   # Android arm64-v8a Build (CPU with KleidiAI)
   # ============================================
   build-android-arm64:
+    if: ${{ !inputs.skip_android }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -341,6 +379,7 @@ jobs:
   # Android armeabi-v7a Build (32-bit ARM)
   # ============================================
   build-android-arm:
+    if: ${{ !inputs.skip_android }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -407,6 +446,7 @@ jobs:
   # Android x86_64 Build (for emulator)
   # ============================================
   build-android-x86_64:
+    if: ${{ !inputs.skip_android }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -474,6 +514,7 @@ jobs:
   # iOS Build (xcframework with Metal)
   # ============================================
   build-ios:
+    if: ${{ !inputs.skip_ios }}
     runs-on: macos-14
     steps:
       - name: Checkout
@@ -541,6 +582,8 @@ jobs:
       - build-android-arm
       - build-android-x86_64
       - build-ios
+    # Run even if some jobs were skipped, but not if any failed
+    if: ${{ always() && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
