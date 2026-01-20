@@ -1,12 +1,6 @@
 name: dart-llm
 repository: https://github.com/brynjen/dart-llm
 
-packages:
-  - packages/llm_core
-  - packages/llm_ollama
-  - packages/llm_chatgpt
-  - packages/llm_llamacpp
-
 command:
   bootstrap:
     # Run `dart pub get` in all packages

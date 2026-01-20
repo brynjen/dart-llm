@@ -5,3 +5,12 @@ publish_to: none
 
 environment:
   sdk: ^3.8.0
+
+workspace:
+  - packages/llm_core
+  - packages/llm_ollama
+  - packages/llm_chatgpt
+  - packages/llm_llamacpp
+
+dev_dependencies:
+  melos: ^7.0.0
