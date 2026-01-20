@@ -111,3 +111,6 @@ export 'src/prompt_template.dart';
 
 // Generation options
 export 'src/generation_options.dart';
+
+// Tool call parsing
+export 'src/tool_call_parser.dart';

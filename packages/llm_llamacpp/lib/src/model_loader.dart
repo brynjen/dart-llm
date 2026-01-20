@@ -1,3 +1,6 @@
+import 'dart:io';
+
+import 'package:llm_core/llm_core.dart' show ModelLoadException;
 import 'package:llm_llamacpp/src/bindings/llama_bindings.dart';
 import 'package:llm_llamacpp/src/llamacpp_model.dart';
 import 'package:llm_llamacpp/src/loader/loader.dart';
@@ -48,6 +51,15 @@ class LlamaCppModelLoader {
     ModelLoadOptions options = const ModelLoadOptions(),
   }) async {
     initializeBackend();
+
+    // Validate model path exists
+    final file = File(path);
+    if (!await file.exists()) {
+      throw ModelLoadException(
+        'Model file not found: $path',
+        modelPath: path,
+      );
+    }
 
     // Check if already loaded
     if (_modelPool.containsKey(path)) {

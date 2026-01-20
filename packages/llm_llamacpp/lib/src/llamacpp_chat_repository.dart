@@ -5,14 +5,32 @@ import 'dart:isolate';
 import 'dart:math' as math;
 
 import 'package:ffi/ffi.dart';
-import 'package:llm_core/llm_core.dart';
+import 'package:llm_core/llm_core.dart' show
+    LLMApiException,
+    LLMChatRepository,
+    LLMChunk,
+    LLMChunkMessage,
+    LLMEmbedding,
+    LLMLogger,
+    DefaultLLMLogger,
+    LLMLogLevel,
+    LLMMessage,
+    LLMRole,
+    LLMTool,
+    LLMToolCall,
+    ModelLoadException,
+    StreamChatOptions,
+    Validation,
+    VisionNotSupportedException;
 
 import 'package:llm_llamacpp/src/bindings/llama_bindings.dart';
+import 'package:llm_llamacpp/src/exceptions.dart';
 import 'package:llm_llamacpp/src/generation_options.dart';
 import 'package:llm_llamacpp/src/llamacpp_model.dart';
 import 'package:llm_llamacpp/src/llamacpp_repository.dart';
 import 'package:llm_llamacpp/src/loader/loader.dart';
 import 'package:llm_llamacpp/src/prompt_template.dart';
+import 'package:llm_llamacpp/src/tool_call_parser.dart';
 
 /// Repository for chatting with llama.cpp models locally.
 ///
@@ -303,6 +321,26 @@ class LlamaCppChatRepository extends LLMChatRepository {
       );
     }
 
+    // Validate context size against model limits
+    if (contextSize > _model!.contextSizeTrain) {
+      _log.warning(
+        'Requested context size ($contextSize) exceeds model training context size (${_model!.contextSizeTrain}). '
+        'This may cause issues or be truncated.',
+      );
+    }
+
+    // Check for images in messages
+    final hasImages = messages.any((msg) => msg.images != null && msg.images!.isNotEmpty);
+    if (hasImages) {
+      // TODO: Full vision support requires additional multimodal bindings
+      // For now, throw an informative error
+      throw VisionNotSupportedException(
+        model,
+        'Vision/image support is not yet fully implemented in llm_llamacpp. '
+        'Vision models can be loaded and used for text inference, but image input processing requires additional multimodal bindings.',
+      );
+    }
+
     // Merge options with individual parameters (options take precedence)
     final effectiveTools = options?.tools.isNotEmpty == true
         ? options!.tools
@@ -374,11 +412,11 @@ class LlamaCppChatRepository extends LLMChatRepository {
           // If we're in a potential tool call, buffer the content
           if (inPotentialToolCall) {
             // Check if we have a complete JSON object
-            final braceCount = _countBraces(pendingContent);
+            final braceCount = ToolCallParser.countBraces(pendingContent);
             if (braceCount == 0 && pendingContent.contains('}')) {
               // Potential complete JSON - try to parse
               _log.fine('Potential complete JSON, trying to parse');
-              final toolCalls = _parseToolCalls(pendingContent);
+              final toolCalls = ToolCallParser.parseToolCalls(pendingContent);
               if (toolCalls.isNotEmpty) {
                 _log.info(
                   'Found ${toolCalls.length} tool calls in buffered content',
@@ -446,7 +484,7 @@ class LlamaCppChatRepository extends LLMChatRepository {
           // Check for tool calls in the full response if none found during streaming
           if (tools.isNotEmpty && collectedToolCalls.isEmpty) {
             _log.fine('Parsing tool calls from full response...');
-            final parsedToolCalls = _parseToolCalls(accumulatedContent);
+            final parsedToolCalls = ToolCallParser.parseToolCalls(accumulatedContent);
             _log.info('Found ${parsedToolCalls.length} tool calls');
             if (_log.isLoggable(LLMLogLevel.fine)) {
               for (final tc in parsedToolCalls) {
@@ -548,7 +586,30 @@ class LlamaCppChatRepository extends LLMChatRepository {
           break;
         } else if (message is _InferenceError) {
           _log.severe('Inference error: ${message.error}');
-          throw Exception('Inference error: ${message.error}');
+          // Parse error type from error message
+          if (message.error.contains('Failed to load model') ||
+              message.error.contains('Failed to load LoRA adapter')) {
+            throw ModelLoadException(
+              message.error,
+              modelPath: _model?.path,
+            );
+          } else if (message.error.contains('Failed to tokenize')) {
+            throw TokenizationException(
+              message: message.error,
+              prompt: prompt,
+            );
+          } else if (message.error.contains('Failed to create context')) {
+            throw ContextCreationException(
+              message: message.error,
+              contextSize: contextSize,
+              batchSize: batchSize,
+            );
+          } else {
+            throw InferenceException(
+              message: message.error,
+              details: 'Model: ${_model?.path ?? "unknown"}',
+            );
+          }
         }
       }
     } finally {
@@ -557,152 +618,6 @@ class LlamaCppChatRepository extends LLMChatRepository {
     }
   }
 
-  /// Count unbalanced braces in a string
-  int _countBraces(String s) {
-    int count = 0;
-    for (final c in s.codeUnits) {
-      if (c == 123) count++; // {
-      if (c == 125) count--; // }
-    }
-    return count;
-  }
-
-  /// Parses tool calls from model output.
-  ///
-  /// This looks for JSON-formatted tool calls in the response.
-  List<LLMToolCall> _parseToolCalls(String content) {
-    final toolCalls = <LLMToolCall>[];
-    _log.fine('_parseToolCalls input: $content');
-
-    // Try to find and parse any JSON object that looks like a tool call
-    // First, try to find complete JSON objects
-    final jsonObjects = _extractJsonObjects(content);
-    _log.fine('Found ${jsonObjects.length} JSON objects');
-
-    for (final jsonStr in jsonObjects) {
-      _log.fine('Trying to parse JSON: $jsonStr');
-      try {
-        final data = json.decode(jsonStr) as Map<String, dynamic>;
-
-        // Check if it's a tool call format
-        if (data.containsKey('name')) {
-          String? name;
-          String? arguments;
-
-          // Format 1: {"name": "tool", "arguments": {...}}
-          if (data.containsKey('arguments')) {
-            name = data['name'] as String;
-            final args = data['arguments'];
-            arguments = args is String ? args : json.encode(args);
-          }
-          // Format 2: {"name": "tool", "parameters": {...}}
-          else if (data.containsKey('parameters')) {
-            name = data['name'] as String;
-            final args = data['parameters'];
-            arguments = args is String ? args : json.encode(args);
-          }
-          // Format 3: {"name": "tool", "operation": "...", "a": ..., "b": ...}
-          // All other keys are arguments
-          else {
-            name = data['name'] as String;
-            final args = Map<String, dynamic>.from(data)..remove('name');
-            arguments = json.encode(args);
-          }
-
-          _log.fine('Parsed tool call: name=$name, args=$arguments');
-          toolCalls.add(
-            LLMToolCall(
-              id: 'call_${toolCalls.length}',
-              name: name,
-              arguments: arguments,
-            ),
-          );
-        }
-      } catch (e) {
-        _log.fine('Failed to parse JSON: $e');
-      }
-    }
-
-    // Try XML-like format: <tool_call>...</tool_call>
-    final xmlPattern = RegExp(
-      r'<tool_call>\s*(\{.*?\})\s*</tool_call>',
-      multiLine: true,
-      dotAll: true,
-    );
-
-    for (final match in xmlPattern.allMatches(content)) {
-      try {
-        final jsonStr = match.group(1)!;
-        _log.fine('Found XML-style tool call: $jsonStr');
-        final data = json.decode(jsonStr) as Map<String, dynamic>;
-
-        toolCalls.add(
-          LLMToolCall(
-            id: 'call_${toolCalls.length}',
-            name: data['name'] as String,
-            arguments: json.encode(
-              data['arguments'] ?? data['parameters'] ?? {},
-            ),
-          ),
-        );
-      } catch (e) {
-        _log.fine('Failed to parse XML-style tool call: $e');
-      }
-    }
-
-    // Try function call format: calculator({"operation": "multiply", ...})
-    final funcPattern = RegExp(
-      r'(\w+)\s*\(\s*(\{[^}]+\})\s*\)',
-      multiLine: true,
-    );
-
-    for (final match in funcPattern.allMatches(content)) {
-      try {
-        final name = match.group(1)!;
-        final argsStr = match.group(2)!;
-        _log.fine('Found function-style call: $name($argsStr)');
-
-        // Verify it's valid JSON
-        json.decode(argsStr);
-
-        toolCalls.add(
-          LLMToolCall(
-            id: 'call_${toolCalls.length}',
-            name: name,
-            arguments: argsStr,
-          ),
-        );
-      } catch (e) {
-        _log.fine('Failed to parse function-style call: $e');
-      }
-    }
-
-    _log.fine('Total tool calls found: ${toolCalls.length}');
-    return toolCalls;
-  }
-
-  /// Extract JSON objects from a string
-  List<String> _extractJsonObjects(String content) {
-    final objects = <String>[];
-    var depth = 0;
-    var start = -1;
-
-    for (var i = 0; i < content.length; i++) {
-      final c = content[i];
-      if (c == '{') {
-        if (depth == 0) start = i;
-        depth++;
-      } else if (c == '}') {
-        depth--;
-        if (depth == 0 && start >= 0) {
-          objects.add(content.substring(start, i + 1));
-          start = -1;
-        }
-      }
-    }
-
-    return objects;
-  }
 
   @override
   Future<List<LLMEmbedding>> embed({
@@ -747,7 +662,26 @@ class LlamaCppChatRepository extends LLMChatRepository {
         if (message is _EmbeddingResult) {
           results.add(message.embedding);
         } else if (message is _EmbeddingError) {
-          throw Exception('Embedding error: ${message.error}');
+          // Parse error type from error message
+          if (message.error.contains('Failed to load model')) {
+            throw ModelLoadException(
+              message.error,
+              modelPath: _model?.path,
+            );
+          } else if (message.error.contains('Failed to tokenize')) {
+            throw TokenizationException(message: message.error);
+          } else if (message.error.contains('Failed to create context')) {
+            throw ContextCreationException(
+              message: message.error,
+              contextSize: contextSize,
+              batchSize: batchSize,
+            );
+          } else {
+            throw InferenceException(
+              message: message.error,
+              details: 'Model: ${_model?.path ?? "unknown"}',
+            );
+          }
         } else if (message is _EmbeddingComplete) {
           break;
         }
@@ -924,7 +858,9 @@ void _runInference(_InferenceRequest request) {
         bindings.llama_adapter_lora_free(loraAdapter);
       }
       bindings.llama_free_model(model);
-      request.sendPort.send(_InferenceError('Failed to create context'));
+      final errorMsg =
+          'Failed to create context (contextSize: ${request.contextSize}, batchSize: ${request.batchSize})';
+      request.sendPort.send(_InferenceError(errorMsg));
       return;
     }
 
@@ -963,7 +899,10 @@ void _runInference(_InferenceRequest request) {
 
       if (nTokens < 0) {
         calloc.free(tokensPtr);
-        request.sendPort.send(_InferenceError('Failed to tokenize prompt'));
+        final errorMsg = nTokens == -1
+            ? 'Failed to tokenize prompt: buffer too small'
+            : 'Failed to tokenize prompt: error code $nTokens';
+        request.sendPort.send(_InferenceError(errorMsg));
         return;
       }
 
@@ -992,6 +931,37 @@ void _runInference(_InferenceRequest request) {
         bindings.llama_sampler_init_top_p(request.options.topP, 1),
       );
 
+      // Add penalties if specified
+      if (request.options.repeatPenalty != null ||
+          request.options.frequencyPenalty != null ||
+          request.options.presencePenalty != null) {
+        // Use default penalty_last_n of 64 if not specified
+        // Convert frequency/presence penalties: OpenAI uses -2.0 to 2.0, llama.cpp uses 0.0+
+        // For frequency: positive values increase likelihood, negative decrease
+        // For presence: positive values increase likelihood of new tokens
+        final repeatPenalty = request.options.repeatPenalty ?? 1.0;
+        final freqPenalty = request.options.frequencyPenalty != null
+            ? (request.options.frequencyPenalty! < 0
+                ? 1.0 + request.options.frequencyPenalty!.abs()
+                : 1.0 - request.options.frequencyPenalty!)
+            : 0.0;
+        final presencePenalty = request.options.presencePenalty != null
+            ? (request.options.presencePenalty! < 0
+                ? 1.0 + request.options.presencePenalty!.abs()
+                : 1.0 - request.options.presencePenalty!)
+            : 0.0;
+
+        bindings.llama_sampler_chain_add(
+          sampler,
+          bindings.llama_sampler_init_penalties(
+            64, // penalty_last_n: look at last 64 tokens
+            repeatPenalty,
+            freqPenalty,
+            presencePenalty,
+          ),
+        );
+      }
+
       // Use provided seed or generate random one
       final seed = request.options.seed ?? math.Random().nextInt(0x7FFFFFFF);
       bindings.llama_sampler_chain_add(
@@ -1001,7 +971,7 @@ void _runInference(_InferenceRequest request) {
 
       // Generate tokens
       const bufferSize = 256;
-      final pieceBuffer = calloc<Char>(bufferSize);
+      var pieceBuffer = calloc<Char>(bufferSize);
       var generatedTokens = 0;
       final newTokenPtr = calloc<Int32>(1);
 
@@ -1015,7 +985,8 @@ void _runInference(_InferenceRequest request) {
         }
 
         // Convert token to text using vocab
-        final pieceLen = bindings.llama_token_to_piece(
+        // First, try with the current buffer size
+        var pieceLen = bindings.llama_token_to_piece(
           vocab, // Use vocab instead of model
           newToken,
           pieceBuffer,
@@ -1023,6 +994,25 @@ void _runInference(_InferenceRequest request) {
           0, // lstrip
           true, // special
         );
+
+        // If buffer was too small (negative return), query the actual size needed
+        if (pieceLen < 0) {
+          // Query the actual size needed (negative value indicates required size)
+          final requiredSize = -pieceLen;
+          // Free old buffer and allocate larger one
+          calloc.free(pieceBuffer);
+          pieceBuffer = calloc<Char>(requiredSize);
+          
+          // Try again with the correct size
+          pieceLen = bindings.llama_token_to_piece(
+            vocab,
+            newToken,
+            pieceBuffer,
+            requiredSize,
+            0, // lstrip
+            true, // special
+          );
+        }
 
         if (pieceLen > 0) {
           final piece = pieceBuffer.cast<Utf8>().toDartString(length: pieceLen);

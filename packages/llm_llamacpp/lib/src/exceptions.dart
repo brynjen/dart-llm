@@ -208,3 +208,40 @@ class LoraLoadException implements Exception {
     return "LoraLoadException: $message\nPath: '$path'";
   }
 }
+
+// ============================================================
+// Tokenization Exceptions
+// ============================================================
+
+/// Thrown when tokenization fails.
+class TokenizationException implements Exception {
+  TokenizationException({
+    required this.message,
+    this.prompt,
+    this.details,
+  });
+
+  /// Error message.
+  final String message;
+
+  /// The prompt that failed to tokenize (may be truncated).
+  final String? prompt;
+
+  /// Additional error details, if available.
+  final String? details;
+
+  @override
+  String toString() {
+    final buffer = StringBuffer('TokenizationException: $message');
+    if (prompt != null) {
+      final truncated = prompt!.length > 100
+          ? '${prompt!.substring(0, 100)}...'
+          : prompt!;
+      buffer.write('\nPrompt: $truncated');
+    }
+    if (details != null) {
+      buffer.write('\nDetails: $details');
+    }
+    return buffer.toString();
+  }
+}

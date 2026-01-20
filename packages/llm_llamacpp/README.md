@@ -10,13 +10,17 @@ Available on [pub.dev](https://pub.dev/packages/llm_llamacpp).
 
 - Local on-device inference with GGUF models
 - Streaming token generation
+- **Non-streaming responses** - Get complete responses with `chatResponse()`
 - Multiple prompt templates (ChatML, Llama2, Llama3, Alpaca, Vicuna, Phi-3)
 - Tool calling via prompt convention
+- **Advanced generation options** - Temperature, top-p, top-k, repeat penalty, frequency/presence penalties
 - GPU acceleration support (CUDA, Metal, Vulkan)
 - Cross-platform: Android, iOS, macOS, Windows, Linux
 - Isolate-based inference (non-blocking UI)
 - **Model management** - Discover, load, pool, and download models
 - **GGUF metadata** - Read model info without loading
+- **Improved error handling** - Specific exception types with detailed error messages
+- **Vision model support** - Load and use vision models (image input processing coming soon)
 
 ## Installation
 
@@ -330,7 +334,7 @@ if (plan.method == AcquisitionMethod.convertFromSafetensors) {
 | `q3_k_m` | ~5.3x smaller | Lower | Memory constrained |
 | `q2_k` | ~8x smaller | Lowest | Extreme compression |
 
-### Basic Chat
+### Basic Chat (Streaming)
 
 ```dart
 import 'package:llm_llamacpp/llm_llamacpp.dart';
@@ -354,6 +358,54 @@ try {
 } finally {
   repo.dispose();
 }
+```
+
+### Conversation Continuity
+
+Maintain conversation history by passing all previous messages:
+
+```dart
+// First message
+final messages = [
+  LLMMessage(role: LLMRole.user, content: 'What is 2+2?'),
+];
+
+var stream = repo.streamChat('model', messages: messages);
+String response1 = '';
+await for (final chunk in stream) {
+  response1 += chunk.message?.content ?? '';
+}
+
+// Continue conversation - add assistant response and new user message
+messages.add(LLMMessage(role: LLMRole.assistant, content: response1));
+messages.add(LLMMessage(role: LLMRole.user, content: 'What about 3+3?'));
+
+stream = repo.streamChat('model', messages: messages);
+String response2 = '';
+await for (final chunk in stream) {
+  response2 += chunk.message?.content ?? '';
+}
+
+// The model sees the full conversation history
+print('Response 1: $response1');
+print('Response 2: $response2');
+```
+
+### Non-Streaming Chat
+
+Get a complete response without streaming:
+
+```dart
+final repo = LlamaCppChatRepository();
+await repo.loadModel('/path/to/model.gguf');
+
+final response = await repo.chatResponse('model', messages: [
+  LLMMessage(role: LLMRole.user, content: 'What is 2+2?'),
+]);
+
+print(response.content); // Complete response
+print('Tokens used: ${response.evalCount}');
+repo.dispose();
 ```
 
 ### Custom Prompt Template
@@ -472,3 +524,87 @@ Ensure the native library is accessible:
 - Ensure CUDA toolkit version matches your driver
 - Check `nvidia-smi` for driver CUDA version
 - Set `LD_LIBRARY_PATH` to include CUDA libs
+
+### Error Handling
+
+The package provides specific exception types for better error handling:
+
+```dart
+try {
+  final stream = chatRepo.streamChat('model', messages: messages);
+  await for (final chunk in stream) {
+    print(chunk.message?.content ?? '');
+  }
+} on ModelLoadException catch (e) {
+  print('Failed to load model: ${e.message}');
+  if (e.modelPath != null) {
+    print('Model path: ${e.modelPath}');
+  }
+} on TokenizationException catch (e) {
+  print('Tokenization failed: ${e.message}');
+  if (e.prompt != null) {
+    print('Problematic prompt: ${e.prompt}');
+  }
+} on ContextCreationException catch (e) {
+  print('Context creation failed: ${e.message}');
+  print('Requested contextSize: ${e.contextSize}');
+  print('Requested batchSize: ${e.batchSize}');
+} on InferenceException catch (e) {
+  print('Inference error: ${e.message}');
+  if (e.details != null) {
+    print('Details: ${e.details}');
+  }
+} on VisionNotSupportedException catch (e) {
+  print('Vision not supported: ${e.message}');
+}
+```
+
+### Generation Options
+
+Fine-tune generation behavior with `GenerationOptions`:
+
+```dart
+final options = GenerationOptions(
+  temperature: 0.8,        // Higher = more creative
+  topP: 0.95,              // Nucleus sampling threshold
+  topK: 40,                // Top-K sampling limit
+  maxTokens: 1024,         // Maximum tokens to generate
+  seed: 42,                // For reproducible outputs
+  repeatPenalty: 1.1,      // Penalty for repetition (>1.0 discourages)
+  frequencyPenalty: 0.5,   // Penalty based on token frequency
+  presencePenalty: 0.3,    // Penalty for token presence
+);
+
+final stream = chatRepo.streamChatWithGenerationOptions(
+  'model',
+  messages: messages,
+  generationOptions: options,
+);
+```
+
+### Performance Tips
+
+1. **GPU Acceleration**: Always enable GPU layers when available:
+   ```dart
+   final repo = LlamaCppChatRepository(nGpuLayers: 99);
+   ```
+
+2. **Context Size**: Use the minimum context size needed:
+   ```dart
+   final repo = LlamaCppChatRepository(contextSize: 2048); // Instead of 4096
+   ```
+
+3. **Batch Size**: Increase batch size for faster processing:
+   ```dart
+   final repo = LlamaCppChatRepository(batchSize: 1024);
+   ```
+
+4. **Model Quantization**: Use Q4_K_M for best balance of size and quality.
+
+5. **Memory Mapping**: Enable memory mapping for large models:
+   ```dart
+   final model = await repo.loadModel(
+     '/path/to/model.gguf',
+     options: ModelLoadOptions(useMemoryMap: true),
+   );
+   ```
