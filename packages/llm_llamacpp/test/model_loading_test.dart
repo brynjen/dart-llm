@@ -25,7 +25,7 @@ void main() {
         batchSize: 128,
         nGpuLayers: config.gpuLayers,
       );
-      
+
       // Try to initialize backend to check if library is available
       try {
         repo.initializeBackend();

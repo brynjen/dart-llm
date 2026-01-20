@@ -31,10 +31,7 @@ void main() {
       const config = TimeoutConfig.defaultConfig;
 
       // Exactly at threshold uses normal timeout (implementation uses >, not >=)
-      expect(
-        config.getReadTimeoutForPayload(1024 * 1024),
-        config.readTimeout,
-      );
+      expect(config.getReadTimeoutForPayload(1024 * 1024), config.readTimeout);
 
       // Just below threshold should use normal timeout
       expect(
@@ -71,10 +68,7 @@ void main() {
 
       expect(config.getReadTimeoutForPayload(256 * 1024), config.readTimeout);
       // At exactly threshold, uses normal timeout (implementation uses >, not >=)
-      expect(
-        config.getReadTimeoutForPayload(512 * 1024),
-        config.readTimeout,
-      );
+      expect(config.getReadTimeoutForPayload(512 * 1024), config.readTimeout);
       // Above threshold uses large payload timeout
       expect(
         config.getReadTimeoutForPayload(512 * 1024 + 1),

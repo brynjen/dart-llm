@@ -64,22 +64,18 @@ class OllamaChunkMessage extends LLMChunkMessage {
     // Parse tool calls
     List<LLMToolCall>? toolCalls;
     if (json['tool_calls'] != null) {
-      toolCalls = (json['tool_calls'] as List<dynamic>)
-          .map(
-            (toolCallJson) {
-              final argumentsValue = toolCallJson['function']['arguments'];
-              // If arguments is already a string, use it directly; otherwise encode it
-              final arguments = argumentsValue is String
-                  ? argumentsValue
-                  : jsonEncode(argumentsValue);
-              return LLMToolCall(
-                id: null, // Ollama doesn't provide IDs
-                name: toolCallJson['function']['name'],
-                arguments: arguments,
-              );
-            },
-          )
-          .toList();
+      toolCalls = (json['tool_calls'] as List<dynamic>).map((toolCallJson) {
+        final argumentsValue = toolCallJson['function']['arguments'];
+        // If arguments is already a string, use it directly; otherwise encode it
+        final arguments = argumentsValue is String
+            ? argumentsValue
+            : jsonEncode(argumentsValue);
+        return LLMToolCall(
+          id: null, // Ollama doesn't provide IDs
+          name: toolCallJson['function']['name'],
+          arguments: arguments,
+        );
+      }).toList();
     }
 
     // Handle thinking content embedded in content field (when tools are used)
