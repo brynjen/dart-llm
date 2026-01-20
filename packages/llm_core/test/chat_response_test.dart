@@ -12,9 +12,7 @@ void main() {
 
       final response = await mock.chatResponse(
         'test-model',
-        messages: [
-          LLMMessage(role: LLMRole.user, content: 'Hello'),
-        ],
+        messages: [LLMMessage(role: LLMRole.user, content: 'Hello')],
       );
 
       expect(response.content, 'Hello, world!');
@@ -28,14 +26,16 @@ void main() {
       final mock = MockLLMChatRepository();
       mock.setResponse('I will calculate that');
       mock.setToolCalls([
-        LLMToolCall(id: 'call_1', name: 'calculator', arguments: '{"a": 2, "b": 2}'),
+        LLMToolCall(
+          id: 'call_1',
+          name: 'calculator',
+          arguments: '{"a": 2, "b": 2}',
+        ),
       ]);
 
       final response = await mock.chatResponse(
         'test-model',
-        messages: [
-          LLMMessage(role: LLMRole.user, content: 'What is 2+2?'),
-        ],
+        messages: [LLMMessage(role: LLMRole.user, content: 'What is 2+2?')],
       );
 
       expect(response.toolCalls, isNotNull);
@@ -50,9 +50,7 @@ void main() {
       expect(
         () => mock.chatResponse(
           'test-model',
-          messages: [
-            LLMMessage(role: LLMRole.user, content: 'Hello'),
-          ],
+          messages: [LLMMessage(role: LLMRole.user, content: 'Hello')],
         ),
         throwsA(isA<LLMApiException>()),
       );

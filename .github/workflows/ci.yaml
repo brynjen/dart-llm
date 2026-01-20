@@ -147,31 +147,3 @@ jobs:
           cd ../llm_chatgpt && dart pub outdated --security || true
           cd ../llm_llamacpp && dart pub outdated --security || true
 
-  verify-publish:
-    name: Verify Package Publishing
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      
-      - name: Setup Dart SDK
-        uses: dart-lang/setup-dart@v1
-        with:
-          sdk: stable
-      
-      - name: Verify llm_core can be published
-        run: |
-          cd packages/llm_core
-          dart pub get
-          dart pub publish --dry-run
-      
-      - name: Verify llm_ollama can be published
-        run: |
-          cd packages/llm_ollama
-          dart pub get
-          dart pub publish --dry-run
-      
-      - name: Verify llm_chatgpt can be published
-        run: |
-          cd packages/llm_chatgpt
-          dart pub get
-          dart pub publish --dry-run

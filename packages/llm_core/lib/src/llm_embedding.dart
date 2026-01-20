@@ -17,9 +17,8 @@ class LLMEmbedding {
 
   /// Creates an embedding from a JSON map.
   factory LLMEmbedding.fromJson(Map<String, dynamic> json) => LLMEmbedding(
-        model: json['model'],
-        embedding: json['embeddings'] as List<double>,
-        promptEvalCount: json['prompt_eval_count'],
-      );
+    model: json['model'],
+    embedding: json['embeddings'] as List<double>,
+    promptEvalCount: json['prompt_eval_count'],
+  );
 }
-

@@ -28,12 +28,12 @@ class OllamaEmbeddingResponse {
       );
 
   Map<String, dynamic> toJson() => {
-        'model': model,
-        'total_duration': totalDuration,
-        'load_duration': loadDuration,
-        'prompt_eval_count': promptEvalCount,
-        'embeddings': embeddings,
-      };
+    'model': model,
+    'total_duration': totalDuration,
+    'load_duration': loadDuration,
+    'prompt_eval_count': promptEvalCount,
+    'embeddings': embeddings,
+  };
 }
 
 /// Extension to convert Ollama embedding response to LLM embeddings.
@@ -48,4 +48,3 @@ extension OllamaEmbeddingExt on OllamaEmbeddingResponse {
       )
       .toList(growable: false);
 }
-

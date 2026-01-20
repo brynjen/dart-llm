@@ -74,10 +74,7 @@ class AmbiguousModelException implements Exception {
 
 /// Thrown when a repository only has safetensors and quantization is required.
 class ConversionRequiredException implements Exception {
-  ConversionRequiredException({
-    required this.repoId,
-    required this.message,
-  });
+  ConversionRequiredException({required this.repoId, required this.message});
 
   /// The HuggingFace repository ID.
   final String repoId;
@@ -103,10 +100,7 @@ class ConversionRequiredException implements Exception {
 
 /// Thrown when a repository has no usable model files.
 class UnsupportedModelException implements Exception {
-  UnsupportedModelException({
-    required this.repoId,
-    required this.message,
-  });
+  UnsupportedModelException({required this.repoId, required this.message});
 
   /// The HuggingFace repository ID.
   final String repoId;
@@ -126,10 +120,7 @@ class UnsupportedModelException implements Exception {
 
 /// Thrown when llama.cpp backend initialization fails.
 class BackendInitException implements Exception {
-  BackendInitException({
-    required this.message,
-    this.details,
-  });
+  BackendInitException({required this.message, this.details});
 
   /// Error message.
   final String message;
@@ -148,10 +139,7 @@ class BackendInitException implements Exception {
 
 /// Thrown when inference fails.
 class InferenceException implements Exception {
-  InferenceException({
-    required this.message,
-    this.details,
-  });
+  InferenceException({required this.message, this.details});
 
   /// Error message.
   final String message;
@@ -207,10 +195,7 @@ class ContextCreationException implements Exception {
 
 /// Thrown when a LoRA adapter fails to load.
 class LoraLoadException implements Exception {
-  LoraLoadException({
-    required this.path,
-    required this.message,
-  });
+  LoraLoadException({required this.path, required this.message});
 
   /// Path to the LoRA file that failed to load.
   final String path;

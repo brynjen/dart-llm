@@ -41,10 +41,7 @@ class TestConfig {
     }
 
     // Check common locations
-    final commonPaths = [
-      '/tmp/qwen2.5-0.5b-q4.gguf',
-      '/tmp/test-model.gguf',
-    ];
+    final commonPaths = ['/tmp/qwen2.5-0.5b-q4.gguf', '/tmp/test-model.gguf'];
     for (final path in commonPaths) {
       if (File(path).existsSync()) {
         return path;
@@ -67,10 +64,7 @@ class TestConfig {
     }
 
     // Check common locations
-    final commonPaths = [
-      '/tmp/qwen3-vl-8b-q4km.gguf',
-      '/tmp/qwen3-vl.gguf',
-    ];
+    final commonPaths = ['/tmp/qwen3-vl-8b-q4km.gguf', '/tmp/qwen3-vl.gguf'];
     for (final path in commonPaths) {
       if (File(path).existsSync()) {
         return path;
@@ -110,7 +104,9 @@ class TestConfig {
 
   /// Check if any model is available for testing
   bool get hasAnyModel =>
-      textModelPath != null || visionModelPath != null || smallModelPath != null;
+      textModelPath != null ||
+      visionModelPath != null ||
+      smallModelPath != null;
 
   /// Print configuration summary
   void printConfig() {
@@ -140,8 +136,10 @@ class TestConfig {
 /// Helper to skip tests when model is not available
 void skipIfNoModel(String? modelPath, String modelType) {
   if (modelPath == null || !File(modelPath).existsSync()) {
-    throw TestSkippedException('No $modelType model available. '
-        'Set LLAMA_TEST_MODEL environment variable or place model in test/models/');
+    throw TestSkippedException(
+      'No $modelType model available. '
+      'Set LLAMA_TEST_MODEL environment variable or place model in test/models/',
+    );
   }
 }
 
@@ -152,4 +150,3 @@ class TestSkippedException implements Exception {
   @override
   String toString() => message;
 }
-

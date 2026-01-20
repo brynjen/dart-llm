@@ -288,14 +288,14 @@ melos analyze
 
 ## Release Process
 
-Releases are managed by maintainers using Melos:
+Releases are managed by maintainers manually:
 
 ```bash
 # Version bumping (maintainers only)
 melos version
 
-# Publishing (maintainers only)
-melos publish
+# Publishing to pub.dev is done manually by maintainers
+# There is no automated publishing workflow
 ```
 
 ### Versioning

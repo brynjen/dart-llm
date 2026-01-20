@@ -113,7 +113,8 @@ class DefaultLLMMetrics implements LLMMetrics {
       result['$model.total_generated_tokens'] = metrics.totalGeneratedTokens;
 
       if (metrics.requestCount > 0) {
-        final avgLatency = metrics.totalLatency.inMilliseconds / metrics.requestCount;
+        final avgLatency =
+            metrics.totalLatency.inMilliseconds / metrics.requestCount;
         result['$model.avg_latency_ms'] = avgLatency;
 
         if (metrics.latencies.isNotEmpty) {
@@ -122,9 +123,12 @@ class DefaultLLMMetrics implements LLMMetrics {
           final p95Index = (sorted.length * 0.95).floor();
           final p99Index = (sorted.length * 0.99).floor();
 
-          result['$model.p50_latency_ms'] = sorted[p50Index.clamp(0, sorted.length - 1)];
-          result['$model.p95_latency_ms'] = sorted[p95Index.clamp(0, sorted.length - 1)];
-          result['$model.p99_latency_ms'] = sorted[p99Index.clamp(0, sorted.length - 1)];
+          result['$model.p50_latency_ms'] =
+              sorted[p50Index.clamp(0, sorted.length - 1)];
+          result['$model.p95_latency_ms'] =
+              sorted[p95Index.clamp(0, sorted.length - 1)];
+          result['$model.p99_latency_ms'] =
+              sorted[p99Index.clamp(0, sorted.length - 1)];
         }
       }
 

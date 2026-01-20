@@ -7,9 +7,7 @@ import 'loader/loader.dart';
 /// Models are pooled by path - if the same model is loaded multiple times,
 /// the existing instance is returned with an incremented reference count.
 class LlamaCppModelLoader {
-  LlamaCppModelLoader({
-    LlamaBindings? bindings,
-  }) : _bindings = bindings;
+  LlamaCppModelLoader({LlamaBindings? bindings}) : _bindings = bindings;
 
   LlamaBindings? _bindings;
   bool _backendInitialized = false;

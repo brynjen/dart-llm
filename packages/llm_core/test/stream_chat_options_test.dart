@@ -16,7 +16,7 @@ void main() {
     test('copyWith creates new instance with changed fields', () {
       final original = StreamChatOptions(think: false);
       final copied = original.copyWith(think: true);
-      
+
       expect(original.think, false);
       expect(copied.think, true);
     });

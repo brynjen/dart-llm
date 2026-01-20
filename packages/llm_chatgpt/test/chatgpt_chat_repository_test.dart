@@ -57,18 +57,19 @@ void main() {
   group('ChatGPTChatRepository validation', () {
     test('validates model name', () async {
       final repo = ChatGPTChatRepository(apiKey: 'test-key');
-      
+
       await expectLater(
-        repo.streamChat('', messages: [
-          LLMMessage(role: LLMRole.user, content: 'Hello'),
-        ]),
+        repo.streamChat(
+          '',
+          messages: [LLMMessage(role: LLMRole.user, content: 'Hello')],
+        ),
         emitsError(isA<LLMApiException>()),
       );
     });
 
     test('validates messages', () async {
       final repo = ChatGPTChatRepository(apiKey: 'test-key');
-      
+
       await expectLater(
         repo.streamChat('test-model', messages: []),
         emitsError(isA<LLMApiException>()),

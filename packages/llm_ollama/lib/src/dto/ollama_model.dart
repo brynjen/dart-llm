@@ -145,4 +145,3 @@ class OllamaPullProgress {
     return 'OllamaPullProgress(status: $status, progress: ${(progress * 100).toStringAsFixed(1)}%)';
   }
 }
-

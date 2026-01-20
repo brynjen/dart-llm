@@ -102,4 +102,3 @@ class OllamaChunkMessage extends LLMChunkMessage {
     );
   }
 }
-

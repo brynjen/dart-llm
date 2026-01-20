@@ -28,8 +28,8 @@ class LlamaLoraAdapter {
     required this.path,
     required Pointer<llama_adapter_lora> pointer,
     required LlamaBindings bindings,
-  })  : _pointer = pointer,
-        _bindings = bindings;
+  }) : _pointer = pointer,
+       _bindings = bindings;
 
   /// Path to the LoRA adapter file.
   final String path;
@@ -359,10 +359,7 @@ class LoraManager {
 
 /// Configuration for a LoRA to be applied during inference.
 class LoraConfig {
-  const LoraConfig({
-    required this.path,
-    this.scale = 1.0,
-  });
+  const LoraConfig({required this.path, this.scale = 1.0});
 
   /// Path to the LoRA file.
   final String path;

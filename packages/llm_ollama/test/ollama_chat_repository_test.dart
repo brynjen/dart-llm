@@ -45,19 +45,20 @@ void main() {
   group('OllamaChatRepository validation', () {
     test('validates model name', () async {
       final repo = OllamaChatRepository();
-      
+
       // Validation happens when the stream is listened to
       await expectLater(
-        repo.streamChat('', messages: [
-          LLMMessage(role: LLMRole.user, content: 'Hello'),
-        ]),
+        repo.streamChat(
+          '',
+          messages: [LLMMessage(role: LLMRole.user, content: 'Hello')],
+        ),
         emitsError(isA<LLMApiException>()),
       );
     });
 
     test('validates messages', () async {
       final repo = OllamaChatRepository();
-      
+
       await expectLater(
         repo.streamChat('test-model', messages: []),
         emitsError(isA<LLMApiException>()),

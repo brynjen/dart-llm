@@ -5,9 +5,8 @@ import 'model_info.dart';
 
 /// Discovers GGUF models in directories and reads their metadata.
 class LlamaCppModelDiscovery {
-  LlamaCppModelDiscovery({
-    Set<String>? loadedModelPaths,
-  }) : _loadedModelPaths = loadedModelPaths ?? {};
+  LlamaCppModelDiscovery({Set<String>? loadedModelPaths})
+    : _loadedModelPaths = loadedModelPaths ?? {};
 
   /// Set of currently loaded model paths (for isLoaded flag).
   final Set<String> _loadedModelPaths;
@@ -39,7 +38,10 @@ class LlamaCppModelDiscovery {
     for (final entity in entities) {
       if (entity is File && _isGgufFile(entity.path)) {
         try {
-          final info = await getModelInfo(entity.path, readMetadata: readMetadata);
+          final info = await getModelInfo(
+            entity.path,
+            readMetadata: readMetadata,
+          );
           models.add(info);
         } catch (e) {
           // Skip files that can't be read
@@ -115,10 +117,9 @@ class LlamaCppModelDiscovery {
     final models = <ModelInfo>[];
     for (final location in locations) {
       if (await Directory(location).exists()) {
-        models.addAll(await discoverModels(
-          location,
-          readMetadata: readMetadata,
-        ));
+        models.addAll(
+          await discoverModels(location, readMetadata: readMetadata),
+        );
       }
     }
 

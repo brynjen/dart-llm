@@ -237,7 +237,9 @@ class GgufMetadata {
   }
 
   static Future<GgufMetadata> _readMetadata(
-      RandomAccessFile raf, String path) async {
+    RandomAccessFile raf,
+    String path,
+  ) async {
     // Read magic
     final magic = await _readUint32(raf);
     if (magic != ggufMagic) {
@@ -340,7 +342,8 @@ class GgufMetadata {
   static Future<dynamic> _readValue(RandomAccessFile raf) async {
     final bytes = await raf.read(4);
     final type = GgufMetadataType.fromValue(
-        ByteData.sublistView(bytes).getUint32(0, Endian.little));
+      ByteData.sublistView(bytes).getUint32(0, Endian.little),
+    );
 
     switch (type) {
       case GgufMetadataType.uint8:
@@ -348,19 +351,23 @@ class GgufMetadata {
       case GgufMetadataType.int8:
         return ByteData.sublistView(await raf.read(1)).getInt8(0);
       case GgufMetadataType.uint16:
-        return ByteData.sublistView(await raf.read(2))
-            .getUint16(0, Endian.little);
+        return ByteData.sublistView(
+          await raf.read(2),
+        ).getUint16(0, Endian.little);
       case GgufMetadataType.int16:
-        return ByteData.sublistView(await raf.read(2))
-            .getInt16(0, Endian.little);
+        return ByteData.sublistView(
+          await raf.read(2),
+        ).getInt16(0, Endian.little);
       case GgufMetadataType.uint32:
         return await _readUint32(raf);
       case GgufMetadataType.int32:
-        return ByteData.sublistView(await raf.read(4))
-            .getInt32(0, Endian.little);
+        return ByteData.sublistView(
+          await raf.read(4),
+        ).getInt32(0, Endian.little);
       case GgufMetadataType.float32:
-        return ByteData.sublistView(await raf.read(4))
-            .getFloat32(0, Endian.little);
+        return ByteData.sublistView(
+          await raf.read(4),
+        ).getFloat32(0, Endian.little);
       case GgufMetadataType.bool_:
         return (await raf.read(1))[0] != 0;
       case GgufMetadataType.string:
@@ -390,18 +397,21 @@ class GgufMetadata {
       case GgufMetadataType.uint64:
         return await _readUint64(raf);
       case GgufMetadataType.int64:
-        return ByteData.sublistView(await raf.read(8))
-            .getInt64(0, Endian.little);
+        return ByteData.sublistView(
+          await raf.read(8),
+        ).getInt64(0, Endian.little);
       case GgufMetadataType.float64:
-        return ByteData.sublistView(await raf.read(8))
-            .getFloat64(0, Endian.little);
+        return ByteData.sublistView(
+          await raf.read(8),
+        ).getFloat64(0, Endian.little);
     }
   }
 
   static dynamic _readValueSync(RandomAccessFile raf) {
     final bytes = raf.readSync(4);
     final type = GgufMetadataType.fromValue(
-        ByteData.sublistView(bytes).getUint32(0, Endian.little));
+      ByteData.sublistView(bytes).getUint32(0, Endian.little),
+    );
 
     switch (type) {
       case GgufMetadataType.uint8:
@@ -409,8 +419,9 @@ class GgufMetadata {
       case GgufMetadataType.int8:
         return ByteData.sublistView(raf.readSync(1)).getInt8(0);
       case GgufMetadataType.uint16:
-        return ByteData.sublistView(raf.readSync(2))
-            .getUint16(0, Endian.little);
+        return ByteData.sublistView(
+          raf.readSync(2),
+        ).getUint16(0, Endian.little);
       case GgufMetadataType.int16:
         return ByteData.sublistView(raf.readSync(2)).getInt16(0, Endian.little);
       case GgufMetadataType.uint32:
@@ -418,8 +429,9 @@ class GgufMetadata {
       case GgufMetadataType.int32:
         return ByteData.sublistView(raf.readSync(4)).getInt32(0, Endian.little);
       case GgufMetadataType.float32:
-        return ByteData.sublistView(raf.readSync(4))
-            .getFloat32(0, Endian.little);
+        return ByteData.sublistView(
+          raf.readSync(4),
+        ).getFloat32(0, Endian.little);
       case GgufMetadataType.bool_:
         return raf.readSync(1)[0] != 0;
       case GgufMetadataType.string:
@@ -451,32 +463,39 @@ class GgufMetadata {
       case GgufMetadataType.int64:
         return ByteData.sublistView(raf.readSync(8)).getInt64(0, Endian.little);
       case GgufMetadataType.float64:
-        return ByteData.sublistView(raf.readSync(8))
-            .getFloat64(0, Endian.little);
+        return ByteData.sublistView(
+          raf.readSync(8),
+        ).getFloat64(0, Endian.little);
     }
   }
 
   static Future<dynamic> _readTypedValue(
-      RandomAccessFile raf, GgufMetadataType type) async {
+    RandomAccessFile raf,
+    GgufMetadataType type,
+  ) async {
     switch (type) {
       case GgufMetadataType.uint8:
         return (await raf.read(1))[0];
       case GgufMetadataType.int8:
         return ByteData.sublistView(await raf.read(1)).getInt8(0);
       case GgufMetadataType.uint16:
-        return ByteData.sublistView(await raf.read(2))
-            .getUint16(0, Endian.little);
+        return ByteData.sublistView(
+          await raf.read(2),
+        ).getUint16(0, Endian.little);
       case GgufMetadataType.int16:
-        return ByteData.sublistView(await raf.read(2))
-            .getInt16(0, Endian.little);
+        return ByteData.sublistView(
+          await raf.read(2),
+        ).getInt16(0, Endian.little);
       case GgufMetadataType.uint32:
         return await _readUint32(raf);
       case GgufMetadataType.int32:
-        return ByteData.sublistView(await raf.read(4))
-            .getInt32(0, Endian.little);
+        return ByteData.sublistView(
+          await raf.read(4),
+        ).getInt32(0, Endian.little);
       case GgufMetadataType.float32:
-        return ByteData.sublistView(await raf.read(4))
-            .getFloat32(0, Endian.little);
+        return ByteData.sublistView(
+          await raf.read(4),
+        ).getFloat32(0, Endian.little);
       case GgufMetadataType.bool_:
         return (await raf.read(1))[0] != 0;
       case GgufMetadataType.string:
@@ -484,11 +503,13 @@ class GgufMetadata {
       case GgufMetadataType.uint64:
         return await _readUint64(raf);
       case GgufMetadataType.int64:
-        return ByteData.sublistView(await raf.read(8))
-            .getInt64(0, Endian.little);
+        return ByteData.sublistView(
+          await raf.read(8),
+        ).getInt64(0, Endian.little);
       case GgufMetadataType.float64:
-        return ByteData.sublistView(await raf.read(8))
-            .getFloat64(0, Endian.little);
+        return ByteData.sublistView(
+          await raf.read(8),
+        ).getFloat64(0, Endian.little);
       case GgufMetadataType.array:
         // Nested arrays not supported in metadata
         return null;
@@ -496,15 +517,18 @@ class GgufMetadata {
   }
 
   static dynamic _readTypedValueSync(
-      RandomAccessFile raf, GgufMetadataType type) {
+    RandomAccessFile raf,
+    GgufMetadataType type,
+  ) {
     switch (type) {
       case GgufMetadataType.uint8:
         return raf.readSync(1)[0];
       case GgufMetadataType.int8:
         return ByteData.sublistView(raf.readSync(1)).getInt8(0);
       case GgufMetadataType.uint16:
-        return ByteData.sublistView(raf.readSync(2))
-            .getUint16(0, Endian.little);
+        return ByteData.sublistView(
+          raf.readSync(2),
+        ).getUint16(0, Endian.little);
       case GgufMetadataType.int16:
         return ByteData.sublistView(raf.readSync(2)).getInt16(0, Endian.little);
       case GgufMetadataType.uint32:
@@ -512,8 +536,9 @@ class GgufMetadata {
       case GgufMetadataType.int32:
         return ByteData.sublistView(raf.readSync(4)).getInt32(0, Endian.little);
       case GgufMetadataType.float32:
-        return ByteData.sublistView(raf.readSync(4))
-            .getFloat32(0, Endian.little);
+        return ByteData.sublistView(
+          raf.readSync(4),
+        ).getFloat32(0, Endian.little);
       case GgufMetadataType.bool_:
         return raf.readSync(1)[0] != 0;
       case GgufMetadataType.string:
@@ -523,8 +548,9 @@ class GgufMetadata {
       case GgufMetadataType.int64:
         return ByteData.sublistView(raf.readSync(8)).getInt64(0, Endian.little);
       case GgufMetadataType.float64:
-        return ByteData.sublistView(raf.readSync(8))
-            .getFloat64(0, Endian.little);
+        return ByteData.sublistView(
+          raf.readSync(8),
+        ).getFloat64(0, Endian.little);
       case GgufMetadataType.array:
         // Nested arrays not supported in metadata
         return null;
@@ -532,7 +558,9 @@ class GgufMetadata {
   }
 
   static Future<void> _skipValue(
-      RandomAccessFile raf, GgufMetadataType type) async {
+    RandomAccessFile raf,
+    GgufMetadataType type,
+  ) async {
     final size = _getElementSize(type);
     if (size > 0) {
       await raf.setPosition(await raf.position() + size);
@@ -608,4 +636,3 @@ class GgufMetadata {
     return types[fileType] ?? 'Unknown ($fileType)';
   }
 }
-

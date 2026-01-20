@@ -23,7 +23,9 @@ void main() {
       visionModelPath = config.visionModelPath;
       if (visionModelPath == null) {
         print('⚠️  No vision model available');
-        print('   Set LLAMA_TEST_VISION_MODEL or place model in test/models/vision.gguf');
+        print(
+          '   Set LLAMA_TEST_VISION_MODEL or place model in test/models/vision.gguf',
+        );
         print('   Recommended: unsloth/Qwen3-VL-8B-Instruct-GGUF');
       } else {
         print('Using vision model: $visionModelPath');
@@ -62,36 +64,40 @@ void main() {
       print('  Context size (train): ${repo.model!.contextSizeTrain}');
     });
 
-    test('vision model handles text-only prompts', () async {
-      if (visionModelPath == null) {
-        markTestSkipped('No vision model available');
-        return;
-      }
+    test(
+      'vision model handles text-only prompts',
+      () async {
+        if (visionModelPath == null) {
+          markTestSkipped('No vision model available');
+          return;
+        }
 
-      await repo.loadModel(visionModelPath!);
+        await repo.loadModel(visionModelPath!);
 
-      final messages = [
-        LLMMessage(
-          role: LLMRole.user,
-          content: 'What is the capital of Japan? Answer briefly.',
-        ),
-      ];
+        final messages = [
+          LLMMessage(
+            role: LLMRole.user,
+            content: 'What is the capital of Japan? Answer briefly.',
+          ),
+        ];
 
-      print('Prompt: ${messages.first.content}');
-      print('Response: ');
+        print('Prompt: ${messages.first.content}');
+        print('Response: ');
 
-      final buffer = StringBuffer();
-      await for (final chunk in repo.streamChat('test', messages: messages)) {
-        final content = chunk.message?.content ?? '';
-        buffer.write(content);
-        stdout.write(content);
-      }
-      print('\n');
+        final buffer = StringBuffer();
+        await for (final chunk in repo.streamChat('test', messages: messages)) {
+          final content = chunk.message?.content ?? '';
+          buffer.write(content);
+          stdout.write(content);
+        }
+        print('\n');
 
-      final response = buffer.toString().toLowerCase();
-      expect(response, isNotEmpty);
-      expect(response, contains('tokyo'));
-    }, timeout: Timeout(Duration(minutes: 2)));
+        final response = buffer.toString().toLowerCase();
+        expect(response, isNotEmpty);
+        expect(response, contains('tokyo'));
+      },
+      timeout: Timeout(Duration(minutes: 2)),
+    );
 
     test('vision model maintains conversation', () async {
       if (visionModelPath == null) {
@@ -107,16 +113,16 @@ void main() {
           role: LLMRole.system,
           content: 'You are a helpful assistant. Be concise.',
         ),
-        LLMMessage(
-          role: LLMRole.user,
-          content: 'Remember this number: 42',
-        ),
+        LLMMessage(role: LLMRole.user, content: 'Remember this number: 42'),
       ];
 
       String response1 = '';
       try {
         final buffer1 = StringBuffer();
-        await for (final chunk in repo.streamChat('test', messages: messages1)) {
+        await for (final chunk in repo.streamChat(
+          'test',
+          messages: messages1,
+        )) {
           buffer1.write(chunk.message?.content ?? '');
         }
         response1 = buffer1.toString();
@@ -139,7 +145,10 @@ void main() {
 
       try {
         final buffer2 = StringBuffer();
-        await for (final chunk in repo.streamChat('test', messages: messages2)) {
+        await for (final chunk in repo.streamChat(
+          'test',
+          messages: messages2,
+        )) {
           buffer2.write(chunk.message?.content ?? '');
         }
         final response2 = buffer2.toString();
@@ -150,7 +159,11 @@ void main() {
         // Vision models can sometimes produce incomplete UTF-8 sequences
         print('Turn 2 had inference error (expected with some models): $e');
         // Still pass the test if inference ran at all
-        expect(true, isTrue, reason: 'Inference completed with minor encoding issue');
+        expect(
+          true,
+          isTrue,
+          reason: 'Inference completed with minor encoding issue',
+        );
       }
     }, timeout: Timeout(Duration(minutes: 3)));
   });
@@ -222,10 +235,7 @@ void main() {
           role: LLMRole.system,
           content: 'You are a math tutor. Show your work step by step.',
         ),
-        LLMMessage(
-          role: LLMRole.user,
-          content: 'What is 15 + 27?',
-        ),
+        LLMMessage(role: LLMRole.user, content: 'What is 15 + 27?'),
       ];
 
       final buffer = StringBuffer();
@@ -254,10 +264,7 @@ void main() {
           content:
               'You are a Shakespearean actor. Respond in Early Modern English.',
         ),
-        LLMMessage(
-          role: LLMRole.user,
-          content: 'Good morning!',
-        ),
+        LLMMessage(role: LLMRole.user, content: 'Good morning!'),
       ];
 
       final buffer = StringBuffer();
@@ -269,7 +276,8 @@ void main() {
       print('Shakespearean response: $response');
 
       // Should have some archaic language or at minimum respond
-      final hasArchaicLanguage = response.contains('thee') ||
+      final hasArchaicLanguage =
+          response.contains('thee') ||
           response.contains('thou') ||
           response.contains('good morrow') ||
           response.contains('prithee') ||
@@ -277,8 +285,11 @@ void main() {
           response.contains('doth') ||
           response.contains('art') ||
           response.contains('morn');
-      expect(hasArchaicLanguage || response.isNotEmpty, isTrue,
-          reason: 'Expected archaic language or non-empty response');
+      expect(
+        hasArchaicLanguage || response.isNotEmpty,
+        isTrue,
+        reason: 'Expected archaic language or non-empty response',
+      );
     }, timeout: Timeout(Duration(minutes: 2)));
   });
 
@@ -301,42 +312,50 @@ void main() {
       repo.dispose();
     });
 
-    test('handles image placeholder tokens in prompt', () async {
-      if (visionModelPath == null) {
-        markTestSkipped('No vision model available');
-        return;
-      }
+    test(
+      'handles image placeholder tokens in prompt',
+      () async {
+        if (visionModelPath == null) {
+          markTestSkipped('No vision model available');
+          return;
+        }
 
-      await repo.loadModel(visionModelPath!);
+        await repo.loadModel(visionModelPath!);
 
-      // Test that the model doesn't crash with vision tokens
-      // (even though we're not actually sending images)
-      final messages = [
-        LLMMessage(
-          role: LLMRole.user,
-          content: 'Describe what you would see in a typical sunset photo.',
-        ),
-      ];
+        // Test that the model doesn't crash with vision tokens
+        // (even though we're not actually sending images)
+        final messages = [
+          LLMMessage(
+            role: LLMRole.user,
+            content: 'Describe what you would see in a typical sunset photo.',
+          ),
+        ];
 
-      final buffer = StringBuffer();
-      await for (final chunk in repo.streamChat('test', messages: messages)) {
-        buffer.write(chunk.message?.content ?? '');
-      }
+        final buffer = StringBuffer();
+        await for (final chunk in repo.streamChat('test', messages: messages)) {
+          buffer.write(chunk.message?.content ?? '');
+        }
 
-      final response = buffer.toString().toLowerCase();
-      print('Sunset description: $response');
+        final response = buffer.toString().toLowerCase();
+        print('Sunset description: $response');
 
-      // Should describe sunset imagery or at minimum respond
-      final hasSunsetImagery = response.contains('sun') ||
-          response.contains('sky') ||
-          response.contains('orange') ||
-          response.contains('red') ||
-          response.contains('horizon') ||
-          response.contains('cloud') ||
-          response.contains('color');
-      expect(hasSunsetImagery || response.isNotEmpty, isTrue,
-          reason: 'Expected sunset imagery description or non-empty response');
-    }, timeout: Timeout(Duration(minutes: 2)));
+        // Should describe sunset imagery or at minimum respond
+        final hasSunsetImagery =
+            response.contains('sun') ||
+            response.contains('sky') ||
+            response.contains('orange') ||
+            response.contains('red') ||
+            response.contains('horizon') ||
+            response.contains('cloud') ||
+            response.contains('color');
+        expect(
+          hasSunsetImagery || response.isNotEmpty,
+          isTrue,
+          reason: 'Expected sunset imagery description or non-empty response',
+        );
+      },
+      timeout: Timeout(Duration(minutes: 2)),
+    );
 
     test('vision model special tokens are recognized', () async {
       if (visionModelPath == null) {
@@ -347,7 +366,10 @@ void main() {
       await repo.loadModel(visionModelPath!);
 
       // Vision models should have valid special tokens
-      expect(repo.model!.vocabSize, greaterThan(100000)); // Qwen models have large vocab
+      expect(
+        repo.model!.vocabSize,
+        greaterThan(100000),
+      ); // Qwen models have large vocab
       expect(repo.model!.bosToken, greaterThanOrEqualTo(0));
       expect(repo.model!.eosToken, greaterThanOrEqualTo(0));
 
@@ -385,4 +407,3 @@ void main() {
     });
   });
 }
-

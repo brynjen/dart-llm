@@ -29,4 +29,3 @@ export 'src/ollama_repository.dart';
 export 'src/dto/ollama_model.dart';
 export 'src/dto/ollama_response.dart';
 export 'src/dto/ollama_embedding_response.dart';
-

@@ -53,7 +53,7 @@ void main() {
       ];
 
       print('Prompt: ${messages.first.content}');
-      print('Response: ', );
+      print('Response: ');
 
       final buffer = StringBuffer();
       await for (final chunk in repo.streamChat('test', messages: messages)) {
@@ -78,10 +78,7 @@ void main() {
       await repo.loadModel(modelPath!);
 
       final messages = [
-        LLMMessage(
-          role: LLMRole.user,
-          content: 'Count from 1 to 5.',
-        ),
+        LLMMessage(role: LLMRole.user, content: 'Count from 1 to 5.'),
       ];
 
       int tokenCount = 0;
@@ -114,10 +111,7 @@ void main() {
           role: LLMRole.system,
           content: 'You are a pirate. Always respond like a pirate.',
         ),
-        LLMMessage(
-          role: LLMRole.user,
-          content: 'Hello!',
-        ),
+        LLMMessage(role: LLMRole.user, content: 'Hello!'),
       ];
 
       final buffer = StringBuffer();
@@ -129,15 +123,19 @@ void main() {
       print('Pirate response: $response');
 
       // Should have some pirate-like language or at minimum respond
-      final hasPirateLanguage = response.contains('ahoy') ||
+      final hasPirateLanguage =
+          response.contains('ahoy') ||
           response.contains('matey') ||
           response.contains('arr') ||
           response.contains('ye') ||
           response.contains('captain') ||
           response.contains('sea') ||
           response.contains('ship');
-      expect(hasPirateLanguage || response.isNotEmpty, isTrue,
-          reason: 'Expected pirate-like language or non-empty response');
+      expect(
+        hasPirateLanguage || response.isNotEmpty,
+        isTrue,
+        reason: 'Expected pirate-like language or non-empty response',
+      );
     }, timeout: Timeout(Duration(minutes: 2)));
 
     test('maintains conversation context', () async {
@@ -154,10 +152,7 @@ void main() {
           role: LLMRole.system,
           content: 'Remember what the user tells you. Be brief.',
         ),
-        LLMMessage(
-          role: LLMRole.user,
-          content: 'My favorite color is blue.',
-        ),
+        LLMMessage(role: LLMRole.user, content: 'My favorite color is blue.'),
       ];
 
       final buffer1 = StringBuffer();
@@ -171,10 +166,7 @@ void main() {
       final messages2 = [
         ...messages1,
         LLMMessage(role: LLMRole.assistant, content: response1),
-        LLMMessage(
-          role: LLMRole.user,
-          content: 'What is my favorite color?',
-        ),
+        LLMMessage(role: LLMRole.user, content: 'What is my favorite color?'),
       ];
 
       final buffer2 = StringBuffer();
@@ -197,10 +189,7 @@ void main() {
       await repo.loadModel(modelPath!);
 
       final messages = [
-        LLMMessage(
-          role: LLMRole.user,
-          content: 'Say exactly one word: Hello',
-        ),
+        LLMMessage(role: LLMRole.user, content: 'Say exactly one word: Hello'),
       ];
 
       final buffer = StringBuffer();
@@ -215,40 +204,44 @@ void main() {
       // Response should be relatively short
       final response = buffer.toString().trim();
       print('Response: "$response" (tokens: $tokenCount)');
-      
+
       // Should be a short response
       expect(response.split(' ').length, lessThanOrEqualTo(10));
     }, timeout: Timeout(Duration(minutes: 1)));
 
-    test('handles empty message list gracefully', () async {
-      if (modelPath == null) {
-        markTestSkipped('No model available');
-        return;
-      }
+    test(
+      'handles empty message list gracefully',
+      () async {
+        if (modelPath == null) {
+          markTestSkipped('No model available');
+          return;
+        }
 
-      await repo.loadModel(modelPath!);
+        await repo.loadModel(modelPath!);
 
-      // Empty messages should still work (might generate something random)
-      final buffer = StringBuffer();
-      await for (final chunk
-          in repo.streamChat('test', messages: <LLMMessage>[])) {
-        buffer.write(chunk.message?.content ?? '');
-      }
+        // Empty messages should still work (might generate something random)
+        final buffer = StringBuffer();
+        await for (final chunk in repo.streamChat(
+          'test',
+          messages: <LLMMessage>[],
+        )) {
+          buffer.write(chunk.message?.content ?? '');
+        }
 
-      // Should complete without error
-      expect(true, isTrue);
-    }, timeout: Timeout(Duration(minutes: 1)));
+        // Should complete without error
+        expect(true, isTrue);
+      },
+      timeout: Timeout(Duration(minutes: 1)),
+    );
 
     test('throws when no model loaded', () async {
       // Don't load a model
-      expect(
-        () async {
-          await for (final _ in repo.streamChat('test', messages: [
-            LLMMessage(role: LLMRole.user, content: 'Hello'),
-          ])) {}
-        },
-        throwsA(isA<ModelLoadException>()),
-      );
+      expect(() async {
+        await for (final _ in repo.streamChat(
+          'test',
+          messages: [LLMMessage(role: LLMRole.user, content: 'Hello')],
+        )) {}
+      }, throwsA(isA<ModelLoadException>()));
     });
   });
 
@@ -335,9 +328,7 @@ void main() {
       await repo.loadModel(modelPath!);
       repo.template = ChatMLTemplate();
 
-      final messages = [
-        LLMMessage(role: LLMRole.user, content: 'Hi'),
-      ];
+      final messages = [LLMMessage(role: LLMRole.user, content: 'Hi')];
 
       final buffer = StringBuffer();
       await for (final chunk in repo.streamChat('test', messages: messages)) {
@@ -427,8 +418,9 @@ void main() {
 
       stopwatch.stop();
       final elapsed = stopwatch.elapsedMilliseconds;
-      final tokensPerSecond =
-          tokenCount > 0 ? (tokenCount / (elapsed / 1000)).toStringAsFixed(1) : 'N/A';
+      final tokensPerSecond = tokenCount > 0
+          ? (tokenCount / (elapsed / 1000)).toStringAsFixed(1)
+          : 'N/A';
 
       print('Generated $tokenCount tokens in ${elapsed}ms');
       print('Speed: $tokensPerSecond tokens/sec');
@@ -437,4 +429,3 @@ void main() {
     }, timeout: Timeout(Duration(minutes: 2)));
   });
 }
-

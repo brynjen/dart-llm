@@ -15,14 +15,14 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   final LlamaCppRepository _repository = LlamaCppRepository();
-  
+
   String? _modelPath;
   bool _isDownloading = false;
   bool _isLoading = false;
   double _downloadProgress = 0;
   String _statusMessage = '';
   String? _errorMessage;
-  
+
   // Qwen3-VL-2B: Supports tool calling and vision
   static const _defaultRepoId = 'ggml-org/Qwen3-VL-2B-Instruct-GGUF';
   static const _defaultFileName = 'Qwen3-VL-2B-Instruct-Q8_0.gguf';
@@ -57,7 +57,7 @@ class _HomeScreenState extends State<HomeScreen> {
     try {
       final dir = await _modelsDirectory;
       final modelFile = File('$dir/$_defaultFileName');
-      
+
       if (await modelFile.exists()) {
         setState(() {
           _modelPath = modelFile.path;
@@ -89,7 +89,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
     try {
       final outputDir = await _modelsDirectory;
-      
+
       await for (final status in _repository.getModelStream(
         _defaultRepoId,
         outputDir: outputDir,
@@ -108,7 +108,7 @@ class _HomeScreenState extends State<HomeScreen> {
           }
         });
       }
-      
+
       setState(() {
         _statusMessage = 'Download complete!';
       });
@@ -126,7 +126,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   void _openChat() {
     if (_modelPath == null) return;
-    
+
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (context) => ChatScreen(modelPath: _modelPath!),
@@ -137,7 +137,7 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    
+
     return Scaffold(
       body: Container(
         decoration: BoxDecoration(
@@ -186,7 +186,9 @@ class _HomeScreenState extends State<HomeScreen> {
                           Text(
                             'Local LLM Inference',
                             style: theme.textTheme.bodyMedium?.copyWith(
-                              color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
+                              color: theme.colorScheme.onSurface.withValues(
+                                alpha: 0.7,
+                              ),
                             ),
                           ),
                         ],
@@ -194,16 +196,17 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                   ],
                 ),
-                
+
                 const SizedBox(height: 32),
-                
+
                 // Model Card
                 Expanded(
                   child: Container(
                     width: double.infinity,
                     padding: const EdgeInsets.all(24),
                     decoration: BoxDecoration(
-                      color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+                      color: theme.colorScheme.surfaceContainerHighest
+                          .withValues(alpha: 0.5),
                       borderRadius: BorderRadius.circular(24),
                       border: Border.all(
                         color: theme.colorScheme.outline.withValues(alpha: 0.2),
@@ -228,12 +231,14 @@ class _HomeScreenState extends State<HomeScreen> {
                         Text(
                           '~2.5 GB • Tool calling • Vision capable',
                           style: theme.textTheme.bodySmall?.copyWith(
-                            color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+                            color: theme.colorScheme.onSurface.withValues(
+                              alpha: 0.6,
+                            ),
                           ),
                         ),
-                        
+
                         const SizedBox(height: 16),
-                        
+
                         // Status area - expandable and scrollable
                         Expanded(
                           child: SingleChildScrollView(
@@ -241,7 +246,9 @@ class _HomeScreenState extends State<HomeScreen> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 if (_isLoading)
-                                  const Center(child: CircularProgressIndicator())
+                                  const Center(
+                                    child: CircularProgressIndicator(),
+                                  )
                                 else if (_errorMessage != null)
                                   Container(
                                     padding: const EdgeInsets.all(16),
@@ -250,16 +257,21 @@ class _HomeScreenState extends State<HomeScreen> {
                                       borderRadius: BorderRadius.circular(12),
                                     ),
                                     child: Row(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
                                       children: [
-                                        Icon(Icons.error_outline, 
-                                          color: theme.colorScheme.error),
+                                        Icon(
+                                          Icons.error_outline,
+                                          color: theme.colorScheme.error,
+                                        ),
                                         const SizedBox(width: 12),
                                         Expanded(
                                           child: Text(
                                             _errorMessage!,
                                             style: TextStyle(
-                                              color: theme.colorScheme.onErrorContainer,
+                                              color: theme
+                                                  .colorScheme
+                                                  .onErrorContainer,
                                             ),
                                           ),
                                         ),
@@ -278,7 +290,9 @@ class _HomeScreenState extends State<HomeScreen> {
                                     child: LinearProgressIndicator(
                                       value: _downloadProgress,
                                       minHeight: 8,
-                                      backgroundColor: theme.colorScheme.surfaceContainerHighest,
+                                      backgroundColor: theme
+                                          .colorScheme
+                                          .surfaceContainerHighest,
                                     ),
                                   ),
                                   const SizedBox(height: 8),
@@ -294,29 +308,43 @@ class _HomeScreenState extends State<HomeScreen> {
                                   Container(
                                     padding: const EdgeInsets.all(16),
                                     decoration: BoxDecoration(
-                                      color: theme.colorScheme.primaryContainer.withValues(alpha: 0.3),
+                                      color: theme.colorScheme.primaryContainer
+                                          .withValues(alpha: 0.3),
                                       borderRadius: BorderRadius.circular(12),
                                     ),
                                     child: Row(
                                       children: [
-                                        Icon(Icons.check_circle, 
-                                          color: theme.colorScheme.primary),
+                                        Icon(
+                                          Icons.check_circle,
+                                          color: theme.colorScheme.primary,
+                                        ),
                                         const SizedBox(width: 12),
                                         Expanded(
                                           child: Column(
-                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
                                             children: [
                                               Text(
                                                 'Model Ready',
-                                                style: theme.textTheme.titleSmall?.copyWith(
-                                                  fontWeight: FontWeight.w600,
-                                                ),
+                                                style: theme
+                                                    .textTheme
+                                                    .titleSmall
+                                                    ?.copyWith(
+                                                      fontWeight:
+                                                          FontWeight.w600,
+                                                    ),
                                               ),
                                               Text(
                                                 _modelPath!.split('/').last,
-                                                style: theme.textTheme.bodySmall?.copyWith(
-                                                  color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
-                                                ),
+                                                style: theme.textTheme.bodySmall
+                                                    ?.copyWith(
+                                                      color: theme
+                                                          .colorScheme
+                                                          .onSurface
+                                                          .withValues(
+                                                            alpha: 0.7,
+                                                          ),
+                                                    ),
                                               ),
                                             ],
                                           ),
@@ -329,22 +357,31 @@ class _HomeScreenState extends State<HomeScreen> {
                                   Container(
                                     padding: const EdgeInsets.all(16),
                                     decoration: BoxDecoration(
-                                      color: theme.colorScheme.surfaceContainerHighest,
+                                      color: theme
+                                          .colorScheme
+                                          .surfaceContainerHighest,
                                       borderRadius: BorderRadius.circular(12),
                                     ),
                                     child: Row(
                                       children: [
-                                        Icon(Icons.download_rounded,
-                                          color: theme.colorScheme.onSurface.withValues(alpha: 0.5)),
+                                        Icon(
+                                          Icons.download_rounded,
+                                          color: theme.colorScheme.onSurface
+                                              .withValues(alpha: 0.5),
+                                        ),
                                         const SizedBox(width: 12),
                                         Expanded(
                                           child: Text(
-                                            _statusMessage.isEmpty 
-                                              ? 'Download a model to get started'
-                                              : _statusMessage,
-                                            style: theme.textTheme.bodyMedium?.copyWith(
-                                              color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
-                                            ),
+                                            _statusMessage.isEmpty
+                                                ? 'Download a model to get started'
+                                                : _statusMessage,
+                                            style: theme.textTheme.bodyMedium
+                                                ?.copyWith(
+                                                  color: theme
+                                                      .colorScheme
+                                                      .onSurface
+                                                      .withValues(alpha: 0.7),
+                                                ),
                                           ),
                                         ),
                                       ],
@@ -355,9 +392,9 @@ class _HomeScreenState extends State<HomeScreen> {
                             ),
                           ),
                         ),
-                        
+
                         const SizedBox(height: 16),
-                        
+
                         // Actions
                         Row(
                           children: [
@@ -368,7 +405,9 @@ class _HomeScreenState extends State<HomeScreen> {
                                   icon: const Icon(Icons.download),
                                   label: const Text('Download Model'),
                                   style: FilledButton.styleFrom(
-                                    padding: const EdgeInsets.symmetric(vertical: 16),
+                                    padding: const EdgeInsets.symmetric(
+                                      vertical: 16,
+                                    ),
                                   ),
                                 ),
                               ),
@@ -379,7 +418,9 @@ class _HomeScreenState extends State<HomeScreen> {
                                   icon: const Icon(Icons.chat),
                                   label: const Text('Start Chat'),
                                   style: FilledButton.styleFrom(
-                                    padding: const EdgeInsets.symmetric(vertical: 16),
+                                    padding: const EdgeInsets.symmetric(
+                                      vertical: 16,
+                                    ),
                                   ),
                                 ),
                               ),
@@ -396,9 +437,9 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                   ),
                 ),
-                
+
                 const SizedBox(height: 16),
-                
+
                 // Platform info
                 Center(
                   child: Text(
@@ -416,4 +457,3 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 }
-

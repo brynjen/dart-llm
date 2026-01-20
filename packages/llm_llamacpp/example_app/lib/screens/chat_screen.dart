@@ -18,14 +18,14 @@ class _ChatScreenState extends State<ChatScreen> {
   final TextEditingController _inputController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   final List<_ChatMessage> _messages = [];
-  
+
   LlamaCppChatRepository? _chatRepo;
   bool _isLoading = true;
   bool _isGenerating = false;
   bool _toolsEnabled = true;
   String? _errorMessage;
   String _currentResponse = '';
-  
+
   // Available tools
   final List<LLMTool> _tools = [CalculatorTool()];
 
@@ -55,20 +55,23 @@ class _ChatScreenState extends State<ChatScreen> {
         contextSize: 2048,
         nGpuLayers: 0, // CPU-only with hardware acceleration (KleidiAI, SME2)
       );
-      
+
       print('[ChatScreen] Loading model from: ${widget.modelPath}');
       await _chatRepo!.loadModel(widget.modelPath);
       print('[ChatScreen] Model loaded successfully!');
-      
+
       setState(() {
         _isLoading = false;
       });
-      
+
       // Add welcome message
-      _messages.add(_ChatMessage(
-        role: _MessageRole.system,
-        content: 'Model loaded! Tools are enabled. Try: "What is 15 multiplied by 7?"',
-      ));
+      _messages.add(
+        _ChatMessage(
+          role: _MessageRole.system,
+          content:
+              'Model loaded! Tools are enabled. Try: "What is 15 multiplied by 7?"',
+        ),
+      );
     } catch (e, stackTrace) {
       print('[ChatScreen] ERROR loading model: $e');
       print('[ChatScreen] Stack trace: $stackTrace');
@@ -96,7 +99,7 @@ class _ChatScreenState extends State<ChatScreen> {
     if (text.isEmpty || _isGenerating || _chatRepo == null) return;
 
     _inputController.clear();
-    
+
     setState(() {
       _messages.add(_ChatMessage(role: _MessageRole.user, content: text));
       _isGenerating = true;
@@ -117,27 +120,28 @@ When you need to perform calculations, use the calculator tool by responding wit
 
 After receiving the tool result, provide a natural language response to the user.'''
           : 'You are a helpful assistant. Answer questions concisely and accurately.';
-      
+
       final llmMessages = <LLMMessage>[
-        LLMMessage(
-          role: LLMRole.system,
-          content: systemPrompt,
-        ),
+        LLMMessage(role: LLMRole.system, content: systemPrompt),
       ];
-      
+
       // Add conversation history (last 10 messages)
       final historyMessages = _messages
           .where((m) => m.role != _MessageRole.system)
           .toList();
-      final recentMessages = historyMessages.length > 10 
+      final recentMessages = historyMessages.length > 10
           ? historyMessages.sublist(historyMessages.length - 10)
           : historyMessages;
-      
+
       for (final msg in recentMessages) {
-        llmMessages.add(LLMMessage(
-          role: msg.role == _MessageRole.user ? LLMRole.user : LLMRole.assistant,
-          content: msg.content,
-        ));
+        llmMessages.add(
+          LLMMessage(
+            role: msg.role == _MessageRole.user
+                ? LLMRole.user
+                : LLMRole.assistant,
+            content: msg.content,
+          ),
+        );
       }
 
       // Stream the response
@@ -157,20 +161,18 @@ After receiving the tool result, provide a natural language response to the user
 
       // Add the complete response to messages
       setState(() {
-        _messages.add(_ChatMessage(
-          role: _MessageRole.assistant,
-          content: _currentResponse,
-        ));
+        _messages.add(
+          _ChatMessage(role: _MessageRole.assistant, content: _currentResponse),
+        );
         _currentResponse = '';
         _isGenerating = false;
       });
     } catch (e) {
       setState(() {
         _isGenerating = false;
-        _messages.add(_ChatMessage(
-          role: _MessageRole.system,
-          content: 'Error: $e',
-        ));
+        _messages.add(
+          _ChatMessage(role: _MessageRole.system, content: 'Error: $e'),
+        );
       });
     }
     _scrollToBottom();
@@ -179,7 +181,7 @@ After receiving the tool result, provide a natural language response to the user
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Chat'),
@@ -198,7 +200,9 @@ After receiving the tool result, provide a natural language response to the user
               });
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(
-                  content: Text(_toolsEnabled ? 'Tools enabled' : 'Tools disabled'),
+                  content: Text(
+                    _toolsEnabled ? 'Tools enabled' : 'Tools disabled',
+                  ),
                   duration: const Duration(seconds: 1),
                 ),
               );
@@ -234,136 +238,141 @@ After receiving the tool result, provide a natural language response to the user
                   children: [
                     const CircularProgressIndicator(),
                     const SizedBox(height: 16),
-                    Text(
-                      'Loading model...',
-                      style: theme.textTheme.bodyLarge,
-                    ),
+                    Text('Loading model...', style: theme.textTheme.bodyLarge),
                     const SizedBox(height: 8),
                     Text(
                       'This may take a moment',
                       style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+                        color: theme.colorScheme.onSurface.withValues(
+                          alpha: 0.6,
+                        ),
                       ),
                     ),
                   ],
                 ),
               )
             : _errorMessage != null
-                ? Center(
-                    child: Padding(
-                      padding: const EdgeInsets.all(24),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            Icons.error_outline,
-                            size: 64,
-                            color: theme.colorScheme.error,
+            ? Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.error_outline,
+                        size: 64,
+                        color: theme.colorScheme.error,
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        'Failed to load model',
+                        style: theme.textTheme.titleLarge,
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        _errorMessage!,
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: theme.colorScheme.onSurface.withValues(
+                            alpha: 0.7,
                           ),
-                          const SizedBox(height: 16),
-                          Text(
-                            'Failed to load model',
-                            style: theme.textTheme.titleLarge,
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            _errorMessage!,
-                            style: theme.textTheme.bodyMedium?.copyWith(
-                              color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 24),
+                      FilledButton.icon(
+                        onPressed: () => Navigator.of(context).pop(),
+                        icon: const Icon(Icons.arrow_back),
+                        label: const Text('Go Back'),
+                      ),
+                    ],
+                  ),
+                ),
+              )
+            : Column(
+                children: [
+                  // Messages list
+                  Expanded(
+                    child: ListView.builder(
+                      controller: _scrollController,
+                      padding: const EdgeInsets.all(16),
+                      itemCount: _messages.length + (_isGenerating ? 1 : 0),
+                      itemBuilder: (context, index) {
+                        // Show streaming response
+                        if (index == _messages.length && _isGenerating) {
+                          return _MessageBubble(
+                            message: _ChatMessage(
+                              role: _MessageRole.assistant,
+                              content: _currentResponse.isEmpty
+                                  ? '...'
+                                  : _currentResponse,
                             ),
-                            textAlign: TextAlign.center,
+                            isStreaming: true,
+                          );
+                        }
+                        return _MessageBubble(message: _messages[index]);
+                      },
+                    ),
+                  ),
+
+                  // Input area
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.surfaceContainerHighest
+                          .withValues(alpha: 0.5),
+                      border: Border(
+                        top: BorderSide(
+                          color: theme.colorScheme.outline.withValues(
+                            alpha: 0.2,
                           ),
-                          const SizedBox(height: 24),
-                          FilledButton.icon(
-                            onPressed: () => Navigator.of(context).pop(),
-                            icon: const Icon(Icons.arrow_back),
-                            label: const Text('Go Back'),
+                        ),
+                      ),
+                    ),
+                    child: SafeArea(
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: TextField(
+                              controller: _inputController,
+                              decoration: InputDecoration(
+                                hintText: 'Type a message...',
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(24),
+                                  borderSide: BorderSide.none,
+                                ),
+                                filled: true,
+                                fillColor:
+                                    theme.colorScheme.surfaceContainerHighest,
+                                contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 20,
+                                  vertical: 12,
+                                ),
+                              ),
+                              textInputAction: TextInputAction.send,
+                              onSubmitted: (_) => _sendMessage(),
+                              enabled: !_isGenerating,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          IconButton.filled(
+                            onPressed: _isGenerating ? null : _sendMessage,
+                            icon: _isGenerating
+                                ? SizedBox(
+                                    width: 20,
+                                    height: 20,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: theme.colorScheme.onPrimary,
+                                    ),
+                                  )
+                                : const Icon(Icons.send),
                           ),
                         ],
                       ),
                     ),
-                  )
-                : Column(
-                    children: [
-                      // Messages list
-                      Expanded(
-                        child: ListView.builder(
-                          controller: _scrollController,
-                          padding: const EdgeInsets.all(16),
-                          itemCount: _messages.length + (_isGenerating ? 1 : 0),
-                          itemBuilder: (context, index) {
-                            // Show streaming response
-                            if (index == _messages.length && _isGenerating) {
-                              return _MessageBubble(
-                                message: _ChatMessage(
-                                  role: _MessageRole.assistant,
-                                  content: _currentResponse.isEmpty 
-                                      ? '...' 
-                                      : _currentResponse,
-                                ),
-                                isStreaming: true,
-                              );
-                            }
-                            return _MessageBubble(message: _messages[index]);
-                          },
-                        ),
-                      ),
-                      
-                      // Input area
-                      Container(
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
-                          border: Border(
-                            top: BorderSide(
-                              color: theme.colorScheme.outline.withValues(alpha: 0.2),
-                            ),
-                          ),
-                        ),
-                        child: SafeArea(
-                          child: Row(
-                            children: [
-                              Expanded(
-                                child: TextField(
-                                  controller: _inputController,
-                                  decoration: InputDecoration(
-                                    hintText: 'Type a message...',
-                                    border: OutlineInputBorder(
-                                      borderRadius: BorderRadius.circular(24),
-                                      borderSide: BorderSide.none,
-                                    ),
-                                    filled: true,
-                                    fillColor: theme.colorScheme.surfaceContainerHighest,
-                                    contentPadding: const EdgeInsets.symmetric(
-                                      horizontal: 20,
-                                      vertical: 12,
-                                    ),
-                                  ),
-                                  textInputAction: TextInputAction.send,
-                                  onSubmitted: (_) => _sendMessage(),
-                                  enabled: !_isGenerating,
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              IconButton.filled(
-                                onPressed: _isGenerating ? null : _sendMessage,
-                                icon: _isGenerating
-                                    ? SizedBox(
-                                        width: 20,
-                                        height: 20,
-                                        child: CircularProgressIndicator(
-                                          strokeWidth: 2,
-                                          color: theme.colorScheme.onPrimary,
-                                        ),
-                                      )
-                                    : const Icon(Icons.send),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ],
                   ),
+                ],
+              ),
       ),
     );
   }
@@ -382,10 +391,7 @@ class _MessageBubble extends StatelessWidget {
   final _ChatMessage message;
   final bool isStreaming;
 
-  const _MessageBubble({
-    required this.message,
-    this.isStreaming = false,
-  });
+  const _MessageBubble({required this.message, this.isStreaming = false});
 
   @override
   Widget build(BuildContext context) {
@@ -400,7 +406,9 @@ class _MessageBubble extends StatelessWidget {
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             decoration: BoxDecoration(
-              color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+              color: theme.colorScheme.surfaceContainerHighest.withValues(
+                alpha: 0.5,
+              ),
               borderRadius: BorderRadius.circular(12),
             ),
             child: Text(
@@ -419,7 +427,9 @@ class _MessageBubble extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
-        mainAxisAlignment: isUser ? MainAxisAlignment.end : MainAxisAlignment.start,
+        mainAxisAlignment: isUser
+            ? MainAxisAlignment.end
+            : MainAxisAlignment.start,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           if (!isUser) ...[
@@ -469,7 +479,9 @@ class _MessageBubble extends StatelessWidget {
                       height: 12,
                       child: CircularProgressIndicator(
                         strokeWidth: 2,
-                        color: theme.colorScheme.onSurface.withValues(alpha: 0.5),
+                        color: theme.colorScheme.onSurface.withValues(
+                          alpha: 0.5,
+                        ),
                       ),
                     ),
                   ],
@@ -494,4 +506,3 @@ class _MessageBubble extends StatelessWidget {
     );
   }
 }
-

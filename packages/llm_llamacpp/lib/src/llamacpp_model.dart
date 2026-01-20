@@ -12,8 +12,8 @@ class LlamaCppModel {
     required this.path,
     required Pointer<llama_model> modelPtr,
     required LlamaBindings bindings,
-  })  : _modelPtr = modelPtr,
-        _bindings = bindings;
+  }) : _modelPtr = modelPtr,
+       _bindings = bindings;
 
   /// The path to the GGUF model file.
   final String path;

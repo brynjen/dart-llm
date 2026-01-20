@@ -13,26 +13,26 @@ class CalculatorTool extends LLMTool {
 
   @override
   List<LLMToolParam> get parameters => [
-        LLMToolParam(
-          name: 'operation',
-          type: 'string',
-          description: 'The mathematical operation to perform',
-          enums: ['add', 'subtract', 'multiply', 'divide'],
-          isRequired: true,
-        ),
-        LLMToolParam(
-          name: 'a',
-          type: 'number',
-          description: 'The first number',
-          isRequired: true,
-        ),
-        LLMToolParam(
-          name: 'b',
-          type: 'number',
-          description: 'The second number',
-          isRequired: true,
-        ),
-      ];
+    LLMToolParam(
+      name: 'operation',
+      type: 'string',
+      description: 'The mathematical operation to perform',
+      enums: ['add', 'subtract', 'multiply', 'divide'],
+      isRequired: true,
+    ),
+    LLMToolParam(
+      name: 'a',
+      type: 'number',
+      description: 'The first number',
+      isRequired: true,
+    ),
+    LLMToolParam(
+      name: 'b',
+      type: 'number',
+      description: 'The second number',
+      isRequired: true,
+    ),
+  ];
 
   @override
   Future<String> execute(Map<String, dynamic> args, {dynamic extra}) async {
@@ -70,7 +70,10 @@ class CalculatorTool extends LLMTool {
     // Format result nicely (remove unnecessary decimals)
     final resultStr = result == result.toInt()
         ? result.toInt().toString()
-        : result.toStringAsFixed(4).replaceAll(RegExp(r'0+$'), '').replaceAll(RegExp(r'\.$'), '');
+        : result
+              .toStringAsFixed(4)
+              .replaceAll(RegExp(r'0+$'), '')
+              .replaceAll(RegExp(r'\.$'), '');
 
     return '$a $operationSymbol $b = $resultStr';
   }

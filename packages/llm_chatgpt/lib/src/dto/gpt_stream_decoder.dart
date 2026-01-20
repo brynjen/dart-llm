@@ -67,4 +67,3 @@ class GPTStreamDecoder {
     return braceCount == 0 && !inString;
   }
 }
-

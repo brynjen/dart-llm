@@ -15,7 +15,9 @@ Future<void> main(List<String> args) async {
     print('Usage: dart run example/cli_example.dart <model.gguf>');
     print('');
     print('Example:');
-    print('  dart run example/cli_example.dart ~/models/qwen2-0.5b-instruct-q4_k_m.gguf');
+    print(
+      '  dart run example/cli_example.dart ~/models/qwen2-0.5b-instruct-q4_k_m.gguf',
+    );
     exit(1);
   }
 
@@ -101,7 +103,9 @@ Future<void> main(List<String> args) async {
         print('\n');
 
         // Add assistant response to history
-        messages.add(LLMMessage(role: LLMRole.assistant, content: fullResponse));
+        messages.add(
+          LLMMessage(role: LLMRole.assistant, content: fullResponse),
+        );
       } catch (e) {
         print('\n❌ Error: $e\n');
       }
@@ -117,4 +121,3 @@ Future<void> main(List<String> args) async {
     modelRepo.dispose();
   }
 }
-

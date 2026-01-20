@@ -44,7 +44,13 @@ void main(List<String> args) async {
     }
 
     // Try to download prebuilt binary first
-    final prebuiltPath = await _tryDownloadPrebuilt(targetOS, targetArch, libraryName, input, logger);
+    final prebuiltPath = await _tryDownloadPrebuilt(
+      targetOS,
+      targetArch,
+      libraryName,
+      input,
+      logger,
+    );
 
     if (prebuiltPath != null) {
       logger.info('Using prebuilt binary: $prebuiltPath');
@@ -54,7 +60,13 @@ void main(List<String> args) async {
 
     // Fall back to building from source
     logger.info('No prebuilt binary available, building from source...');
-    final builtPath = await _buildFromSource(targetOS, targetArch, libraryName, input, logger);
+    final builtPath = await _buildFromSource(
+      targetOS,
+      targetArch,
+      libraryName,
+      input,
+      logger,
+    );
 
     if (builtPath != null) {
       logger.info('Built from source: $builtPath');
@@ -101,7 +113,13 @@ String _getArchString(Architecture arch, OS os) {
 }
 
 /// Attempts to download prebuilt binary from GitHub Releases
-Future<Uri?> _tryDownloadPrebuilt(OS targetOS, Architecture? targetArch, String libraryName, BuildInput input, Logger logger) async {
+Future<Uri?> _tryDownloadPrebuilt(
+  OS targetOS,
+  Architecture? targetArch,
+  String libraryName,
+  BuildInput input,
+  Logger logger,
+) async {
   if (targetArch == null) {
     logger.warning('Target architecture unknown, cannot download prebuilt');
     return null;
@@ -122,13 +140,17 @@ Future<Uri?> _tryDownloadPrebuilt(OS targetOS, Architecture? targetArch, String 
 
   try {
     // Create cache directory for downloaded binaries
-    final cacheDir = Directory.fromUri(input.outputDirectory.resolve('.cache/'));
+    final cacheDir = Directory.fromUri(
+      input.outputDirectory.resolve('.cache/'),
+    );
     if (!cacheDir.existsSync()) {
       cacheDir.createSync(recursive: true);
     }
 
     final zipFile = File.fromUri(cacheDir.uri.resolve(assetName));
-    final extractDir = Directory.fromUri(cacheDir.uri.resolve('$osString-$archString/'));
+    final extractDir = Directory.fromUri(
+      cacheDir.uri.resolve('$osString-$archString/'),
+    );
 
     // Check if already downloaded and extracted
     final libraryFile = File.fromUri(extractDir.uri.resolve(libraryName));
@@ -142,12 +164,17 @@ Future<Uri?> _tryDownloadPrebuilt(OS targetOS, Architecture? targetArch, String 
     final response = await request.close();
 
     if (response.statusCode != 200) {
-      logger.info('Prebuilt not available (HTTP ${response.statusCode}), will build from source');
+      logger.info(
+        'Prebuilt not available (HTTP ${response.statusCode}), will build from source',
+      );
       return null;
     }
 
     logger.info('Downloading prebuilt binary...');
-    final bytes = await response.fold<List<int>>([], (bytes, chunk) => bytes..addAll(chunk));
+    final bytes = await response.fold<List<int>>(
+      [],
+      (bytes, chunk) => bytes..addAll(chunk),
+    );
     await zipFile.writeAsBytes(bytes);
 
     // Extract the zip
@@ -156,7 +183,12 @@ Future<Uri?> _tryDownloadPrebuilt(OS targetOS, Architecture? targetArch, String 
       extractDir.createSync(recursive: true);
     }
 
-    final result = await Process.run('unzip', ['-o', zipFile.path, '-d', extractDir.path]);
+    final result = await Process.run('unzip', [
+      '-o',
+      zipFile.path,
+      '-d',
+      extractDir.path,
+    ]);
 
     if (result.exitCode != 0) {
       logger.warning('Failed to extract: ${result.stderr}');
@@ -168,7 +200,11 @@ Future<Uri?> _tryDownloadPrebuilt(OS targetOS, Architecture? targetArch, String 
     }
 
     // Try to find the library in subdirectories
-    final found = extractDir.listSync(recursive: true).whereType<File>().where((f) => f.path.endsWith(libraryName)).firstOrNull;
+    final found = extractDir
+        .listSync(recursive: true)
+        .whereType<File>()
+        .where((f) => f.path.endsWith(libraryName))
+        .firstOrNull;
 
     return found?.uri;
   } catch (e) {
@@ -178,7 +214,13 @@ Future<Uri?> _tryDownloadPrebuilt(OS targetOS, Architecture? targetArch, String 
 }
 
 /// Builds llama.cpp from source using CMake
-Future<Uri?> _buildFromSource(OS targetOS, Architecture? targetArch, String libraryName, BuildInput input, Logger logger) async {
+Future<Uri?> _buildFromSource(
+  OS targetOS,
+  Architecture? targetArch,
+  String libraryName,
+  BuildInput input,
+  Logger logger,
+) async {
   // Get the package root directory
   final packageRoot = input.packageRoot;
   final llamacppDir = Directory.fromUri(packageRoot.resolve('llamacpp/'));
@@ -191,7 +233,9 @@ Future<Uri?> _buildFromSource(OS targetOS, Architecture? targetArch, String libr
     return null;
   }
 
-  final buildDir = Directory.fromUri(input.outputDirectory.resolve('build-$targetOS-$targetArch/'));
+  final buildDir = Directory.fromUri(
+    input.outputDirectory.resolve('build-$targetOS-$targetArch/'),
+  );
 
   if (!buildDir.existsSync()) {
     buildDir.createSync(recursive: true);
@@ -214,7 +258,9 @@ Future<Uri?> _buildFromSource(OS targetOS, Architecture? targetArch, String libr
 
   // Add platform-specific flags
   if (targetOS == OS.android) {
-    final ndkPath = Platform.environment['ANDROID_NDK_HOME'] ?? Platform.environment['ANDROID_NDK'];
+    final ndkPath =
+        Platform.environment['ANDROID_NDK_HOME'] ??
+        Platform.environment['ANDROID_NDK'];
     if (ndkPath == null) {
       logger.severe('ANDROID_NDK_HOME not set');
       return null;
@@ -238,7 +284,13 @@ Future<Uri?> _buildFromSource(OS targetOS, Architecture? targetArch, String libr
   }
 
   logger.info('Building...');
-  result = await Process.run('cmake', ['--build', buildDir.path, '--config', 'Release', '-j${Platform.numberOfProcessors}']);
+  result = await Process.run('cmake', [
+    '--build',
+    buildDir.path,
+    '--config',
+    'Release',
+    '-j${Platform.numberOfProcessors}',
+  ]);
 
   if (result.exitCode != 0) {
     logger.severe('CMake build failed: ${result.stderr}');
@@ -246,7 +298,11 @@ Future<Uri?> _buildFromSource(OS targetOS, Architecture? targetArch, String libr
   }
 
   // Find the built library
-  final possiblePaths = [buildDir.uri.resolve('bin/$libraryName'), buildDir.uri.resolve('src/$libraryName'), buildDir.uri.resolve(libraryName)];
+  final possiblePaths = [
+    buildDir.uri.resolve('bin/$libraryName'),
+    buildDir.uri.resolve('src/$libraryName'),
+    buildDir.uri.resolve(libraryName),
+  ];
 
   for (final path in possiblePaths) {
     final file = File.fromUri(path);
@@ -256,11 +312,26 @@ Future<Uri?> _buildFromSource(OS targetOS, Architecture? targetArch, String libr
   }
 
   // Search recursively
-  final found = buildDir.listSync(recursive: true).whereType<File>().where((f) => f.path.endsWith(libraryName)).firstOrNull;
+  final found = buildDir
+      .listSync(recursive: true)
+      .whereType<File>()
+      .where((f) => f.path.endsWith(libraryName))
+      .firstOrNull;
 
   return found?.uri;
 }
 
-void _addCodeAsset(BuildOutputBuilder output, Uri libraryPath, BuildInput input) {
-  output.assets.code.add(CodeAsset(package: 'llm_llamacpp', name: _llamaAssetId, linkMode: DynamicLoadingBundled(), file: libraryPath));
+void _addCodeAsset(
+  BuildOutputBuilder output,
+  Uri libraryPath,
+  BuildInput input,
+) {
+  output.assets.code.add(
+    CodeAsset(
+      package: 'llm_llamacpp',
+      name: _llamaAssetId,
+      linkMode: DynamicLoadingBundled(),
+      file: libraryPath,
+    ),
+  );
 }

@@ -73,4 +73,3 @@ enum LLMRole {
   /// Result from a tool execution.
   tool,
 }
-

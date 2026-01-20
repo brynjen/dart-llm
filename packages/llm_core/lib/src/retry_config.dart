@@ -58,9 +58,10 @@ class RetryConfig {
     if (attemptNumber < 0) return initialDelay;
 
     // Exponential backoff: initialDelay * (backoffMultiplier ^ attemptNumber)
-    final delayMs = (initialDelay.inMilliseconds *
-            math.pow(backoffMultiplier, attemptNumber))
-        .round();
+    final delayMs =
+        (initialDelay.inMilliseconds *
+                math.pow(backoffMultiplier, attemptNumber))
+            .round();
     final delay = Duration(milliseconds: delayMs);
 
     // Cap at maxDelay

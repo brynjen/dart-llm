@@ -10,15 +10,15 @@ class GPTResponse extends LLMResponse {
     required this.usage,
     required this.systemFingerprint,
   }) : super(
-          createdAt: created,
-          role: choices[0].message.role,
-          content: choices[0].message.content,
-          done: true,
-          doneReason: choices[0].finishReason,
-          promptEvalCount: usage.promptTokens,
-          evalCount: usage.completionTokens,
-          toolCalls: choices[0].message.toolCalls?.toLLMToolCalls,
-        );
+         createdAt: created,
+         role: choices[0].message.role,
+         content: choices[0].message.content,
+         done: true,
+         doneReason: choices[0].finishReason,
+         promptEvalCount: usage.promptTokens,
+         evalCount: usage.completionTokens,
+         toolCalls: choices[0].message.toolCalls?.toLLMToolCalls,
+       );
 
   final String id;
   final String object = "chat.completion";
@@ -41,15 +41,14 @@ class GPTResponse extends LLMResponse {
   }
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'object': object,
-        'created': created.millisecondsSinceEpoch / 1000,
-        'model': model,
-        'choices':
-            choices.map((choice) => choice.toJson()).toList(growable: false),
-        'usage': usage.toJson(),
-        'system_fingerprint': systemFingerprint,
-      };
+    'id': id,
+    'object': object,
+    'created': created.millisecondsSinceEpoch / 1000,
+    'model': model,
+    'choices': choices.map((choice) => choice.toJson()).toList(growable: false),
+    'usage': usage.toJson(),
+    'system_fingerprint': systemFingerprint,
+  };
 }
 
 /// A choice in a GPT response.
@@ -67,18 +66,18 @@ class GPTChoice {
   final String finishReason;
 
   factory GPTChoice.fromJson(Map<String, dynamic> json) => GPTChoice(
-        index: json['index'],
-        message: GPTMessage.fromJson(json['message']),
-        finishReason: json['finish_reason'],
-        logProbs: json['logsProbs'],
-      );
+    index: json['index'],
+    message: GPTMessage.fromJson(json['message']),
+    finishReason: json['finish_reason'],
+    logProbs: json['logsProbs'],
+  );
 
   Map<String, dynamic> toJson() => {
-        'index': index,
-        'message': message.toJson(),
-        'logProbs': logProbs,
-        'finish_reason': finishReason,
-      };
+    'index': index,
+    'message': message.toJson(),
+    'logProbs': logProbs,
+    'finish_reason': finishReason,
+  };
 }
 
 /// A message in a GPT response.
@@ -96,21 +95,20 @@ class GPTMessage {
   final List<GPTToolCall>? toolCalls;
 
   factory GPTMessage.fromJson(Map<String, dynamic> json) => GPTMessage(
-        role: json['role'],
-        content: json['content'],
-        refusal: json['refusal'],
-        toolCalls: (json['tool_calls'] as List<dynamic>?)
-            ?.map((e) => GPTToolCall.fromJson(e))
-            .toList(growable: false),
-      );
+    role: json['role'],
+    content: json['content'],
+    refusal: json['refusal'],
+    toolCalls: (json['tool_calls'] as List<dynamic>?)
+        ?.map((e) => GPTToolCall.fromJson(e))
+        .toList(growable: false),
+  );
 
   Map<String, dynamic> toJson() => {
-        'role': role,
-        'content': content,
-        'refusal': refusal,
-        'tool_calls':
-            toolCalls?.map((e) => e.toJson()).toList(growable: false),
-      };
+    'role': role,
+    'content': content,
+    'refusal': refusal,
+    'tool_calls': toolCalls?.map((e) => e.toJson()).toList(growable: false),
+  };
 }
 
 /// A tool call in a GPT response.
@@ -137,11 +135,11 @@ class GPTToolCall {
   }
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'index': index,
-        'type': type,
-        'function': function.toJson(),
-      };
+    'id': id,
+    'index': index,
+    'type': type,
+    'function': function.toJson(),
+  };
 
   GPTToolCall copyWith({required GPTToolFunctionCall newFunction}) {
     return GPTToolCall(
@@ -182,10 +180,7 @@ class GPTToolFunctionCall {
 
 /// Token usage details.
 class GPTUsageTokenDetails {
-  GPTUsageTokenDetails({
-    required this.cachedTokens,
-    required this.audioTokens,
-  });
+  GPTUsageTokenDetails({required this.cachedTokens, required this.audioTokens});
 
   final int cachedTokens;
   final int audioTokens;
@@ -197,9 +192,9 @@ class GPTUsageTokenDetails {
       );
 
   Map<String, dynamic> toJson() => {
-        'cached_tokens': cachedTokens,
-        'audio_tokens': audioTokens,
-      };
+    'cached_tokens': cachedTokens,
+    'audio_tokens': audioTokens,
+  };
 }
 
 /// Token usage statistics.
@@ -217,20 +212,20 @@ class GPTUsage {
   final GPTUsageTokenDetails? usageTokenDetails;
 
   factory GPTUsage.fromJson(Map<String, dynamic> json) => GPTUsage(
-        promptTokens: json['prompt_tokens'],
-        completionTokens: json['completion_tokens'],
-        totalTokens: json['total_tokens'],
-        usageTokenDetails: json['prompt_tokens_details'] != null
-            ? GPTUsageTokenDetails.fromJson(json['prompt_tokens_details'])
-            : null,
-      );
+    promptTokens: json['prompt_tokens'],
+    completionTokens: json['completion_tokens'],
+    totalTokens: json['total_tokens'],
+    usageTokenDetails: json['prompt_tokens_details'] != null
+        ? GPTUsageTokenDetails.fromJson(json['prompt_tokens_details'])
+        : null,
+  );
 
   Map<String, dynamic> toJson() => {
-        'prompt_tokens': promptTokens,
-        'completion_tokens': completionTokens,
-        'total_tokens': totalTokens,
-        'prompt_tokens_details': usageTokenDetails?.toJson(),
-      };
+    'prompt_tokens': promptTokens,
+    'completion_tokens': completionTokens,
+    'total_tokens': totalTokens,
+    'prompt_tokens_details': usageTokenDetails?.toJson(),
+  };
 }
 
 /// Streaming chunk from OpenAI.
@@ -242,17 +237,17 @@ class GPTChunk extends LLMChunk {
     required this.systemFingerprint,
     required this.choices,
   }) : super(
-          createdAt: created,
-          done: choices[0].finishReason != null,
-          message: LLMChunkMessage(
-            content: choices[0].delta.content,
-            role: choices[0].delta.role != null
-                ? LLMRole.values.firstWhere(
-                    (e) => e.name == choices[0].delta.role,
-                  )
-                : null,
-          ),
-        );
+         createdAt: created,
+         done: choices[0].finishReason != null,
+         message: LLMChunkMessage(
+           content: choices[0].delta.content,
+           role: choices[0].delta.role != null
+               ? LLMRole.values.firstWhere(
+                   (e) => e.name == choices[0].delta.role,
+                 )
+               : null,
+         ),
+       );
 
   final String id;
   final String object = "chat.completion.chunk";
@@ -261,23 +256,23 @@ class GPTChunk extends LLMChunk {
   final List<GPTChunkChoice> choices;
 
   factory GPTChunk.fromJson(Map<String, dynamic> json) => GPTChunk(
-        id: json['id'],
-        created: DateTime.fromMillisecondsSinceEpoch(json['created'] * 1000),
-        model: json['model'],
-        systemFingerprint: json['system_fingerprint'],
-        choices: (json['choices'] as List<dynamic>)
-            .map((choice) => GPTChunkChoice.fromJson(choice))
-            .toList(growable: false),
-      );
+    id: json['id'],
+    created: DateTime.fromMillisecondsSinceEpoch(json['created'] * 1000),
+    model: json['model'],
+    systemFingerprint: json['system_fingerprint'],
+    choices: (json['choices'] as List<dynamic>)
+        .map((choice) => GPTChunkChoice.fromJson(choice))
+        .toList(growable: false),
+  );
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'created': created.millisecondsSinceEpoch / 1000,
-        'model': model,
-        'object': object,
-        'choices': choices.map((e) => e.toJson()).toList(growable: false),
-        'system_fingerprint': systemFingerprint,
-      };
+    'id': id,
+    'created': created.millisecondsSinceEpoch / 1000,
+    'model': model,
+    'object': object,
+    'choices': choices.map((e) => e.toJson()).toList(growable: false),
+    'system_fingerprint': systemFingerprint,
+  };
 
   GPTChunk copyWith({required GPTChunk newChunk}) {
     return GPTChunk(
@@ -294,14 +289,15 @@ class GPTChunk extends LLMChunk {
             toolCalls: choice.delta.toolCalls?.map((toolCall) {
               final newArguments =
                   newChunk.choices[0].delta.toolCalls?[0].function.arguments ??
-                      '';
+                  '';
               String arguments = toolCall.function.arguments + newArguments;
               return GPTToolCall(
                 id: toolCall.id,
                 index: toolCall.index,
                 type: 'function',
                 function: GPTToolFunctionCall(
-                  name: toolCall.function.name ??
+                  name:
+                      toolCall.function.name ??
                       newChunk.choices[0].delta.toolCalls?[0].function.name,
                   arguments: arguments,
                 ),
@@ -331,18 +327,18 @@ class GPTChunkChoice {
   final String? finishReason;
 
   factory GPTChunkChoice.fromJson(Map<String, dynamic> json) => GPTChunkChoice(
-        index: json['index'],
-        delta: GPTChunkChoiceDelta.fromJson(json['delta']),
-        logProbs: json['logProbs'],
-        finishReason: json['finish_reason'],
-      );
+    index: json['index'],
+    delta: GPTChunkChoiceDelta.fromJson(json['delta']),
+    logProbs: json['logProbs'],
+    finishReason: json['finish_reason'],
+  );
 
   Map<String, dynamic> toJson() => {
-        'index': index,
-        'delta': delta.toJson(),
-        'logProbs': logProbs,
-        'finish_reason': finishReason,
-      };
+    'index': index,
+    'delta': delta.toJson(),
+    'logProbs': logProbs,
+    'finish_reason': finishReason,
+  };
 }
 
 /// Delta content in a streaming chunk.
@@ -375,8 +371,9 @@ class GPTChunkChoiceDelta {
       map['content'] = content;
     }
     if (toolCalls != null) {
-      map['tool_calls'] =
-          toolCalls?.map((e) => e.toJson()).toList(growable: false);
+      map['tool_calls'] = toolCalls
+          ?.map((e) => e.toJson())
+          .toList(growable: false);
     }
     return map;
   }
@@ -415,4 +412,3 @@ extension GPTMessageToLLMMessageExt on GPTMessage {
     );
   }
 }
-

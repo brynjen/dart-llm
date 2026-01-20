@@ -85,4 +85,3 @@ typedef ToolsNotAllowed = ToolsNotSupportedException;
 
 @Deprecated('Use VisionNotSupportedException instead')
 typedef VisionNotAllowed = VisionNotSupportedException;
-

@@ -6,4 +6,3 @@ DynamicLibrary loadLibrary() {
     'Cannot load llama.cpp library: FFI is not available on this platform',
   );
 }
-

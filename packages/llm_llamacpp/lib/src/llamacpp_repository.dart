@@ -59,11 +59,9 @@ export 'model_loader.dart' show LlamaCppModelLoader;
 /// }
 /// ```
 class LlamaCppRepository {
-  LlamaCppRepository({
-    http.Client? httpClient,
-    String? llamaCppPath,
-  })  : _httpClient = httpClient ?? http.Client(),
-        _llamaCppPath = llamaCppPath {
+  LlamaCppRepository({http.Client? httpClient, String? llamaCppPath})
+    : _httpClient = httpClient ?? http.Client(),
+      _llamaCppPath = llamaCppPath {
     _loader = LlamaCppModelLoader();
     _discovery = LlamaCppModelDiscovery();
     _hfClient = HuggingFaceClient(
@@ -146,8 +144,7 @@ class LlamaCppRepository {
   Future<LlamaCppModel> loadModel(
     String path, {
     ModelLoadOptions options = const ModelLoadOptions(),
-  }) =>
-      _loader.loadModel(path, options: options);
+  }) => _loader.loadModel(path, options: options);
 
   /// Unload a model.
   ///
@@ -193,7 +190,8 @@ class LlamaCppRepository {
   void unloadAllLoras() => loraManager.unloadAllLoras();
 
   /// Get a loaded LoRA by path.
-  LlamaLoraAdapter? getLoadedLora(String path) => loraManager.getLoadedLora(path);
+  LlamaLoraAdapter? getLoadedLora(String path) =>
+      loraManager.getLoadedLora(path);
 
   /// List all loaded LoRA paths.
   List<String> get loadedLoras => loraManager.loadedLoras;
@@ -212,9 +210,11 @@ class LlamaCppRepository {
       _hfClient.downloadModel(repoId, filename, outputDir, revision: revision);
 
   /// Get download URL for a HuggingFace model.
-  String getHuggingFaceUrl(String repoId, String filename,
-          {String revision = 'main'}) =>
-      _hfClient.getHuggingFaceUrl(repoId, filename, revision: revision);
+  String getHuggingFaceUrl(
+    String repoId,
+    String filename, {
+    String revision = 'main',
+  }) => _hfClient.getHuggingFaceUrl(repoId, filename, revision: revision);
 
   /// Parse a HuggingFace model URL.
   (String, String, String)? parseHuggingFaceUrl(String url) =>
@@ -255,11 +255,10 @@ class LlamaCppRepository {
   Future<ModelAcquisitionPlan> planModelAcquisition(
     String repoId, {
     QuantizationType preferredQuantization = QuantizationType.q4_k_m,
-  }) =>
-      _hfClient.planModelAcquisition(
-        repoId,
-        preferredQuantization: preferredQuantization,
-      );
+  }) => _hfClient.planModelAcquisition(
+    repoId,
+    preferredQuantization: preferredQuantization,
+  );
 
   // ============================================================
   // Simplified Model Acquisition
@@ -273,14 +272,13 @@ class LlamaCppRepository {
     String? preferredFile,
     String revision = 'main',
     String? llamaCppPath,
-  }) =>
-      _hfClient.getModel(
-        repoId,
-        outputDir: outputDir,
-        quantization: quantization,
-        preferredFile: preferredFile,
-        revision: revision,
-      );
+  }) => _hfClient.getModel(
+    repoId,
+    outputDir: outputDir,
+    quantization: quantization,
+    preferredFile: preferredFile,
+    revision: revision,
+  );
 
   /// Stream version of [getModel] with progress updates.
   Stream<ModelAcquisitionStatus> getModelStream(
@@ -289,14 +287,13 @@ class LlamaCppRepository {
     QuantizationType? quantization,
     String? preferredFile,
     String revision = 'main',
-  }) =>
-      _hfClient.getModelStream(
-        repoId,
-        outputDir: outputDir,
-        quantization: quantization,
-        preferredFile: preferredFile,
-        revision: revision,
-      );
+  }) => _hfClient.getModelStream(
+    repoId,
+    outputDir: outputDir,
+    quantization: quantization,
+    preferredFile: preferredFile,
+    revision: revision,
+  );
 
   // ============================================================
   // System Information
@@ -307,7 +304,8 @@ class LlamaCppRepository {
       BackendDetector.getAvailableBackends();
 
   /// Get the default model cache directory.
-  String get defaultCacheDirectory => BackendDetector.getDefaultCacheDirectory();
+  String get defaultCacheDirectory =>
+      BackendDetector.getDefaultCacheDirectory();
 
   /// Get the default number of GPU layers based on system.
   int get recommendedGpuLayers => BackendDetector.getRecommendedGpuLayers();

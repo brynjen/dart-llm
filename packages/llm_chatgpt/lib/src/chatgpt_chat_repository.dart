@@ -81,11 +81,12 @@ class ChatGPTChatRepository extends LLMChatRepository {
     final body = {
       'model': model,
       'messages': messages.map((msg) => msg.toJson()).toList(growable: false),
-      'stream': true
+      'stream': true,
     };
     if (effectiveTools.isNotEmpty) {
-      body['tools'] =
-          effectiveTools.map((tool) => tool.toJson).toList(growable: false);
+      body['tools'] = effectiveTools
+          .map((tool) => tool.toJson)
+          .toList(growable: false);
     }
 
     final response = await RetryUtil.executeWithRetry(
@@ -93,7 +94,8 @@ class ChatGPTChatRepository extends LLMChatRepository {
       config: retryConfig,
       isRetryable: (error) {
         if (error is LLMApiException && error.statusCode != null) {
-          return retryConfig?.shouldRetryForStatusCode(error.statusCode!) ?? false;
+          return retryConfig?.shouldRetryForStatusCode(error.statusCode!) ??
+              false;
         }
         return error is TimeoutException ||
             error.toString().toLowerCase().contains('connection') ||
@@ -113,8 +115,9 @@ class ChatGPTChatRepository extends LLMChatRepository {
           );
         default:
           // Read the error response body
-          final errorBody =
-              await response.stream.transform(utf8.decoder).join();
+          final errorBody = await response.stream
+              .transform(utf8.decoder)
+              .join();
           throw LLMApiException(
             'OpenAI API error',
             statusCode: response.statusCode,
@@ -148,15 +151,17 @@ class ChatGPTChatRepository extends LLMChatRepository {
     final payloadSize = body != null ? json.encode(body).length : 0;
     final readTimeout = config.getReadTimeoutForPayload(payloadSize);
 
-    return httpClient.send(request).timeout(
-      readTimeout,
-      onTimeout: () {
-        throw TimeoutException(
-          'Request timed out after ${readTimeout.inSeconds} seconds',
+    return httpClient
+        .send(request)
+        .timeout(
           readTimeout,
+          onTimeout: () {
+            throw TimeoutException(
+              'Request timed out after ${readTimeout.inSeconds} seconds',
+              readTimeout,
+            );
+          },
         );
-      },
-    );
   }
 
   Future<http.Response> _sendNonStreamingRequest(
@@ -167,7 +172,7 @@ class ChatGPTChatRepository extends LLMChatRepository {
     final headers = {
       'content-type': 'application/json',
       'accept': 'application/json',
-      'authorization': 'Bearer $apiKey'
+      'authorization': 'Bearer $apiKey',
     };
 
     final config = timeoutConfig ?? TimeoutConfig.defaultConfig;
@@ -176,9 +181,12 @@ class ChatGPTChatRepository extends LLMChatRepository {
 
     final response = method.toUpperCase() == 'POST'
         ? await httpClient
-            .post(uri,
-                headers: headers, body: body != null ? json.encode(body) : null)
-            .timeout(readTimeout)
+              .post(
+                uri,
+                headers: headers,
+                body: body != null ? json.encode(body) : null,
+              )
+              .timeout(readTimeout)
         : await httpClient.get(uri, headers: headers).timeout(readTimeout);
 
     return response;
@@ -197,9 +205,10 @@ class ChatGPTChatRepository extends LLMChatRepository {
     List<LLMMessage> workingMessages = List.from(messages);
     Map<String, GPTToolCall> toolsToCall = {};
 
-    await for (final output in response.stream
-        .transform(utf8.decoder)
-        .transform(GPTStreamDecoder.decoder)) {
+    await for (final output
+        in response.stream
+            .transform(utf8.decoder)
+            .transform(GPTStreamDecoder.decoder)) {
       if (output != '[DONE]') {
         try {
           final chunk = GPTChunk.fromJson(json.decode(output));
@@ -210,8 +219,9 @@ class ChatGPTChatRepository extends LLMChatRepository {
             } else if (toolsToCall.isNotEmpty) {
               // Only access .last if there are keys
               final lastId = toolsToCall.keys.last;
-              final updatedTool =
-                  toolsToCall[lastId]?.copyWith(newFunction: toolCall.function);
+              final updatedTool = toolsToCall[lastId]?.copyWith(
+                newFunction: toolCall.function,
+              );
               if (updatedTool != null) {
                 toolsToCall[lastId] = updatedTool;
               }
@@ -233,7 +243,7 @@ class ChatGPTChatRepository extends LLMChatRepository {
                       'type': 'function',
                       'function': {
                         'name': toolCall.function.name,
-                        'arguments': toolCall.function.arguments
+                        'arguments': toolCall.function.arguments,
                       },
                     },
                   )
@@ -241,34 +251,45 @@ class ChatGPTChatRepository extends LLMChatRepository {
 
               // Only add the assistant message if we have valid tool calls
               if (toolCallsList.isNotEmpty) {
-                workingMessages.add(LLMMessage(
+                workingMessages.add(
+                  LLMMessage(
                     content: null,
                     role: LLMRole.assistant,
-                    toolCalls: toolCallsList));
+                    toolCalls: toolCallsList,
+                  ),
+                );
 
                 // Then add tool response messages
                 for (final toolCall in toolsToCall.values) {
                   final function = toolCall.function;
                   final tool = tools.firstWhere(
                     (t) => t.name == toolCall.function.name,
-                    orElse: () =>
-                        throw Exception('Tool ${toolCall.function.name} not found'),
+                    orElse: () => throw Exception(
+                      'Tool ${toolCall.function.name} not found',
+                    ),
                   );
-                  final toolResponse = await tool.execute(
-                          json.decode(function.arguments),
-                          extra: extra) ??
+                  final toolResponse =
+                      await tool.execute(
+                        json.decode(function.arguments),
+                        extra: extra,
+                      ) ??
                       'Unable to use not-existing tool ${function.name}';
-                  workingMessages.add(LLMMessage(
+                  workingMessages.add(
+                    LLMMessage(
                       content: toolResponse,
                       role: LLMRole.tool,
-                      toolCallId: toolCall.id));
+                      toolCallId: toolCall.id,
+                    ),
+                  );
                   toolAttempts--;
                 }
-                yield* streamChat(model,
-                    messages: workingMessages,
-                    tools: tools,
-                    toolAttempts: toolAttempts,
-                    extra: extra);
+                yield* streamChat(
+                  model,
+                  messages: workingMessages,
+                  tools: tools,
+                  toolAttempts: toolAttempts,
+                  extra: extra,
+                );
               }
             }
           }
@@ -295,7 +316,8 @@ class ChatGPTChatRepository extends LLMChatRepository {
       config: retryConfig,
       isRetryable: (error) {
         if (error is LLMApiException && error.statusCode != null) {
-          return retryConfig?.shouldRetryForStatusCode(error.statusCode!) ?? false;
+          return retryConfig?.shouldRetryForStatusCode(error.statusCode!) ??
+              false;
         }
         return error is TimeoutException ||
             error.toString().toLowerCase().contains('connection') ||
@@ -304,8 +326,9 @@ class ChatGPTChatRepository extends LLMChatRepository {
     );
     switch (response.statusCode) {
       case 200: // HttpStatus.ok
-        return ChatGPTEmbeddingsResponse.fromJson(json.decode(response.body))
-            .toLLMEmbedding;
+        return ChatGPTEmbeddingsResponse.fromJson(
+          json.decode(response.body),
+        ).toLLMEmbedding;
       default:
         throw LLMApiException(
           'Error generating embedding',
@@ -315,4 +338,3 @@ class ChatGPTChatRepository extends LLMChatRepository {
     }
   }
 }
-

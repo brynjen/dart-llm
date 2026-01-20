@@ -17,9 +17,7 @@ void main() {
 
       final stream = mock.streamChat(
         'test-model',
-        messages: [
-          LLMMessage(role: LLMRole.user, content: 'Hello'),
-        ],
+        messages: [LLMMessage(role: LLMRole.user, content: 'Hello')],
         think: false, // Should be overridden by options
         tools: [], // Should be overridden by options
         options: options,

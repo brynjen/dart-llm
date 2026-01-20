@@ -75,7 +75,9 @@ void main() {
           LLMMessage(
             role: LLMRole.assistant,
             content: '', // Empty content is OK if toolCalls exist
-            toolCalls: [{'name': 'tool', 'arguments': {}}],
+            toolCalls: [
+              {'name': 'tool', 'arguments': {}},
+            ],
           ),
         ),
         returnsNormally,
@@ -83,9 +85,7 @@ void main() {
 
       // Invalid: neither content nor tool calls
       expect(
-        () => Validation.validateMessage(
-          LLMMessage(role: LLMRole.assistant),
-        ),
+        () => Validation.validateMessage(LLMMessage(role: LLMRole.assistant)),
         throwsA(isA<LLMApiException>()),
       );
     });

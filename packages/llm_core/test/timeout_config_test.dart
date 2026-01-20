@@ -14,13 +14,10 @@ void main() {
 
     test('getReadTimeoutForPayload returns appropriate timeout', () {
       final config = TimeoutConfig();
-      
+
       // Small payload
-      expect(
-        config.getReadTimeoutForPayload(100),
-        config.readTimeout,
-      );
-      
+      expect(config.getReadTimeoutForPayload(100), config.readTimeout);
+
       // Large payload
       expect(
         config.getReadTimeoutForPayload(2 * 1024 * 1024),

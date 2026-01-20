@@ -245,4 +245,3 @@ abstract class LLMChatRepository {
     Map<String, dynamic> options = const {},
   });
 }
-

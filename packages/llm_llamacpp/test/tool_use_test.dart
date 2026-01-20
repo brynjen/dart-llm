@@ -21,7 +21,7 @@ class TestTool extends LLMTool {
   final String toolDescription;
   final List<LLMToolParam> toolParameters;
   final Future<dynamic> Function(Map<String, dynamic> args, {dynamic extra})
-      executeFunction;
+  executeFunction;
 
   @override
   String get name => toolName;
@@ -115,7 +115,8 @@ void main() {
             isRequired: true,
           ),
         ],
-        executeFunction: (args, {extra}) async => 'Results for: ${args['query']}',
+        executeFunction: (args, {extra}) async =>
+            'Results for: ${args['query']}',
       );
 
       final schema = tool.toJson;
@@ -150,85 +151,92 @@ void main() {
       repo.dispose();
     });
 
-    test('parses JSON tool call from model output', () async {
-      if (modelPath == null) {
-        markTestSkipped('No model available');
-        return;
-      }
+    test(
+      'parses JSON tool call from model output',
+      () async {
+        if (modelPath == null) {
+          markTestSkipped('No model available');
+          return;
+        }
 
-      await repo.loadModel(modelPath!);
+        await repo.loadModel(modelPath!);
 
-      // Define a calculator tool
-      final calculatorTool = TestTool(
-        toolName: 'calculator',
-        toolDescription: 'Perform basic math calculations',
-        toolParameters: [
-          LLMToolParam(
-            name: 'expression',
-            type: 'string',
-            description: 'Math expression to evaluate',
-            isRequired: true,
-          ),
-        ],
-        executeFunction: (args, {extra}) async {
-          final expr = args['expression'] as String;
-          // Simple eval for testing
-          if (expr.contains('+')) {
-            final parts = expr.split('+').map((s) => int.parse(s.trim()));
-            return parts.reduce((a, b) => a + b).toString();
-          }
-          return 'Unable to evaluate: $expr';
-        },
-      );
+        // Define a calculator tool
+        final calculatorTool = TestTool(
+          toolName: 'calculator',
+          toolDescription: 'Perform basic math calculations',
+          toolParameters: [
+            LLMToolParam(
+              name: 'expression',
+              type: 'string',
+              description: 'Math expression to evaluate',
+              isRequired: true,
+            ),
+          ],
+          executeFunction: (args, {extra}) async {
+            final expr = args['expression'] as String;
+            // Simple eval for testing
+            if (expr.contains('+')) {
+              final parts = expr.split('+').map((s) => int.parse(s.trim()));
+              return parts.reduce((a, b) => a + b).toString();
+            }
+            return 'Unable to evaluate: $expr';
+          },
+        );
 
-      final messages = [
-        LLMMessage(
-          role: LLMRole.system,
-          content: '''You are a helpful assistant with access to tools.
+        final messages = [
+          LLMMessage(
+            role: LLMRole.system,
+            content: '''You are a helpful assistant with access to tools.
 When you need to perform a calculation, output a JSON tool call:
 {"name": "calculator", "arguments": {"expression": "5 + 3"}}
 
 Available tools:
 - calculator: Perform basic math calculations
   Parameters: expression (string) - Math expression to evaluate''',
-        ),
-        LLMMessage(
-          role: LLMRole.user,
-          content: 'What is 7 + 8? Use the calculator tool.',
-        ),
-      ];
+          ),
+          LLMMessage(
+            role: LLMRole.user,
+            content: 'What is 7 + 8? Use the calculator tool.',
+          ),
+        ];
 
-      final buffer = StringBuffer();
-      List<LLMToolCall>? toolCalls;
+        final buffer = StringBuffer();
+        List<LLMToolCall>? toolCalls;
 
-      print('Prompt: What is 7 + 8? Use the calculator tool.');
-      print('Response: ');
+        print('Prompt: What is 7 + 8? Use the calculator tool.');
+        print('Response: ');
 
-      await for (final chunk in repo.streamChat('test',
-          messages: messages, tools: [calculatorTool])) {
-        buffer.write(chunk.message?.content ?? '');
-        stdout.write(chunk.message?.content ?? '');
+        await for (final chunk in repo.streamChat(
+          'test',
+          messages: messages,
+          tools: [calculatorTool],
+        )) {
+          buffer.write(chunk.message?.content ?? '');
+          stdout.write(chunk.message?.content ?? '');
 
-        if (chunk.message?.toolCalls != null) {
-          toolCalls = chunk.message!.toolCalls;
+          if (chunk.message?.toolCalls != null) {
+            toolCalls = chunk.message!.toolCalls;
+          }
         }
-      }
-      print('\n');
+        print('\n');
 
-      final response = buffer.toString();
-      print('Full response: $response');
+        final response = buffer.toString();
+        print('Full response: $response');
 
-      // Check if response contains JSON or tool calls were parsed
-      if (toolCalls != null && toolCalls.isNotEmpty) {
-        print('Parsed tool calls: ${toolCalls.map((t) => t.name).toList()}');
-        expect(toolCalls.first.name, equals('calculator'));
-      } else {
-        // Model might include JSON in response
-        final hasToolJson =
-            response.contains('"name"') && response.contains('"arguments"');
-        print('Contains tool JSON: $hasToolJson');
-      }
-    }, timeout: Timeout(Duration(minutes: 2)));
+        // Check if response contains JSON or tool calls were parsed
+        if (toolCalls != null && toolCalls.isNotEmpty) {
+          print('Parsed tool calls: ${toolCalls.map((t) => t.name).toList()}');
+          expect(toolCalls.first.name, equals('calculator'));
+        } else {
+          // Model might include JSON in response
+          final hasToolJson =
+              response.contains('"name"') && response.contains('"arguments"');
+          print('Contains tool JSON: $hasToolJson');
+        }
+      },
+      timeout: Timeout(Duration(minutes: 2)),
+    );
 
     test('executes tool and returns result', () async {
       if (modelPath == null) {
@@ -263,7 +271,8 @@ Available tools:
       final messages = [
         LLMMessage(
           role: LLMRole.system,
-          content: '''You have access to tools. To use a tool, respond with JSON:
+          content:
+              '''You have access to tools. To use a tool, respond with JSON:
 {"name": "get_weather", "arguments": {"city": "Paris"}}
 
 Tools:
@@ -275,7 +284,11 @@ Tools:
         ),
       ];
 
-      await for (final _ in repo.streamChat('test', messages: messages, tools: [weatherTool])) {
+      await for (final _ in repo.streamChat(
+        'test',
+        messages: messages,
+        tools: [weatherTool],
+      )) {
         // Process stream
       }
 
@@ -348,15 +361,15 @@ Tools:
 
 Use JSON format: {"name": "tool_name", "arguments": {"a": 5, "b": 3}}''',
         ),
-        LLMMessage(
-          role: LLMRole.user,
-          content: 'What is 6 times 7?',
-        ),
+        LLMMessage(role: LLMRole.user, content: 'What is 6 times 7?'),
       ];
 
       final buffer = StringBuffer();
-      await for (final chunk
-          in repo.streamChat('test', messages: messages, tools: tools)) {
+      await for (final chunk in repo.streamChat(
+        'test',
+        messages: messages,
+        tools: tools,
+      )) {
         buffer.write(chunk.message?.content ?? '');
       }
 
@@ -375,7 +388,9 @@ The result is 8.''';
       expect(toolCalls, hasLength(1));
       expect(toolCalls.first.name, equals('calculator'));
       expect(
-          json.decode(toolCalls.first.arguments)['expression'], equals('5 + 3'));
+        json.decode(toolCalls.first.arguments)['expression'],
+        equals('5 + 3'),
+      );
     });
 
     test('parses XML-wrapped JSON format', () {
@@ -548,11 +563,13 @@ List<LLMToolCall> _parseToolCalls(String content) {
       final jsonStr = match.group(1)!;
       final data = json.decode(jsonStr) as Map<String, dynamic>;
 
-      toolCalls.add(LLMToolCall(
-        id: 'call_${toolCalls.length}',
-        name: data['name'] as String,
-        arguments: json.encode(data['arguments']),
-      ));
+      toolCalls.add(
+        LLMToolCall(
+          id: 'call_${toolCalls.length}',
+          name: data['name'] as String,
+          arguments: json.encode(data['arguments']),
+        ),
+      );
       // Track the range to avoid double-parsing
       parsedRanges.add((match.start, match.end));
     } catch (_) {
@@ -577,11 +594,13 @@ List<LLMToolCall> _parseToolCalls(String content) {
       final name = match.group(1)!;
       final args = match.group(2)!;
 
-      toolCalls.add(LLMToolCall(
-        id: 'call_${toolCalls.length}',
-        name: name,
-        arguments: args,
-      ));
+      toolCalls.add(
+        LLMToolCall(
+          id: 'call_${toolCalls.length}',
+          name: name,
+          arguments: args,
+        ),
+      );
     } catch (_) {
       // Skip invalid matches
     }

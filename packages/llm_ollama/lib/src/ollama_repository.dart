@@ -124,4 +124,3 @@ class OllamaRepository {
     return response;
   }
 }
-

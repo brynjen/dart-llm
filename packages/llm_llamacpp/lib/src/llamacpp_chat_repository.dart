@@ -157,7 +157,9 @@ class LlamaCppChatRepository extends LLMChatRepository {
   bool get isModelLoaded => _model != null;
 
   /// Gets the prompt template in use.
-  PromptTemplate get template => _template ?? (_model != null ? getTemplateForModel(_model!.path) : ChatMLTemplate());
+  PromptTemplate get template =>
+      _template ??
+      (_model != null ? getTemplateForModel(_model!.path) : ChatMLTemplate());
 
   /// Sets the prompt template to use.
   set template(PromptTemplate value) => _template = value;
@@ -221,8 +223,13 @@ class LlamaCppChatRepository extends LLMChatRepository {
   ///
   /// [modelPath] - Path to the GGUF model file.
   /// [options] - Optional loading options.
-  @Deprecated('Use LlamaCppRepository.loadModel() instead for proper separation of concerns')
-  Future<void> loadModel(String modelPath, {ModelLoadOptions options = const ModelLoadOptions()}) async {
+  @Deprecated(
+    'Use LlamaCppRepository.loadModel() instead for proper separation of concerns',
+  )
+  Future<void> loadModel(
+    String modelPath, {
+    ModelLoadOptions options = const ModelLoadOptions(),
+  }) async {
     initializeBackend();
 
     // Unload any existing model
@@ -291,7 +298,9 @@ class LlamaCppChatRepository extends LLMChatRepository {
     Validation.validateMessages(messages);
 
     if (_model == null) {
-      throw ModelLoadException('No model loaded. Call loadModel() first or use LlamaCppChatRepository.withModel().');
+      throw ModelLoadException(
+        'No model loaded. Call loadModel() first or use LlamaCppChatRepository.withModel().',
+      );
     }
 
     // Merge options with individual parameters (options take precedence)
@@ -302,12 +311,16 @@ class LlamaCppChatRepository extends LLMChatRepository {
     final effectiveToolAttempts = options?.toolAttempts;
 
     final currentAttempts = effectiveToolAttempts ?? maxToolAttempts;
-    
-    _log.fine('streamChat called with ${effectiveTools.length} tools, attempt ${maxToolAttempts - currentAttempts + 1}');
+
+    _log.fine(
+      'streamChat called with ${effectiveTools.length} tools, attempt ${maxToolAttempts - currentAttempts + 1}',
+    );
     _log.fine('Messages count: ${messages.length}');
     if (_log.isLoggable(LLMLogLevel.fine)) {
       for (final msg in messages) {
-        _log.fine('  - ${msg.role.name}: ${msg.content?.substring(0, msg.content!.length.clamp(0, 100))}...');
+        _log.fine(
+          '  - ${msg.role.name}: ${msg.content?.substring(0, msg.content!.length.clamp(0, 100))}...',
+        );
       }
     }
 
@@ -367,7 +380,9 @@ class LlamaCppChatRepository extends LLMChatRepository {
               _log.fine('Potential complete JSON, trying to parse');
               final toolCalls = _parseToolCalls(pendingContent);
               if (toolCalls.isNotEmpty) {
-                _log.info('Found ${toolCalls.length} tool calls in buffered content');
+                _log.info(
+                  'Found ${toolCalls.length} tool calls in buffered content',
+                );
                 collectedToolCalls.addAll(toolCalls);
                 // Don't yield the tool call JSON to the user
                 pendingContent = '';
@@ -379,7 +394,10 @@ class LlamaCppChatRepository extends LLMChatRepository {
                 yield LLMChunk(
                   model: model,
                   createdAt: DateTime.now(),
-                  message: LLMChunkMessage(content: pendingContent, role: LLMRole.assistant),
+                  message: LLMChunkMessage(
+                    content: pendingContent,
+                    role: LLMRole.assistant,
+                  ),
                   done: false,
                 );
                 pendingContent = '';
@@ -394,14 +412,21 @@ class LlamaCppChatRepository extends LLMChatRepository {
           yield LLMChunk(
             model: model,
             createdAt: DateTime.now(),
-            message: LLMChunkMessage(content: message.token, role: LLMRole.assistant),
+            message: LLMChunkMessage(
+              content: message.token,
+              role: LLMRole.assistant,
+            ),
             done: false,
           );
           pendingContent = '';
         } else if (message is _InferenceComplete) {
-          _log.fine('Inference complete. Accumulated content (${accumulatedContent.length} chars)');
+          _log.fine(
+            'Inference complete. Accumulated content (${accumulatedContent.length} chars)',
+          );
           if (_log.isLoggable(LLMLogLevel.fine)) {
-            _log.fine('--- RESPONSE START ---\n$accumulatedContent\n--- RESPONSE END ---');
+            _log.fine(
+              '--- RESPONSE START ---\n$accumulatedContent\n--- RESPONSE END ---',
+            );
           }
 
           // Yield any remaining buffered content
@@ -410,7 +435,10 @@ class LlamaCppChatRepository extends LLMChatRepository {
             yield LLMChunk(
               model: model,
               createdAt: DateTime.now(),
-              message: LLMChunkMessage(content: pendingContent, role: LLMRole.assistant),
+              message: LLMChunkMessage(
+                content: pendingContent,
+                role: LLMRole.assistant,
+              ),
               done: false,
             );
           }
@@ -433,7 +461,11 @@ class LlamaCppChatRepository extends LLMChatRepository {
           yield LLMChunk(
             model: model,
             createdAt: DateTime.now(),
-            message: LLMChunkMessage(content: null, role: LLMRole.assistant, toolCalls: collectedToolCalls.isEmpty ? null : collectedToolCalls),
+            message: LLMChunkMessage(
+              content: null,
+              role: LLMRole.assistant,
+              toolCalls: collectedToolCalls.isEmpty ? null : collectedToolCalls,
+            ),
             done: true,
             promptEvalCount: message.promptTokens,
             evalCount: message.generatedTokens,
@@ -446,7 +478,12 @@ class LlamaCppChatRepository extends LLMChatRepository {
               final workingMessages = List<LLMMessage>.from(messages);
 
               // Add assistant message with tool calls
-              workingMessages.add(LLMMessage(role: LLMRole.assistant, content: accumulatedContent));
+              workingMessages.add(
+                LLMMessage(
+                  role: LLMRole.assistant,
+                  content: accumulatedContent,
+                ),
+              );
 
               // Execute tools and add responses
               for (final toolCall in collectedToolCalls) {
@@ -462,21 +499,47 @@ class LlamaCppChatRepository extends LLMChatRepository {
                 try {
                   final args = json.decode(toolCall.arguments);
                   _log.fine('Tool args: $args');
-                  final toolResponse = await tool.execute(args, extra: effectiveExtra) ?? 'Tool ${toolCall.name} returned null';
+                  final toolResponse =
+                      await tool.execute(args, extra: effectiveExtra) ??
+                      'Tool ${toolCall.name} returned null';
                   _log.fine('Tool response: $toolResponse');
 
-                  workingMessages.add(LLMMessage(role: LLMRole.tool, content: toolResponse.toString(), toolCallId: toolCall.id));
+                  workingMessages.add(
+                    LLMMessage(
+                      role: LLMRole.tool,
+                      content: toolResponse.toString(),
+                      toolCallId: toolCall.id,
+                    ),
+                  );
                 } catch (e) {
                   _log.warning('Tool execution error: $e');
-                  workingMessages.add(LLMMessage(role: LLMRole.tool, content: 'Error executing tool: $e', toolCallId: toolCall.id));
+                  workingMessages.add(
+                    LLMMessage(
+                      role: LLMRole.tool,
+                      content: 'Error executing tool: $e',
+                      toolCallId: toolCall.id,
+                    ),
+                  );
                 }
               }
 
               _log.fine('Continuing conversation with tool results...');
               // Continue conversation with tool results
-              final nextOptions = options?.copyWith(toolAttempts: currentAttempts - 1) ??
-                  StreamChatOptions(tools: effectiveTools, extra: effectiveExtra, toolAttempts: currentAttempts - 1);
-              yield* streamChatWithGenerationOptions(model, messages: workingMessages, tools: effectiveTools, extra: effectiveExtra, options: nextOptions, generationOptions: genOptions);
+              final nextOptions =
+                  options?.copyWith(toolAttempts: currentAttempts - 1) ??
+                  StreamChatOptions(
+                    tools: effectiveTools,
+                    extra: effectiveExtra,
+                    toolAttempts: currentAttempts - 1,
+                  );
+              yield* streamChatWithGenerationOptions(
+                model,
+                messages: workingMessages,
+                tools: effectiveTools,
+                extra: effectiveExtra,
+                options: nextOptions,
+                generationOptions: genOptions,
+              );
             } else {
               _log.warning('Max tool attempts reached, not continuing');
             }
@@ -547,7 +610,13 @@ class LlamaCppChatRepository extends LLMChatRepository {
           }
 
           _log.fine('Parsed tool call: name=$name, args=$arguments');
-          toolCalls.add(LLMToolCall(id: 'call_${toolCalls.length}', name: name, arguments: arguments));
+          toolCalls.add(
+            LLMToolCall(
+              id: 'call_${toolCalls.length}',
+              name: name,
+              arguments: arguments,
+            ),
+          );
         }
       } catch (e) {
         _log.fine('Failed to parse JSON: $e');
@@ -555,7 +624,11 @@ class LlamaCppChatRepository extends LLMChatRepository {
     }
 
     // Try XML-like format: <tool_call>...</tool_call>
-    final xmlPattern = RegExp(r'<tool_call>\s*(\{.*?\})\s*</tool_call>', multiLine: true, dotAll: true);
+    final xmlPattern = RegExp(
+      r'<tool_call>\s*(\{.*?\})\s*</tool_call>',
+      multiLine: true,
+      dotAll: true,
+    );
 
     for (final match in xmlPattern.allMatches(content)) {
       try {
@@ -564,7 +637,13 @@ class LlamaCppChatRepository extends LLMChatRepository {
         final data = json.decode(jsonStr) as Map<String, dynamic>;
 
         toolCalls.add(
-          LLMToolCall(id: 'call_${toolCalls.length}', name: data['name'] as String, arguments: json.encode(data['arguments'] ?? data['parameters'] ?? {})),
+          LLMToolCall(
+            id: 'call_${toolCalls.length}',
+            name: data['name'] as String,
+            arguments: json.encode(
+              data['arguments'] ?? data['parameters'] ?? {},
+            ),
+          ),
         );
       } catch (e) {
         _log.fine('Failed to parse XML-style tool call: $e');
@@ -572,7 +651,10 @@ class LlamaCppChatRepository extends LLMChatRepository {
     }
 
     // Try function call format: calculator({"operation": "multiply", ...})
-    final funcPattern = RegExp(r'(\w+)\s*\(\s*(\{[^}]+\})\s*\)', multiLine: true);
+    final funcPattern = RegExp(
+      r'(\w+)\s*\(\s*(\{[^}]+\})\s*\)',
+      multiLine: true,
+    );
 
     for (final match in funcPattern.allMatches(content)) {
       try {
@@ -583,7 +665,13 @@ class LlamaCppChatRepository extends LLMChatRepository {
         // Verify it's valid JSON
         json.decode(argsStr);
 
-        toolCalls.add(LLMToolCall(id: 'call_${toolCalls.length}', name: name, arguments: argsStr));
+        toolCalls.add(
+          LLMToolCall(
+            id: 'call_${toolCalls.length}',
+            name: name,
+            arguments: argsStr,
+          ),
+        );
       } catch (e) {
         _log.fine('Failed to parse function-style call: $e');
       }
@@ -726,7 +814,10 @@ class _InferenceToken {
 }
 
 class _InferenceComplete {
-  _InferenceComplete({required this.promptTokens, required this.generatedTokens});
+  _InferenceComplete({
+    required this.promptTokens,
+    required this.generatedTokens,
+  });
   final int promptTokens;
   final int generatedTokens;
 }
@@ -786,7 +877,10 @@ void _runInference(_InferenceRequest request) {
     modelParams.n_gpu_layers = request.nGpuLayers;
 
     final modelPathPtr = request.modelPath.toNativeUtf8();
-    final model = bindings.llama_load_model_from_file(modelPathPtr.cast(), modelParams);
+    final model = bindings.llama_load_model_from_file(
+      modelPathPtr.cast(),
+      modelParams,
+    );
     calloc.free(modelPathPtr);
 
     if (model == nullptr) {
@@ -802,7 +896,9 @@ void _runInference(_InferenceRequest request) {
 
       if (loraAdapter == nullptr) {
         bindings.llama_free_model(model);
-        request.sendPort.send(_InferenceError('Failed to load LoRA adapter: ${request.loraPath}'));
+        request.sendPort.send(
+          _InferenceError('Failed to load LoRA adapter: ${request.loraPath}'),
+        );
         return;
       }
     }
@@ -831,7 +927,11 @@ void _runInference(_InferenceRequest request) {
 
     // Apply LoRA adapter to context if loaded
     if (loraAdapter != null) {
-      final result = bindings.llama_set_adapter_lora(ctx, loraAdapter, request.loraScale);
+      final result = bindings.llama_set_adapter_lora(
+        ctx,
+        loraAdapter,
+        request.loraScale,
+      );
       if (result != 0) {
         bindings.llama_free(ctx);
         bindings.llama_adapter_lora_free(loraAdapter);
@@ -876,10 +976,19 @@ void _runInference(_InferenceRequest request) {
       final samplerParams = bindings.llama_sampler_chain_default_params();
       final sampler = bindings.llama_sampler_chain_init(samplerParams);
 
-      bindings.llama_sampler_chain_add(sampler, bindings.llama_sampler_init_temp(request.options.temperature));
-      bindings.llama_sampler_chain_add(sampler, bindings.llama_sampler_init_top_k(request.options.topK));
-      bindings.llama_sampler_chain_add(sampler, bindings.llama_sampler_init_top_p(request.options.topP, 1));
-      
+      bindings.llama_sampler_chain_add(
+        sampler,
+        bindings.llama_sampler_init_temp(request.options.temperature),
+      );
+      bindings.llama_sampler_chain_add(
+        sampler,
+        bindings.llama_sampler_init_top_k(request.options.topK),
+      );
+      bindings.llama_sampler_chain_add(
+        sampler,
+        bindings.llama_sampler_init_top_p(request.options.topP, 1),
+      );
+
       // Use provided seed or generate random one
       final seed = request.options.seed ?? math.Random().nextInt(0x7FFFFFFF);
       bindings.llama_sampler_chain_add(
@@ -945,7 +1054,12 @@ void _runInference(_InferenceRequest request) {
       calloc.free(newTokenPtr);
       calloc.free(tokensPtr);
 
-      request.sendPort.send(_InferenceComplete(promptTokens: nTokens, generatedTokens: generatedTokens));
+      request.sendPort.send(
+        _InferenceComplete(
+          promptTokens: nTokens,
+          generatedTokens: generatedTokens,
+        ),
+      );
     } finally {
       // Clear LoRA from context before freeing
       if (loraAdapter != null) {
@@ -974,7 +1088,10 @@ void _runEmbedding(_EmbeddingRequest request) {
     modelParams.n_gpu_layers = request.nGpuLayers;
 
     final modelPathPtr = request.modelPath.toNativeUtf8();
-    final model = bindings.llama_load_model_from_file(modelPathPtr.cast(), modelParams);
+    final model = bindings.llama_load_model_from_file(
+      modelPathPtr.cast(),
+      modelParams,
+    );
     calloc.free(modelPathPtr);
 
     if (model == nullptr) {
@@ -1059,10 +1176,15 @@ void _runEmbedding(_EmbeddingRequest request) {
         }
 
         // Copy embedding to Dart list
-        final embedding = embdPtr.asTypedList(nEmb).map((f) => f.toDouble()).toList();
+        final embedding = embdPtr
+            .asTypedList(nEmb)
+            .map((f) => f.toDouble())
+            .toList();
 
         // Normalize embedding (L2 normalization)
-        final norm = math.sqrt(embedding.map((e) => e * e).reduce((a, b) => a + b));
+        final norm = math.sqrt(
+          embedding.map((e) => e * e).reduce((a, b) => a + b),
+        );
         if (norm > 0) {
           for (int i = 0; i < embedding.length; i++) {
             embedding[i] = embedding[i] / norm;
@@ -1070,13 +1192,15 @@ void _runEmbedding(_EmbeddingRequest request) {
         }
 
         // Send embedding result
-        request.sendPort.send(_EmbeddingResult(
-          LLMEmbedding(
-            model: request.modelPath,
-            embedding: embedding,
-            promptEvalCount: nTokens,
+        request.sendPort.send(
+          _EmbeddingResult(
+            LLMEmbedding(
+              model: request.modelPath,
+              embedding: embedding,
+              promptEvalCount: nTokens,
+            ),
           ),
-        ));
+        );
 
         calloc.free(tokensPtr);
       }

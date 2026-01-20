@@ -53,21 +53,21 @@ void _loadDependencies(List<String> llamaPaths) {
           'libggml.so',
         ]
       : Platform.isMacOS
-          ? [
-              'libggml-base.dylib',
-              'libggml-cpu.dylib',
-              'libggml-metal.dylib', // Apple Metal GPU (optional)
-              'libggml.dylib',
-            ]
-          : Platform.isWindows
-              ? [
-                  'ggml-base.dll',
-                  'ggml-cpu.dll',
-                  'ggml-cuda.dll', // NVIDIA GPU (optional)
-                  'ggml-vulkan.dll', // Vulkan GPU (optional)
-                  'ggml.dll',
-                ]
-              : <String>[];
+      ? [
+          'libggml-base.dylib',
+          'libggml-cpu.dylib',
+          'libggml-metal.dylib', // Apple Metal GPU (optional)
+          'libggml.dylib',
+        ]
+      : Platform.isWindows
+      ? [
+          'ggml-base.dll',
+          'ggml-cpu.dll',
+          'ggml-cuda.dll', // NVIDIA GPU (optional)
+          'ggml-vulkan.dll', // Vulkan GPU (optional)
+          'ggml.dll',
+        ]
+      : <String>[];
 
   for (final depLib in depLibs) {
     for (final llamaPath in llamaPaths) {
@@ -116,7 +116,7 @@ List<String> _getSearchPaths(String libraryName) {
 
   // 5. Package's linux/libs directory (for development with flutter plugin structure)
   paths.add(path.join(scriptDir, '..', 'linux', 'libs', libraryName));
-  
+
   // 6. Also try relative to the package root
   paths.add(path.join(scriptDir, '..', '..', 'linux', 'libs', libraryName));
 

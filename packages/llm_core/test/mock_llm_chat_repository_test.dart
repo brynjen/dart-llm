@@ -11,9 +11,7 @@ void main() {
 
       final stream = mock.streamChat(
         'test-model',
-        messages: [
-          LLMMessage(role: LLMRole.user, content: 'Hello'),
-        ],
+        messages: [LLMMessage(role: LLMRole.user, content: 'Hello')],
       );
 
       String content = '';
@@ -33,9 +31,7 @@ void main() {
 
       final stream = mock.streamChat(
         'test-model',
-        messages: [
-          LLMMessage(role: LLMRole.user, content: 'What is 2+2?'),
-        ],
+        messages: [LLMMessage(role: LLMRole.user, content: 'What is 2+2?')],
       );
 
       List<LLMToolCall>? toolCalls;
@@ -56,17 +52,12 @@ void main() {
 
       final stream = mock.streamChat(
         'test-model',
-        messages: [
-          LLMMessage(role: LLMRole.user, content: 'Hello'),
-        ],
+        messages: [LLMMessage(role: LLMRole.user, content: 'Hello')],
       );
 
-      expect(
-        () async {
-          await for (final _ in stream) {}
-        },
-        throwsA(isA<LLMApiException>()),
-      );
+      expect(() async {
+        await for (final _ in stream) {}
+      }, throwsA(isA<LLMApiException>()));
     });
 
     test('generates embeddings', () async {

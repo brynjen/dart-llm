@@ -9,10 +9,8 @@ import 'model_info.dart';
 
 /// Client for downloading and acquiring models from HuggingFace.
 class HuggingFaceClient {
-  HuggingFaceClient({
-    http.Client? httpClient,
-    this.llamaCppPath,
-  }) : _httpClient = httpClient ?? http.Client();
+  HuggingFaceClient({http.Client? httpClient, this.llamaCppPath})
+    : _httpClient = httpClient ?? http.Client();
 
   final http.Client _httpClient;
 
@@ -110,8 +108,11 @@ class HuggingFaceClient {
   }
 
   /// Get download URL for a HuggingFace model.
-  String getHuggingFaceUrl(String repoId, String filename,
-      {String revision = 'main'}) {
+  String getHuggingFaceUrl(
+    String repoId,
+    String filename, {
+    String revision = 'main',
+  }) {
     return 'https://huggingface.co/$repoId/resolve/$revision/$filename';
   }
 
@@ -287,13 +288,15 @@ class HuggingFaceClient {
     final ggufFiles = files
         .where((f) => f.filename.toLowerCase().endsWith('.gguf'))
         .toList();
-    final hasSafetensors =
-        files.any((f) => f.filename.endsWith('.safetensors'));
+    final hasSafetensors = files.any(
+      (f) => f.filename.endsWith('.safetensors'),
+    );
 
     // CASE 1: Specific file requested
     if (preferredFile != null) {
-      final match =
-          ggufFiles.where((f) => f.filename == preferredFile).toList();
+      final match = ggufFiles
+          .where((f) => f.filename == preferredFile)
+          .toList();
       if (match.isEmpty) {
         throw ModelNotFoundException(
           repoId: repoId,
@@ -315,8 +318,9 @@ class HuggingFaceClient {
     if (ggufFiles.isNotEmpty) {
       // Find exact quantization match
       final quantPattern = RegExp(targetQuant.cliName, caseSensitive: false);
-      final matches =
-          ggufFiles.where((f) => quantPattern.hasMatch(f.filename)).toList();
+      final matches = ggufFiles
+          .where((f) => quantPattern.hasMatch(f.filename))
+          .toList();
 
       if (matches.isEmpty) {
         throw ModelNotFoundException(
@@ -482,10 +486,7 @@ class HuggingFaceClient {
   }
 
   ModelConverter _createConverter() {
-    return ModelConverter(
-      llamaCppPath: llamaCppPath,
-      httpClient: _httpClient,
-    );
+    return ModelConverter(llamaCppPath: llamaCppPath, httpClient: _httpClient);
   }
 
   String _formatSize(int bytes) {

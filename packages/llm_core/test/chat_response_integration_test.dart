@@ -9,15 +9,17 @@ void main() {
       final mock = MockLLMChatRepository();
       mock.setResponse('The answer is 4');
       mock.setToolCalls([
-        LLMToolCall(id: 'call_1', name: 'calculator', arguments: '{"a": 2, "b": 2}'),
+        LLMToolCall(
+          id: 'call_1',
+          name: 'calculator',
+          arguments: '{"a": 2, "b": 2}',
+        ),
       ]);
       mock.setTokenCounts(promptTokens: 10, generatedTokens: 5);
 
       final response = await mock.chatResponse(
         'test-model',
-        messages: [
-          LLMMessage(role: LLMRole.user, content: 'What is 2+2?'),
-        ],
+        messages: [LLMMessage(role: LLMRole.user, content: 'What is 2+2?')],
         tools: [],
       );
 
@@ -35,9 +37,7 @@ void main() {
 
       final response = await mock.chatResponse(
         'test-model',
-        messages: [
-          LLMMessage(role: LLMRole.user, content: 'Hello'),
-        ],
+        messages: [LLMMessage(role: LLMRole.user, content: 'Hello')],
       );
 
       expect(response.content, '');
@@ -51,9 +51,7 @@ void main() {
 
       final response = await mock.chatResponse(
         'test-model',
-        messages: [
-          LLMMessage(role: LLMRole.user, content: 'Hello'),
-        ],
+        messages: [LLMMessage(role: LLMRole.user, content: 'Hello')],
         think: true,
       );
 

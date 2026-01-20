@@ -30,9 +30,7 @@ void main() {
     });
 
     test('validateMessages - valid messages pass', () {
-      final messages = [
-        LLMMessage(role: LLMRole.user, content: 'Hello'),
-      ];
+      final messages = [LLMMessage(role: LLMRole.user, content: 'Hello')];
       expect(() => Validation.validateMessages(messages), returnsNormally);
     });
 
@@ -45,10 +43,7 @@ void main() {
     });
 
     test('validateMessage - tool message without toolCallId throws', () {
-      final message = LLMMessage(
-        role: LLMRole.tool,
-        content: 'result',
-      );
+      final message = LLMMessage(role: LLMRole.tool, content: 'result');
       expect(
         () => Validation.validateMessage(message),
         throwsA(isA<LLMApiException>()),

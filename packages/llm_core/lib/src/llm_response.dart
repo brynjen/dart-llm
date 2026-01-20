@@ -41,4 +41,3 @@ class LLMResponse {
   /// Tool calls requested by the model.
   final List<LLMToolCall>? toolCalls;
 }
-

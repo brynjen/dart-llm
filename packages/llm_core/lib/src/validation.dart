@@ -19,10 +19,7 @@ class Validation {
   /// Throws [LLMApiException] if validation fails.
   static void validateMessages(List<LLMMessage> messages) {
     if (messages.isEmpty) {
-      throw LLMApiException(
-        'Messages list cannot be empty',
-        statusCode: 400,
-      );
+      throw LLMApiException('Messages list cannot be empty', statusCode: 400);
     }
 
     if (messages.length > maxMessages) {
@@ -67,10 +64,7 @@ class Validation {
       for (int i = 0; i < message.images!.length; i++) {
         final image = message.images![i];
         if (image.isEmpty) {
-          throw LLMApiException(
-            '${prefix}Image $i is empty',
-            statusCode: 400,
-          );
+          throw LLMApiException('${prefix}Image $i is empty', statusCode: 400);
         }
       }
     }
@@ -90,8 +84,10 @@ class Validation {
       case LLMRole.assistant:
         // Assistant messages can have content, tool calls, or both
         // Empty string content is valid if toolCalls exist
-        final hasContent = message.content != null && message.content!.isNotEmpty;
-        final hasToolCalls = message.toolCalls != null && message.toolCalls!.isNotEmpty;
+        final hasContent =
+            message.content != null && message.content!.isNotEmpty;
+        final hasToolCalls =
+            message.toolCalls != null && message.toolCalls!.isNotEmpty;
         if (!hasContent && !hasToolCalls) {
           throw LLMApiException(
             '${prefix}Assistant message must have content or tool calls',
@@ -131,10 +127,7 @@ class Validation {
   /// Throws [LLMApiException] if validation fails.
   static void validateModelName(String model) {
     if (model.isEmpty) {
-      throw LLMApiException(
-        'Model name cannot be empty',
-        statusCode: 400,
-      );
+      throw LLMApiException('Model name cannot be empty', statusCode: 400);
     }
 
     if (model.length > 200) {

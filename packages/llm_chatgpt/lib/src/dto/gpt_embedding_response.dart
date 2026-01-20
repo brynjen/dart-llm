@@ -23,12 +23,11 @@ class ChatGPTEmbeddingsResponse {
       );
 
   Map<String, dynamic> toJson() => {
-        'model': model,
-        'object': object,
-        'usage': usage.toJson(),
-        'data':
-            data.map((dataJson) => dataJson.toJson()).toList(growable: false),
-      };
+    'model': model,
+    'object': object,
+    'usage': usage.toJson(),
+    'data': data.map((dataJson) => dataJson.toJson()).toList(growable: false),
+  };
 }
 
 /// A single embedding in the response.
@@ -48,10 +47,10 @@ class ChatGPTEmbedding {
       );
 
   Map<String, dynamic> toJson() => {
-        'index': index,
-        'object': object,
-        'embedding': embedding,
-      };
+    'index': index,
+    'object': object,
+    'embedding': embedding,
+  };
 }
 
 /// Token usage for embedding requests.
@@ -71,9 +70,9 @@ class ChatGPTEmbeddingsUsage {
       );
 
   Map<String, dynamic> toJson() => {
-        'prompt_tokens': promptTokens,
-        'total_tokens': totalTokens,
-      };
+    'prompt_tokens': promptTokens,
+    'total_tokens': totalTokens,
+  };
 }
 
 /// Extension to convert ChatGPT embeddings response to LLM embeddings.
@@ -88,4 +87,3 @@ extension ChatGPTLLMEmbedding on ChatGPTEmbeddingsResponse {
       )
       .toList(growable: false);
 }
-

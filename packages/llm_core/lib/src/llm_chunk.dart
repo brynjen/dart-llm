@@ -66,4 +66,3 @@ class LLMChunkMessage {
   /// List of tool call data.
   final List<LLMToolCall>? toolCalls;
 }
-

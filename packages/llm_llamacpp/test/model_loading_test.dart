@@ -119,10 +119,7 @@ void main() {
       tempFile.writeAsBytesSync([0, 1, 2, 3]); // Not a valid GGUF
 
       try {
-        expect(
-          () => repo.loadModel(tempFile.path),
-          throwsException,
-        );
+        expect(() => repo.loadModel(tempFile.path), throwsException);
       } finally {
         tempFile.deleteSync();
       }
@@ -236,4 +233,3 @@ void main() {
     });
   });
 }
-

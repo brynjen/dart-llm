@@ -119,8 +119,11 @@ class Llama3Template extends PromptTemplate {
   }
 
   @override
-  List<String> get stopTokens =>
-      ['<|eot_id|>', '<|end_of_text|>', '<|start_header_id|>'];
+  List<String> get stopTokens => [
+    '<|eot_id|>',
+    '<|end_of_text|>',
+    '<|start_header_id|>',
+  ];
 }
 
 /// Alpaca template.
@@ -287,4 +290,3 @@ PromptTemplate getTemplateForModel(String modelName) {
   // Default to ChatML as it's widely compatible
   return ChatMLTemplate();
 }
-

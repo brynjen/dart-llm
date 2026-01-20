@@ -145,11 +145,7 @@ enum ConversionStage {
 
 /// Model file information from HuggingFace.
 class HfModelFile {
-  HfModelFile({
-    required this.filename,
-    required this.size,
-    this.sha256,
-  });
+  HfModelFile({required this.filename, required this.size, this.sha256});
 
   final String filename;
   final int size;
@@ -227,10 +223,7 @@ class ModelConverter {
     final packages = ['transformers', 'torch', 'safetensors', 'sentencepiece'];
     for (final pkg in packages) {
       try {
-        final result = await Process.run(
-          pythonPath,
-          ['-c', 'import $pkg'],
-        );
+        final result = await Process.run(pythonPath, ['-c', 'import $pkg']);
         if (result.exitCode != 0) {
           missing.add('Python package: $pkg');
         }
@@ -274,10 +267,7 @@ class ModelConverter {
   }
 
   /// Check if a HuggingFace repo has safetensors files.
-  Future<bool> hasSafetensors(
-    String repoId, {
-    String revision = 'main',
-  }) async {
+  Future<bool> hasSafetensors(String repoId, {String revision = 'main'}) async {
     final files = await listRepoFiles(repoId, revision: revision);
     return files.any((f) => f.filename.endsWith('.safetensors'));
   }
@@ -307,7 +297,8 @@ class ModelConverter {
       yield ConversionProgress(
         stage: ConversionStage.failed,
         message: 'Missing requirements',
-        error: 'Missing: ${missing.join(", ")}\n\n'
+        error:
+            'Missing: ${missing.join(", ")}\n\n'
             'Install with:\n'
             '  pip install transformers torch safetensors sentencepiece',
       );
@@ -319,12 +310,14 @@ class ModelConverter {
     if (ggufFiles.isNotEmpty) {
       yield ConversionProgress(
         stage: ConversionStage.checking,
-        message: 'Note: GGUF files already exist in repo: ${ggufFiles.join(", ")}',
+        message:
+            'Note: GGUF files already exist in repo: ${ggufFiles.join(", ")}',
       );
     }
 
     // Set up cache directory
-    final workDir = cacheDir ??
+    final workDir =
+        cacheDir ??
         '${Platform.environment['HOME']}/.cache/llm_llamacpp/convert';
     final modelCacheDir = '$workDir/${repoId.replaceAll("/", "_")}';
     await Directory(modelCacheDir).create(recursive: true);
@@ -372,18 +365,14 @@ class ModelConverter {
     );
 
     try {
-      final convertResult = await Process.run(
-        pythonPath,
-        [
-          convertScript,
-          modelCacheDir,
-          '--outfile',
-          baseOutputPath,
-          '--outtype',
-          'f16',
-        ],
-        workingDirectory: File(convertScript).parent.path,
-      );
+      final convertResult = await Process.run(pythonPath, [
+        convertScript,
+        modelCacheDir,
+        '--outfile',
+        baseOutputPath,
+        '--outtype',
+        'f16',
+      ], workingDirectory: File(convertScript).parent.path);
 
       if (convertResult.exitCode != 0) {
         yield ConversionProgress(
@@ -420,10 +409,11 @@ class ModelConverter {
           return;
         }
 
-        final quantizeResult = await Process.run(
-          quantizeScript,
-          [baseOutputPath, outputPath, quantization.cliName],
-        );
+        final quantizeResult = await Process.run(quantizeScript, [
+          baseOutputPath,
+          outputPath,
+          quantization.cliName,
+        ]);
 
         if (quantizeResult.exitCode != 0) {
           yield ConversionProgress(
@@ -594,4 +584,3 @@ Many models have GGUF versions available:
 ''';
   }
 }
-

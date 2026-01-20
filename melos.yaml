@@ -21,8 +21,8 @@ command:
     updatePubspecs: true
     # Create git tag
     gitTag: true
-    # Create GitHub release
-    githubRelease: true
+    # Do NOT auto-create GitHub releases (manual process)
+    githubRelease: false
     # Prerelease support
     prerelease: true
 
@@ -57,10 +57,10 @@ scripts:
     run: melos exec -- "dart pub cache clean"
     description: Clean build artifacts
   
-  # Verify packages can be published
+  # Verify packages can be published (dry-run only, no actual publishing)
   publish:check:
     run: melos exec -- "dart pub publish --dry-run"
-    description: Verify all packages can be published
+    description: Verify all packages can be published (dry-run only, does not publish)
   
   # Run all checks (format, analyze, test)
   check:

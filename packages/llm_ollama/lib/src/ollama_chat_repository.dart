@@ -120,8 +120,9 @@ class OllamaChatRepository extends LLMChatRepository {
       'think': effectiveThink,
     };
     if (effectiveTools.isNotEmpty) {
-      body['tools'] =
-          effectiveTools.map((tool) => tool.toJson).toList(growable: false);
+      body['tools'] = effectiveTools
+          .map((tool) => tool.toJson)
+          .toList(growable: false);
     }
 
     final response = await RetryUtil.executeWithRetry(
@@ -130,7 +131,8 @@ class OllamaChatRepository extends LLMChatRepository {
       isRetryable: (error) {
         // Retry on network errors and retryable HTTP status codes
         if (error is LLMApiException && error.statusCode != null) {
-          return retryConfig?.shouldRetryForStatusCode(error.statusCode!) ?? false;
+          return retryConfig?.shouldRetryForStatusCode(error.statusCode!) ??
+              false;
         }
         return error is TimeoutException ||
             error.toString().toLowerCase().contains('connection') ||
@@ -151,8 +153,9 @@ class OllamaChatRepository extends LLMChatRepository {
           );
         case 400: // HttpStatus.badRequest
           // Handle 400 errors which might be feature not supported
-          final errorBody =
-              await response.stream.transform(utf8.decoder).join();
+          final errorBody = await response.stream
+              .transform(utf8.decoder)
+              .join();
           await _handleBadRequestError(
             errorBody,
             model,
@@ -161,8 +164,9 @@ class OllamaChatRepository extends LLMChatRepository {
           );
           break;
         default:
-          final errorBody =
-              await response.stream.transform(utf8.decoder).join();
+          final errorBody = await response.stream
+              .transform(utf8.decoder)
+              .join();
           throw LLMApiException(
             'Request failed',
             statusCode: response.statusCode,
@@ -253,15 +257,17 @@ class OllamaChatRepository extends LLMChatRepository {
     final payloadSize = body != null ? json.encode(body).length : 0;
     final readTimeout = config.getReadTimeoutForPayload(payloadSize);
 
-    return httpClient.send(request).timeout(
-      readTimeout,
-      onTimeout: () {
-        throw TimeoutException(
-          'Request timed out after ${readTimeout.inSeconds} seconds',
+    return httpClient
+        .send(request)
+        .timeout(
           readTimeout,
+          onTimeout: () {
+            throw TimeoutException(
+              'Request timed out after ${readTimeout.inSeconds} seconds',
+              readTimeout,
+            );
+          },
         );
-      },
-    );
   }
 
   Future<http.Response> _sendNonStreamingRequest(
@@ -298,9 +304,10 @@ class OllamaChatRepository extends LLMChatRepository {
     List<LLMMessage> workingMessages = List.from(messages);
     List<dynamic> collectedToolCalls = [];
 
-    await for (final line in response.stream
-        .transform(utf8.decoder)
-        .transform(const LineSplitter())) {
+    await for (final line
+        in response.stream
+            .transform(utf8.decoder)
+            .transform(const LineSplitter())) {
       if (line.isNotEmpty) {
         try {
           final chunk = OllamaChunk.fromJson(json.decode(line));
@@ -314,9 +321,11 @@ class OllamaChatRepository extends LLMChatRepository {
             for (final toolCall in collectedToolCalls) {
               final tool = tools.firstWhere(
                 (t) => t.name == toolCall.name,
-                orElse: () => throw Exception('Tool ${toolCall.name} not found'),
+                orElse: () =>
+                    throw Exception('Tool ${toolCall.name} not found'),
               );
-              final toolResponse = await tool.execute(
+              final toolResponse =
+                  await tool.execute(
                     json.decode(toolCall.arguments),
                     extra: extra,
                   ) ??
@@ -377,7 +386,8 @@ class OllamaChatRepository extends LLMChatRepository {
       config: retryConfig,
       isRetryable: (error) {
         if (error is LLMApiException && error.statusCode != null) {
-          return retryConfig?.shouldRetryForStatusCode(error.statusCode!) ?? false;
+          return retryConfig?.shouldRetryForStatusCode(error.statusCode!) ??
+              false;
         }
         return error is TimeoutException ||
             error.toString().toLowerCase().contains('connection') ||
@@ -398,4 +408,3 @@ class OllamaChatRepository extends LLMChatRepository {
     }
   }
 }
-

@@ -43,37 +43,40 @@ class BackendDetector {
     final backends = <BackendInfo>[];
 
     // CPU is always available
-    backends.add(BackendInfo(
-      name: 'CPU',
-      isAvailable: true,
-      deviceName: Platform.operatingSystem,
-    ));
+    backends.add(
+      BackendInfo(
+        name: 'CPU',
+        isAvailable: true,
+        deviceName: Platform.operatingSystem,
+      ),
+    );
 
     // Check for CUDA (Linux/Windows)
     if (Platform.isLinux || Platform.isWindows) {
       final hasCuda = _checkCudaAvailable();
-      backends.add(BackendInfo(
-        name: 'CUDA',
-        isAvailable: hasCuda,
-        deviceName: hasCuda ? _getCudaDeviceName() : null,
-      ));
+      backends.add(
+        BackendInfo(
+          name: 'CUDA',
+          isAvailable: hasCuda,
+          deviceName: hasCuda ? _getCudaDeviceName() : null,
+        ),
+      );
     }
 
     // Check for Metal (macOS)
     if (Platform.isMacOS) {
-      backends.add(BackendInfo(
-        name: 'Metal',
-        isAvailable: true, // Metal is always available on modern macOS
-        deviceName: 'Apple Silicon / AMD GPU',
-      ));
+      backends.add(
+        BackendInfo(
+          name: 'Metal',
+          isAvailable: true, // Metal is always available on modern macOS
+          deviceName: 'Apple Silicon / AMD GPU',
+        ),
+      );
     }
 
     // Check for Vulkan
     final hasVulkan = _checkVulkanAvailable();
-    backends.add(BackendInfo(
-      name: 'Vulkan',
-      isAvailable: hasVulkan,
-    ));
+    backends.add(BackendInfo(name: 'Vulkan', isAvailable: hasVulkan));
 
     return backends;
   }
@@ -125,10 +128,10 @@ class BackendDetector {
 
   static String? _getCudaDeviceName() {
     try {
-      final result = Process.runSync(
-        'nvidia-smi',
-        ['--query-gpu=name', '--format=csv,noheader'],
-      );
+      final result = Process.runSync('nvidia-smi', [
+        '--query-gpu=name',
+        '--format=csv,noheader',
+      ]);
       if (result.exitCode == 0) {
         return (result.stdout as String).trim().split('\n').first;
       }
