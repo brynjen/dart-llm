@@ -16,6 +16,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `chatResponse()` method on `LLMChatRepository` for non-streaming complete responses
 - Input validation utilities in `Validation` class
 - Comprehensive Flutter example app (`example_app/`) demonstrating real-world usage
+- All packages are now published and available on [pub.dev](https://pub.dev/publishers/brynjen/packages):
+  - [llm_core](https://pub.dev/packages/llm_core)
+  - [llm_ollama](https://pub.dev/packages/llm_ollama)
+  - [llm_chatgpt](https://pub.dev/packages/llm_chatgpt)
+  - [llm_llamacpp](https://pub.dev/packages/llm_llamacpp)
 
 ### Changed
 - `streamChat()` now accepts optional `StreamChatOptions` parameter

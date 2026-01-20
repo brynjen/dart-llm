@@ -8,10 +8,10 @@ A Dart monorepo for interacting with Large Language Models (LLMs). Supports mult
 
 | Package | Description | pub.dev |
 |---------|-------------|---------|
-| [llm_core](packages/llm_core/) | Core abstractions and interfaces | [llm_core](https://pub.dev/packages/llm_core) |
-| [llm_ollama](packages/llm_ollama/) | Ollama backend | [llm_ollama](https://pub.dev/packages/llm_ollama) |
-| [llm_chatgpt](packages/llm_chatgpt/) | OpenAI/ChatGPT backend | [llm_chatgpt](https://pub.dev/packages/llm_chatgpt) |
-| [llm_llamacpp](packages/llm_llamacpp/) | Local inference via llama.cpp | [llm_llamacpp](https://pub.dev/packages/llm_llamacpp) |
+| [llm_core](packages/llm_core/) | Core abstractions and interfaces | [![pub.dev](https://img.shields.io/pub/v/llm_core)](https://pub.dev/packages/llm_core) |
+| [llm_ollama](packages/llm_ollama/) | Ollama backend | [![pub.dev](https://img.shields.io/pub/v/llm_ollama)](https://pub.dev/packages/llm_ollama) |
+| [llm_chatgpt](packages/llm_chatgpt/) | OpenAI/ChatGPT backend | [![pub.dev](https://img.shields.io/pub/v/llm_chatgpt)](https://pub.dev/packages/llm_chatgpt) |
+| [llm_llamacpp](packages/llm_llamacpp/) | Local inference via llama.cpp | [![pub.dev](https://img.shields.io/pub/v/llm_llamacpp)](https://pub.dev/packages/llm_llamacpp) |
 
 ## Features
 

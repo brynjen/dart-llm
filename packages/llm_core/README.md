@@ -1,6 +1,10 @@
 # llm_core
 
+[![pub.dev](https://img.shields.io/pub/v/llm_core)](https://pub.dev/packages/llm_core)
+
 Core abstractions for LLM (Large Language Model) interactions in Dart.
+
+Available on [pub.dev](https://pub.dev/packages/llm_core).
 
 This package provides the foundational interfaces and models used by LLM backend implementations such as `llm_ollama`, `llm_chatgpt`, and `llm_llamacpp`.
 

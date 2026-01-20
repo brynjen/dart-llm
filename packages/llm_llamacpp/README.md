@@ -1,6 +1,10 @@
 # llm_llamacpp
 
+[![pub.dev](https://img.shields.io/pub/v/llm_llamacpp)](https://pub.dev/packages/llm_llamacpp)
+
 Local LLM inference via llama.cpp for Dart and Flutter.
+
+Available on [pub.dev](https://pub.dev/packages/llm_llamacpp).
 
 ## Features
 

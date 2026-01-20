@@ -1,6 +1,10 @@
 # llm_chatgpt
 
+[![pub.dev](https://img.shields.io/pub/v/llm_chatgpt)](https://pub.dev/packages/llm_chatgpt)
+
 OpenAI/ChatGPT backend implementation for LLM interactions in Dart.
+
+Available on [pub.dev](https://pub.dev/packages/llm_chatgpt).
 
 ## Features
 

@@ -1,6 +1,10 @@
 # llm_ollama
 
+[![pub.dev](https://img.shields.io/pub/v/llm_ollama)](https://pub.dev/packages/llm_ollama)
+
 Ollama backend implementation for LLM interactions in Dart.
+
+Available on [pub.dev](https://pub.dev/packages/llm_ollama).
 
 ## Features
 

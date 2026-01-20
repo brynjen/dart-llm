@@ -4,6 +4,7 @@ version: 0.1.0
 homepage: https://github.com/brynjen/dart-llm
 repository: https://github.com/brynjen/dart-llm
 issue_tracker: https://github.com/brynjen/dart-llm/issues
+documentation: https://pub.dev/documentation/llm_llamacpp/latest/
 topics:
   - llamacpp
   - llama
