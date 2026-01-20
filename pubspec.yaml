@@ -1,0 +1,7 @@
+name: dart_llm_workspace
+description: Root workspace for dart-llm monorepo
+version: 0.0.0
+publish_to: none
+
+environment:
+  sdk: ^3.8.0

@@ -27,45 +27,36 @@ command:
     prerelease: true
 
 scripts:
-  # Get dependencies for all packages
-  get:
-    run: melos bootstrap
-    description: Install dependencies for all packages
-  
+  # Get dependencies for all packages (just use melos bootstrap directly, no script needed)
   # Run tests for all packages
   test:
-    run: melos exec -- "dart test"
+    exec: dart test
     description: Run tests for all packages
   
   # Analyze all packages
   analyze:
-    run: melos exec -- "dart analyze"
+    exec: dart analyze
     description: Analyze code for all packages
-  
-  # Format all packages
-  format:
-    run: melos exec -- "dart format ."
-    description: Format code for all packages
   
   # Check formatting
   format:check:
-    run: melos exec -- "dart format --set-exit-if-changed ."
+    exec: dart format --set-exit-if-changed .
     description: Check code formatting for all packages
   
   # Clean build artifacts
   clean:
-    run: melos exec -- "dart pub cache clean"
+    exec: dart pub cache clean
     description: Clean build artifacts
   
   # Verify packages can be published (dry-run only, no actual publishing)
   publish:check:
-    run: melos exec -- "dart pub publish --dry-run"
+    exec: dart pub publish --dry-run
     description: Verify all packages can be published (dry-run only, does not publish)
   
   # Run all checks (format, analyze, test)
   check:
     run: |
-      melos format:check
-      melos analyze
-      melos test
+      melos format --set-exit-if-changed
+      melos run analyze
+      melos run test
     description: Run all code quality checks

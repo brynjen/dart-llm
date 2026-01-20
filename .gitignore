@@ -93,3 +93,6 @@ build-android/deps/
 *.tmp
 *.temp
 *.log
+
+# Generated files
+**/flutter/ephemeral/.plugin_symlinks/

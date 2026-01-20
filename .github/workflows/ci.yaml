@@ -18,19 +18,14 @@ jobs:
         with:
           sdk: stable
       
+      - name: Install Melos
+        run: dart pub global activate melos
+      
       - name: Install dependencies
-        run: |
-          cd packages/llm_core && dart pub get
-          cd ../llm_ollama && dart pub get
-          cd ../llm_chatgpt && dart pub get
-          cd ../llm_llamacpp && dart pub get || true
+        run: melos bootstrap
       
       - name: Verify formatting
-        run: |
-          cd packages/llm_core && dart format --set-exit-if-changed .
-          cd ../llm_ollama && dart format --set-exit-if-changed .
-          cd ../llm_chatgpt && dart format --set-exit-if-changed .
-          cd ../llm_llamacpp && dart format --set-exit-if-changed . || true
+        run: melos format:check
       
       - name: Analyze code
         run: |
