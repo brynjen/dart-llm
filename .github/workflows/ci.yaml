@@ -40,32 +40,6 @@ jobs:
         run: |
           [ -f pubspec.yaml.backup ] && mv pubspec.yaml.backup pubspec.yaml || true
 
-  test:
-    name: Test Packages
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-        package: [llm_core, llm_ollama, llm_chatgpt]
-        exclude:
-          # Skip llm_llamacpp on CI as it requires native libraries
-          - package: llm_llamacpp
-    steps:
-      - uses: actions/checkout@v4
-      
-      - name: Setup Dart SDK
-        uses: dart-lang/setup-dart@v1
-        with:
-          sdk: stable
-      
-      - name: Install Melos
-        run: dart pub global activate melos
-      
-      - name: Install dependencies
-        run: melos bootstrap --scope="${{ matrix.package }}"
-      
-      - name: Run tests
-        run: melos run test --scope="${{ matrix.package }}"
 
   test-llm_core:
     name: Test llm_core
@@ -81,11 +55,21 @@ jobs:
       - name: Install Melos
         run: dart pub global activate melos
       
-      - name: Install dependencies
-        run: melos bootstrap --scope="llm_core"
+      - name: Install dependencies (excluding llm_llamacpp which requires Flutter)
+        run: |
+          # Temporarily remove llm_llamacpp from workspace to avoid Flutter requirement
+          cp pubspec.yaml pubspec.yaml.backup
+          sed -i '/packages\/llm_llamacpp/d' pubspec.yaml
+          melos bootstrap --scope="llm_core"
       
       - name: Run tests
-        run: melos run test --scope="llm_core"
+        run: |
+          cd packages/llm_core && dart test
+      
+      - name: Restore original pubspec.yaml
+        if: always()
+        run: |
+          [ -f pubspec.yaml.backup ] && mv pubspec.yaml.backup pubspec.yaml || true
 
   test-llm_ollama:
     name: Test llm_ollama
@@ -101,11 +85,21 @@ jobs:
       - name: Install Melos
         run: dart pub global activate melos
       
-      - name: Install dependencies
-        run: melos bootstrap --scope="llm_ollama"
+      - name: Install dependencies (excluding llm_llamacpp which requires Flutter)
+        run: |
+          # Temporarily remove llm_llamacpp from workspace to avoid Flutter requirement
+          cp pubspec.yaml pubspec.yaml.backup
+          sed -i '/packages\/llm_llamacpp/d' pubspec.yaml
+          melos bootstrap --scope="llm_ollama"
       
       - name: Run tests
-        run: melos run test --scope="llm_ollama"
+        run: |
+          cd packages/llm_ollama && dart test
+      
+      - name: Restore original pubspec.yaml
+        if: always()
+        run: |
+          [ -f pubspec.yaml.backup ] && mv pubspec.yaml.backup pubspec.yaml || true
 
   test-llm_chatgpt:
     name: Test llm_chatgpt
@@ -121,11 +115,21 @@ jobs:
       - name: Install Melos
         run: dart pub global activate melos
       
-      - name: Install dependencies
-        run: melos bootstrap --scope="llm_chatgpt"
+      - name: Install dependencies (excluding llm_llamacpp which requires Flutter)
+        run: |
+          # Temporarily remove llm_llamacpp from workspace to avoid Flutter requirement
+          cp pubspec.yaml pubspec.yaml.backup
+          sed -i '/packages\/llm_llamacpp/d' pubspec.yaml
+          melos bootstrap --scope="llm_chatgpt"
       
       - name: Run tests
-        run: melos run test --scope="llm_chatgpt"
+        run: |
+          cd packages/llm_chatgpt && dart test
+      
+      - name: Restore original pubspec.yaml
+        if: always()
+        run: |
+          [ -f pubspec.yaml.backup ] && mv pubspec.yaml.backup pubspec.yaml || true
 
   check-dependencies:
     name: Check Dependencies
