@@ -42,7 +42,7 @@ void main() {
 
       expect(embedding.embedding.length, 1536);
       expect(embedding.embedding.first, 0.0);
-      expect(embedding.embedding.last, 1.535);
+      expect(embedding.embedding.last, closeTo(1.535, 0.0001));
     });
 
     test('construction with all fields', () {

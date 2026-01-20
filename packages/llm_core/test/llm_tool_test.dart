@@ -85,7 +85,6 @@ void main() {
             name: 'limit',
             type: 'integer',
             description: 'Result limit',
-            isRequired: false,
           ),
         ],
       );
@@ -104,18 +103,8 @@ void main() {
         toolName: 'optional',
         toolDescription: 'All optional',
         toolParameters: [
-          LLMToolParam(
-            name: 'param1',
-            type: 'string',
-            description: 'Param 1',
-            isRequired: false,
-          ),
-          LLMToolParam(
-            name: 'param2',
-            type: 'integer',
-            description: 'Param 2',
-            isRequired: false,
-          ),
+          LLMToolParam(name: 'param1', type: 'string', description: 'Param 1'),
+          LLMToolParam(name: 'param2', type: 'integer', description: 'Param 2'),
         ],
       );
 

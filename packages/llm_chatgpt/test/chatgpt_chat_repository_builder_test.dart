@@ -72,7 +72,7 @@ void main() {
       expect(repo.baseUrl, 'https://custom.openai.com');
       expect(repo.maxToolAttempts, 15);
       expect(repo.retryConfig?.maxAttempts, 3);
-      expect(repo.timeoutConfig?.readTimeout, Duration(minutes: 5));
+      expect(repo.timeoutConfig?.readTimeout, const Duration(minutes: 5));
     });
 
     test('builder extension method', () {

@@ -163,12 +163,7 @@ void main() {
             description: 'Name',
             isRequired: true,
           ),
-          LLMToolParam(
-            name: 'age',
-            type: 'integer',
-            description: 'Age',
-            isRequired: false,
-          ),
+          LLMToolParam(name: 'age', type: 'integer', description: 'Age'),
         ],
       );
 
@@ -192,7 +187,8 @@ void main() {
       final schema = param.toJsonSchema();
 
       expect(schema['type'], 'object');
-      expect(schema['properties'], isEmpty);
+      // Empty properties list means 'properties' key is not added to schema
+      expect(schema.containsKey('properties'), false);
       expect(schema.containsKey('required'), false);
     });
 
@@ -201,7 +197,6 @@ void main() {
         name: 'empty',
         type: 'object',
         description: 'Empty object',
-        properties: null,
       );
 
       final schema = param.toJsonSchema();

@@ -66,11 +66,18 @@ class OllamaChunkMessage extends LLMChunkMessage {
     if (json['tool_calls'] != null) {
       toolCalls = (json['tool_calls'] as List<dynamic>)
           .map(
-            (toolCallJson) => LLMToolCall(
-              id: null, // Ollama doesn't provide IDs
-              name: toolCallJson['function']['name'],
-              arguments: jsonEncode(toolCallJson['function']['arguments']),
-            ),
+            (toolCallJson) {
+              final argumentsValue = toolCallJson['function']['arguments'];
+              // If arguments is already a string, use it directly; otherwise encode it
+              final arguments = argumentsValue is String
+                  ? argumentsValue
+                  : jsonEncode(argumentsValue);
+              return LLMToolCall(
+                id: null, // Ollama doesn't provide IDs
+                name: toolCallJson['function']['name'],
+                arguments: arguments,
+              );
+            },
           )
           .toList();
     }

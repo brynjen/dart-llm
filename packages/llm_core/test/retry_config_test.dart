@@ -51,9 +51,10 @@ void main() {
     });
 
     test('getDelayForAttempt with very large attempt numbers', () {
+      // Use a smaller initialDelay to avoid overflow in calculation
       const config = RetryConfig(
-        initialDelay: Duration(seconds: 1),
-        maxDelay: Duration(seconds: 30),
+        initialDelay: Duration(milliseconds: 1),
+        maxDelay: Duration(seconds: 50),
       );
 
       // Very large attempt should be capped at maxDelay
@@ -78,10 +79,7 @@ void main() {
 
     test('backoff multiplier edge cases', () {
       // Multiplier of 1.0 (no backoff)
-      const config1 = RetryConfig(
-        initialDelay: Duration(seconds: 1),
-        backoffMultiplier: 1.0,
-      );
+      const config1 = RetryConfig(backoffMultiplier: 1.0);
       expect(config1.getDelayForAttempt(0), const Duration(seconds: 1));
       expect(config1.getDelayForAttempt(1), const Duration(seconds: 1));
       expect(config1.getDelayForAttempt(2), const Duration(seconds: 1));

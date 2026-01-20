@@ -6,7 +6,7 @@ void main() {
     test('construction with all fields', () {
       final response = LLMResponse(
         model: 'gpt-4o',
-        createdAt: DateTime(2024, 1, 1),
+        createdAt: DateTime(2024),
         role: 'assistant',
         content: 'Hello, world!',
         done: true,
@@ -23,7 +23,7 @@ void main() {
       );
 
       expect(response.model, 'gpt-4o');
-      expect(response.createdAt, DateTime(2024, 1, 1));
+      expect(response.createdAt, DateTime(2024));
       expect(response.role, 'assistant');
       expect(response.content, 'Hello, world!');
       expect(response.done, true);
@@ -36,7 +36,7 @@ void main() {
     test('construction with null content', () {
       final response = LLMResponse(
         model: 'gpt-4o',
-        createdAt: DateTime(2024, 1, 1),
+        createdAt: DateTime(2024),
         role: 'assistant',
         content: null,
         done: true,
@@ -56,7 +56,7 @@ void main() {
     test('construction with null tool calls', () {
       final response = LLMResponse(
         model: 'gpt-4o',
-        createdAt: DateTime(2024, 1, 1),
+        createdAt: DateTime(2024),
         role: 'assistant',
         content: 'Hello',
         done: true,
@@ -72,7 +72,7 @@ void main() {
     test('construction with empty tool calls list', () {
       final response = LLMResponse(
         model: 'gpt-4o',
-        createdAt: DateTime(2024, 1, 1),
+        createdAt: DateTime(2024),
         role: 'assistant',
         content: 'Hello',
         done: true,
@@ -91,7 +91,7 @@ void main() {
       for (final reason in reasons) {
         final response = LLMResponse(
           model: 'gpt-4o',
-          createdAt: DateTime(2024, 1, 1),
+          createdAt: DateTime(2024),
           role: 'assistant',
           content: 'Hello',
           done: true,
@@ -108,7 +108,7 @@ void main() {
     test('construction with zero token counts', () {
       final response = LLMResponse(
         model: 'gpt-4o',
-        createdAt: DateTime(2024, 1, 1),
+        createdAt: DateTime(2024),
         role: 'assistant',
         content: 'Hello',
         done: true,

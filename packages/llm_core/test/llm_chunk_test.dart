@@ -6,7 +6,7 @@ void main() {
     test('construction with all fields', () {
       final chunk = LLMChunk(
         model: 'gpt-4o',
-        createdAt: DateTime(2024, 1, 1),
+        createdAt: DateTime(2024),
         message: LLMChunkMessage(content: 'Hello', role: LLMRole.assistant),
         done: true,
         promptEvalCount: 10,
@@ -15,7 +15,7 @@ void main() {
       );
 
       expect(chunk.model, 'gpt-4o');
-      expect(chunk.createdAt, DateTime(2024, 1, 1));
+      expect(chunk.createdAt, DateTime(2024));
       expect(chunk.message?.content, 'Hello');
       expect(chunk.message?.role, LLMRole.assistant);
       expect(chunk.done, true);
@@ -27,7 +27,7 @@ void main() {
     test('construction with minimal fields', () {
       final chunk = LLMChunk(
         model: 'gpt-4o',
-        createdAt: DateTime(2024, 1, 1),
+        createdAt: DateTime(2024),
         message: LLMChunkMessage(content: 'Hello', role: LLMRole.assistant),
       );
 
@@ -41,7 +41,7 @@ void main() {
     test('construction with null message', () {
       final chunk = LLMChunk(
         model: 'gpt-4o',
-        createdAt: DateTime(2024, 1, 1),
+        createdAt: DateTime(2024),
         message: null,
       );
 
@@ -51,7 +51,7 @@ void main() {
     test('construction with thinking content', () {
       final chunk = LLMChunk(
         model: 'gpt-4o',
-        createdAt: DateTime(2024, 1, 1),
+        createdAt: DateTime(2024),
         message: LLMChunkMessage(
           content: 'Hello',
           role: LLMRole.assistant,
@@ -66,7 +66,7 @@ void main() {
     test('construction with tool calls', () {
       final chunk = LLMChunk(
         model: 'gpt-4o',
-        createdAt: DateTime(2024, 1, 1),
+        createdAt: DateTime(2024),
         message: LLMChunkMessage(
           content: null,
           role: LLMRole.assistant,

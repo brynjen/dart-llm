@@ -57,11 +57,31 @@ class RetryConfig {
   Duration getDelayForAttempt(int attemptNumber) {
     if (attemptNumber < 0) return initialDelay;
 
+    // For very large attempt numbers, the exponential calculation can overflow.
+    // Calculate the maximum attempt number before overflow would occur.
+    // If the calculated delay would exceed maxDelay, return maxDelay directly.
+    if (initialDelay.inMilliseconds > 0 && 
+        maxDelay.inMilliseconds >= initialDelay.inMilliseconds) {
+      try {
+        final maxAttemptBeforeOverflow = (math.log(maxDelay.inMilliseconds / 
+            initialDelay.inMilliseconds) / math.log(backoffMultiplier)).ceil();
+        if (attemptNumber >= maxAttemptBeforeOverflow) {
+          return maxDelay;
+        }
+      } catch (e) {
+        // If calculation fails (e.g., log of negative), fall through to normal calculation
+      }
+    }
+
     // Exponential backoff: initialDelay * (backoffMultiplier ^ attemptNumber)
     final delayMs =
         (initialDelay.inMilliseconds *
                 math.pow(backoffMultiplier, attemptNumber))
             .round();
+    
+    // Check for overflow (negative result indicates integer overflow)
+    if (delayMs < 0) return maxDelay;
+    
     final delay = Duration(milliseconds: delayMs);
 
     // Cap at maxDelay

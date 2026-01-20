@@ -172,10 +172,14 @@ void main() {
       final input = controller.stream;
       final output = input.transform(GPTStreamDecoder.decoder);
 
+      // Start listening to the output stream first
+      final resultsFuture = output.toList();
+
+      // Then add data and close
       controller.add('data: {"id": "chatcmpl-123"}\n');
       await controller.close();
 
-      final results = await output.toList();
+      final results = await resultsFuture;
       expect(results.length, 1);
     });
   });

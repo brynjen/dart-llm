@@ -129,7 +129,7 @@ class Validation {
   ///
   /// Throws [LLMApiException] if validation fails.
   static void validateModelName(String model) {
-    if (model.isEmpty) {
+    if (model.isEmpty || model.trim().isEmpty) {
       throw const LLMApiException(
         'Model name cannot be empty',
         statusCode: 400,

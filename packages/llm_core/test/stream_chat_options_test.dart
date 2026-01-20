@@ -39,7 +39,7 @@ void main() {
 
     test('copyWith with all field combinations', () {
       const original = StreamChatOptions();
-      const retryConfig = RetryConfig(maxAttempts: 3);
+      const retryConfig = RetryConfig();
       final tool = TestTool(
         toolName: 'test',
         toolDescription: 'Test tool',
@@ -65,8 +65,10 @@ void main() {
       expect(withAttempts.toolAttempts, 5);
 
       // Copy with timeout
-      final withTimeout = original.copyWith(timeout: Duration(minutes: 10));
-      expect(withTimeout.timeout, Duration(minutes: 10));
+      final withTimeout = original.copyWith(
+        timeout: const Duration(minutes: 10),
+      );
+      expect(withTimeout.timeout, const Duration(minutes: 10));
 
       // Copy with retryConfig
       final withRetry = original.copyWith(retryConfig: retryConfig);
@@ -78,14 +80,14 @@ void main() {
         tools: [tool],
         extra: {'key': 'value'},
         toolAttempts: 5,
-        timeout: Duration(minutes: 10),
+        timeout: const Duration(minutes: 10),
         retryConfig: retryConfig,
       );
       expect(withMultiple.think, true);
       expect(withMultiple.tools.length, 1);
       expect(withMultiple.extra, {'key': 'value'});
       expect(withMultiple.toolAttempts, 5);
-      expect(withMultiple.timeout, Duration(minutes: 10));
+      expect(withMultiple.timeout, const Duration(minutes: 10));
       expect(withMultiple.retryConfig, retryConfig);
     });
 

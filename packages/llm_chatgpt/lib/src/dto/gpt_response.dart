@@ -246,6 +246,16 @@ class GPTChunk extends LLMChunk {
                    (e) => e.name == choices[0].delta.role,
                  )
                : null,
+           toolCalls: choices[0].delta.toolCalls
+               ?.where((call) => call.function.name != null)
+               .map(
+                 (call) => LLMToolCall(
+                   id: call.id,
+                   name: call.function.name!,
+                   arguments: call.function.arguments,
+                 ),
+               )
+               .toList(growable: false),
          ),
        );
 
