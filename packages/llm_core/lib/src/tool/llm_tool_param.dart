@@ -51,41 +51,41 @@ class LLMToolParam {
 
   /// Converts this parameter to a JSON Schema representation.
   Map<String, dynamic> toJsonSchema() {
-    final schema = <String, dynamic>{"description": description};
+    final schema = <String, dynamic>{'description': description};
 
     switch (type) {
-      case "array":
-        schema["type"] = "array";
+      case 'array':
+        schema['type'] = 'array';
         if (items == null) {
-          throw StateError("Array param '$name' needs an `items` schema");
+          throw StateError('Array param \'$name\' needs an `items` schema');
         }
-        schema["items"] = items!.toJsonSchema();
-        if (minItems != null) schema["minItems"] = minItems;
-        if (maxItems != null) schema["maxItems"] = maxItems;
-        if (uniqueItems == true) schema["uniqueItems"] = true;
+        schema['items'] = items!.toJsonSchema();
+        if (minItems != null) schema['minItems'] = minItems;
+        if (maxItems != null) schema['maxItems'] = maxItems;
+        if (uniqueItems ?? false) schema['uniqueItems'] = true;
         break;
 
-      case "object":
-        schema["type"] = "object";
+      case 'object':
+        schema['type'] = 'object';
         if (properties != null && properties!.isNotEmpty) {
-          schema["properties"] = {
-            for (var p in properties!) p.name: p.toJsonSchema(),
+          schema['properties'] = {
+            for (final p in properties!) p.name: p.toJsonSchema(),
           };
           final req = [
-            for (var p in properties!)
+            for (final p in properties!)
               if (p.isRequired) p.name,
           ];
-          if (req.isNotEmpty) schema["required"] = req;
+          if (req.isNotEmpty) schema['required'] = req;
         }
         if (additionalProperties != null) {
-          schema["additionalProperties"] = additionalProperties;
+          schema['additionalProperties'] = additionalProperties;
         }
         break;
 
       default:
-        schema["type"] = type;
+        schema['type'] = type;
         if (enums.isNotEmpty) {
-          schema["enum"] = enums;
+          schema['enum'] = enums;
         }
     }
 

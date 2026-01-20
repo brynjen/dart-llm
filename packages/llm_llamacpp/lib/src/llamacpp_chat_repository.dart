@@ -7,12 +7,12 @@ import 'dart:math' as math;
 import 'package:ffi/ffi.dart';
 import 'package:llm_core/llm_core.dart';
 
-import 'bindings/llama_bindings.dart';
-import 'generation_options.dart';
-import 'llamacpp_model.dart';
-import 'llamacpp_repository.dart';
-import 'loader/loader.dart';
-import 'prompt_template.dart';
+import 'package:llm_llamacpp/src/bindings/llama_bindings.dart';
+import 'package:llm_llamacpp/src/generation_options.dart';
+import 'package:llm_llamacpp/src/llamacpp_model.dart';
+import 'package:llm_llamacpp/src/llamacpp_repository.dart';
+import 'package:llm_llamacpp/src/loader/loader.dart';
+import 'package:llm_llamacpp/src/prompt_template.dart';
 
 /// Repository for chatting with llama.cpp models locally.
 ///
@@ -298,7 +298,7 @@ class LlamaCppChatRepository extends LLMChatRepository {
     Validation.validateMessages(messages);
 
     if (_model == null) {
-      throw ModelLoadException(
+      throw const ModelLoadException(
         'No model loaded. Call loadModel() first or use LlamaCppChatRepository.withModel().',
       );
     }
@@ -354,7 +354,7 @@ class LlamaCppChatRepository extends LLMChatRepository {
 
     try {
       String accumulatedContent = '';
-      List<LLMToolCall> collectedToolCalls = [];
+      final List<LLMToolCall> collectedToolCalls = [];
       // Buffer for detecting tool calls mid-stream
       String pendingContent = '';
       bool inPotentialToolCall = false;
@@ -711,14 +711,14 @@ class LlamaCppChatRepository extends LLMChatRepository {
     Map<String, dynamic> options = const {},
   }) async {
     if (_model == null) {
-      throw ModelLoadException(
+      throw const ModelLoadException(
         'No model loaded. Call loadModel() first or use LlamaCppChatRepository.withModel().',
       );
     }
 
     // Validate inputs
     if (messages.isEmpty) {
-      throw LLMApiException('Messages list cannot be empty', statusCode: 400);
+      throw const LLMApiException('Messages list cannot be empty', statusCode: 400);
     }
 
     // Create a receive port to get embeddings from the isolate
@@ -786,9 +786,7 @@ class _InferenceRequest {
     required this.stopTokens,
     required this.contextSize,
     required this.batchSize,
-    this.threads,
-    required this.nGpuLayers,
-    required this.options,
+    required this.nGpuLayers, required this.options, this.threads,
     this.loraPath,
     this.loraScale = 1.0,
   });
@@ -835,8 +833,7 @@ class _EmbeddingRequest {
     required this.messages,
     required this.contextSize,
     required this.batchSize,
-    this.threads,
-    required this.nGpuLayers,
+    required this.nGpuLayers, this.threads,
   });
 
   final SendPort sendPort;

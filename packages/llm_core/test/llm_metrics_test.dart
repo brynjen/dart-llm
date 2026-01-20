@@ -23,11 +23,11 @@ void main() {
     test('records latency correctly', () {
       metrics.recordLatency(
         model: 'gpt-4o',
-        latency: Duration(milliseconds: 100),
+        latency: const Duration(milliseconds: 100),
       );
       metrics.recordLatency(
         model: 'gpt-4o',
-        latency: Duration(milliseconds: 200),
+        latency: const Duration(milliseconds: 200),
       );
 
       final result = metrics.getMetrics();

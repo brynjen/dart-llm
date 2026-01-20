@@ -14,12 +14,12 @@ void main() {
         messages: [LLMMessage(role: LLMRole.user, content: 'Hello')],
       );
 
-      String content = '';
+      final StringBuffer content = StringBuffer();
       await for (final chunk in stream) {
-        content += chunk.message?.content ?? '';
+        content.write(chunk.message?.content ?? '');
       }
 
-      expect(content, 'Hello, world!');
+      expect(content.toString(), 'Hello, world!');
     });
 
     test('streams tool calls', () async {
@@ -36,7 +36,7 @@ void main() {
 
       List<LLMToolCall>? toolCalls;
       await for (final chunk in stream) {
-        if (chunk.done == true) {
+        if (chunk.done ?? false) {
           toolCalls = chunk.message?.toolCalls;
         }
       }
@@ -48,7 +48,7 @@ void main() {
 
     test('propagates errors', () async {
       final mock = MockLLMChatRepository();
-      mock.setError(LLMApiException('API error', statusCode: 500));
+      mock.setError(const LLMApiException('API error', statusCode: 500));
 
       final stream = mock.streamChat(
         'test-model',

@@ -3,9 +3,9 @@ import 'dart:io';
 
 import 'package:http/http.dart' as http;
 
-import 'exceptions.dart';
-import 'model_converter.dart';
-import 'model_info.dart';
+import 'package:llm_llamacpp/src/exceptions.dart';
+import 'package:llm_llamacpp/src/model_converter.dart';
+import 'package:llm_llamacpp/src/model_info.dart';
 
 /// Client for downloading and acquiring models from HuggingFace.
 class HuggingFaceClient {
@@ -43,6 +43,7 @@ class HuggingFaceClient {
 
     // Check if file already exists
     final outputFile = File(outputPath);
+    // ignore: avoid_slow_async_io
     if (await outputFile.exists()) {
       final size = await outputFile.length();
       yield DownloadProgress(
@@ -100,6 +101,7 @@ class HuggingFaceClient {
     } catch (e) {
       await sink.close();
       // Clean up temp file on error
+      // ignore: avoid_slow_async_io
       if (await tempFile.exists()) {
         await tempFile.delete();
       }
@@ -389,6 +391,7 @@ class HuggingFaceClient {
 
     // Check if already exists
     final outputFile = File(outputPath);
+    // ignore: avoid_slow_async_io
     if (await outputFile.exists()) {
       final existingSize = await outputFile.length();
       if (fileSize == null || existingSize == fileSize) {
@@ -446,6 +449,7 @@ class HuggingFaceClient {
     final outputPath = '$outputDir/$outputFilename';
 
     // Check if already exists
+    // ignore: avoid_slow_async_io
     if (await File(outputPath).exists()) {
       yield ModelAcquisitionStatus(
         stage: ModelAcquisitionStage.complete,

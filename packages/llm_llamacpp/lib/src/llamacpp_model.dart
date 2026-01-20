@@ -2,7 +2,7 @@ import 'dart:ffi';
 
 import 'package:ffi/ffi.dart';
 
-import 'bindings/llama_bindings.dart';
+import 'package:llm_llamacpp/src/bindings/llama_bindings.dart';
 
 /// Represents a loaded llama.cpp model.
 ///

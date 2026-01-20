@@ -4,9 +4,9 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:llm_core/llm_core.dart';
 
-import 'dto/gpt_embedding_response.dart';
-import 'dto/gpt_response.dart';
-import 'dto/gpt_stream_decoder.dart';
+import 'package:llm_chatgpt/src/dto/gpt_embedding_response.dart';
+import 'package:llm_chatgpt/src/dto/gpt_response.dart';
+import 'package:llm_chatgpt/src/dto/gpt_stream_decoder.dart';
 
 /// Repository for chatting with OpenAI's ChatGPT.
 ///
@@ -30,7 +30,7 @@ import 'dto/gpt_stream_decoder.dart';
 class ChatGPTChatRepository extends LLMChatRepository {
   ChatGPTChatRepository({
     required this.apiKey,
-    this.baseUrl = "https://api.openai.com",
+    this.baseUrl = 'https://api.openai.com',
     this.maxToolAttempts = 25,
     this.retryConfig,
     this.timeoutConfig,
@@ -144,7 +144,7 @@ class ChatGPTChatRepository extends LLMChatRepository {
       request.headers['content-length'] = bodyBytes.length.toString();
       request.sink.add(bodyBytes);
     }
-    request.sink.close();
+    await request.sink.close();
 
     // Use configured timeout or default
     final config = timeoutConfig ?? TimeoutConfig.defaultConfig;
@@ -202,8 +202,8 @@ class ChatGPTChatRepository extends LLMChatRepository {
     Map<String, dynamic> options = const {},
     int toolAttempts = 5,
   }) async* {
-    List<LLMMessage> workingMessages = List.from(messages);
-    Map<String, GPTToolCall> toolsToCall = {};
+    final List<LLMMessage> workingMessages = List.from(messages);
+    final Map<String, GPTToolCall> toolsToCall = {};
 
     await for (final output
         in response.stream

@@ -1,7 +1,7 @@
 import 'dart:async';
 
-import 'exceptions.dart';
-import 'retry_config.dart';
+import 'package:llm_core/src/exceptions.dart';
+import 'package:llm_core/src/retry_config.dart';
 
 /// Utility class for retrying operations with exponential backoff.
 class RetryUtil {

@@ -1,8 +1,8 @@
 import 'dart:ffi';
 
-import 'loader_stub.dart'
-    if (dart.library.ui) 'loader_flutter.dart'
-    if (dart.library.ffi) 'loader_io.dart';
+import 'package:llm_llamacpp/src/loader/loader_stub.dart'
+    if (dart.library.ui) 'package:llm_llamacpp/src/loader/loader_flutter.dart'
+    if (dart.library.ffi) 'package:llm_llamacpp/src/loader/loader_io.dart';
 
 /// Loads the llama.cpp native library.
 ///

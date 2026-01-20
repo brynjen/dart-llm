@@ -4,7 +4,7 @@ import 'package:test/test.dart';
 void main() {
   group('StreamChatOptions', () {
     test('default values are correct', () {
-      final options = StreamChatOptions();
+      const options = StreamChatOptions();
       expect(options.think, false);
       expect(options.tools, isEmpty);
       expect(options.extra, null);
@@ -14,7 +14,7 @@ void main() {
     });
 
     test('copyWith creates new instance with changed fields', () {
-      final original = StreamChatOptions(think: false);
+      const original = StreamChatOptions();
       final copied = original.copyWith(think: true);
 
       expect(original.think, false);
@@ -22,10 +22,9 @@ void main() {
     });
 
     test('can be created with all parameters', () {
-      final retryConfig = RetryConfig(maxAttempts: 5);
-      final options = StreamChatOptions(
+      const retryConfig = RetryConfig(maxAttempts: 5);
+      const options = StreamChatOptions(
         think: true,
-        tools: [],
         extra: {'key': 'value'},
         toolAttempts: 10,
         timeout: Duration(minutes: 5),
@@ -34,7 +33,7 @@ void main() {
 
       expect(options.think, true);
       expect(options.toolAttempts, 10);
-      expect(options.timeout, Duration(minutes: 5));
+      expect(options.timeout, const Duration(minutes: 5));
       expect(options.retryConfig, retryConfig);
     });
   });

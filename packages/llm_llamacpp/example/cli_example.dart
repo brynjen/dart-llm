@@ -64,7 +64,7 @@ Future<void> main(List<String> args) async {
     ];
 
     // Generation options (optional - uses defaults if not specified)
-    final options = GenerationOptions(
+    const options = GenerationOptions(
       temperature: 0.7,
       topP: 0.9,
       maxTokens: 2048,

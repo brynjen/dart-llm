@@ -1,7 +1,7 @@
 import 'dart:io';
 
-import 'gguf_metadata.dart';
-import 'model_info.dart';
+import 'package:llm_llamacpp/src/gguf_metadata.dart';
+import 'package:llm_llamacpp/src/model_info.dart';
 
 /// Discovers GGUF models in directories and reads their metadata.
 class LlamaCppModelDiscovery {
@@ -28,6 +28,7 @@ class LlamaCppModelDiscovery {
     bool readMetadata = true,
   }) async {
     final dir = Directory(directory);
+    // ignore: avoid_slow_async_io
     if (!await dir.exists()) {
       return [];
     }
@@ -61,6 +62,7 @@ class LlamaCppModelDiscovery {
     bool readMetadata = true,
   }) async {
     final file = File(path);
+    // ignore: avoid_slow_async_io
     if (!await file.exists()) {
       throw FileSystemException('File not found', path);
     }
@@ -116,6 +118,7 @@ class LlamaCppModelDiscovery {
 
     final models = <ModelInfo>[];
     for (final location in locations) {
+      // ignore: avoid_slow_async_io
       if (await Directory(location).exists()) {
         models.addAll(
           await discoverModels(location, readMetadata: readMetadata),

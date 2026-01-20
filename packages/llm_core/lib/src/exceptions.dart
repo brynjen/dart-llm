@@ -1,12 +1,12 @@
 /// Exception thrown when trying to use thinking on a model that doesn't support it.
 class ThinkingNotSupportedException implements Exception {
+  const ThinkingNotSupportedException(this.model, this.message);
+
   /// The error message.
   final String message;
 
   /// The model that doesn't support thinking.
   final String model;
-
-  const ThinkingNotSupportedException(this.model, this.message);
 
   @override
   String toString() => 'ThinkingNotSupportedException: $message';
@@ -14,13 +14,13 @@ class ThinkingNotSupportedException implements Exception {
 
 /// Exception thrown when trying to use tools on a model that doesn't support them.
 class ToolsNotSupportedException implements Exception {
+  const ToolsNotSupportedException(this.model, this.message);
+
   /// The error message.
   final String message;
 
   /// The model that doesn't support tools.
   final String model;
-
-  const ToolsNotSupportedException(this.model, this.message);
 
   @override
   String toString() => 'ToolsNotSupportedException: $message';
@@ -28,13 +28,13 @@ class ToolsNotSupportedException implements Exception {
 
 /// Exception thrown when trying to use images/vision on a model that doesn't support it.
 class VisionNotSupportedException implements Exception {
+  const VisionNotSupportedException(this.model, this.message);
+
   /// The error message.
   final String message;
 
   /// The model that doesn't support vision.
   final String model;
-
-  const VisionNotSupportedException(this.model, this.message);
 
   @override
   String toString() => 'VisionNotSupportedException: $message';
@@ -42,6 +42,8 @@ class VisionNotSupportedException implements Exception {
 
 /// Exception thrown when an LLM API request fails.
 class LLMApiException implements Exception {
+  const LLMApiException(this.message, {this.statusCode, this.responseBody});
+
   /// The error message.
   final String message;
 
@@ -50,8 +52,6 @@ class LLMApiException implements Exception {
 
   /// The raw response body (if available).
   final String? responseBody;
-
-  const LLMApiException(this.message, {this.statusCode, this.responseBody});
 
   @override
   String toString() {
@@ -64,13 +64,13 @@ class LLMApiException implements Exception {
 
 /// Exception thrown when model loading fails.
 class ModelLoadException implements Exception {
+  const ModelLoadException(this.message, {this.modelPath});
+
   /// The error message.
   final String message;
 
   /// The model that failed to load.
   final String? modelPath;
-
-  const ModelLoadException(this.message, {this.modelPath});
 
   @override
   String toString() => 'ModelLoadException: $message';

@@ -96,7 +96,7 @@ void main() {
         expect(response, isNotEmpty);
         expect(response, contains('tokyo'));
       },
-      timeout: Timeout(Duration(minutes: 2)),
+      timeout: const Timeout(Duration(minutes: 2)),
     );
 
     test('vision model maintains conversation', () async {
@@ -165,7 +165,7 @@ void main() {
           reason: 'Inference completed with minor encoding issue',
         );
       }
-    }, timeout: Timeout(Duration(minutes: 3)));
+    }, timeout: const Timeout(Duration(minutes: 3)));
   });
 
   group('Vision Model Text Generation', () {
@@ -220,7 +220,7 @@ void main() {
           contains('feline'),
         ),
       );
-    }, timeout: Timeout(Duration(minutes: 2)));
+    }, timeout: const Timeout(Duration(minutes: 2)));
 
     test('handles multi-turn reasoning', () async {
       if (visionModelPath == null) {
@@ -248,7 +248,7 @@ void main() {
 
       // Should contain the answer
       expect(response, contains('42'));
-    }, timeout: Timeout(Duration(minutes: 2)));
+    }, timeout: const Timeout(Duration(minutes: 2)));
 
     test('vision model with system prompt', () async {
       if (visionModelPath == null) {
@@ -290,7 +290,7 @@ void main() {
         isTrue,
         reason: 'Expected archaic language or non-empty response',
       );
-    }, timeout: Timeout(Duration(minutes: 2)));
+    }, timeout: const Timeout(Duration(minutes: 2)));
   });
 
   group('Vision Model Image Placeholders', () {
@@ -354,7 +354,7 @@ void main() {
           reason: 'Expected sunset imagery description or non-empty response',
         );
       },
-      timeout: Timeout(Duration(minutes: 2)),
+      timeout: const Timeout(Duration(minutes: 2)),
     );
 
     test('vision model special tokens are recognized', () async {
@@ -373,8 +373,11 @@ void main() {
       expect(repo.model!.bosToken, greaterThanOrEqualTo(0));
       expect(repo.model!.eosToken, greaterThanOrEqualTo(0));
 
+      // ignore: avoid_print
       print('Vocab size: ${repo.model!.vocabSize}');
+      // ignore: avoid_print
       print('BOS token: ${repo.model!.bosToken}');
+      // ignore: avoid_print
       print('EOS token: ${repo.model!.eosToken}');
     });
   });
@@ -382,6 +385,7 @@ void main() {
   group('Vision Model Compatibility Notes', () {
     test('documents image input limitations', () {
       // This is a documentation test - always passes but prints important info
+      // ignore: avoid_print
       print('''
 ╔══════════════════════════════════════════════════════════════════════╗
 ║                    VISION MODEL SUPPORT STATUS                        ║

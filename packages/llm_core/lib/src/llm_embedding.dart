@@ -6,6 +6,13 @@ class LLMEmbedding {
     required this.promptEvalCount,
   });
 
+  /// Creates an embedding from a JSON map.
+  factory LLMEmbedding.fromJson(Map<String, dynamic> json) => LLMEmbedding(
+    model: json['model'],
+    embedding: json['embeddings'] as List<double>,
+    promptEvalCount: json['prompt_eval_count'],
+  );
+
   /// The model that generated this embedding.
   final String model;
 
@@ -14,11 +21,4 @@ class LLMEmbedding {
 
   /// Number of tokens in the input text.
   final int promptEvalCount;
-
-  /// Creates an embedding from a JSON map.
-  factory LLMEmbedding.fromJson(Map<String, dynamic> json) => LLMEmbedding(
-    model: json['model'],
-    embedding: json['embeddings'] as List<double>,
-    promptEvalCount: json['prompt_eval_count'],
-  );
 }

@@ -21,7 +21,7 @@ class GPTResponse extends LLMResponse {
        );
 
   final String id;
-  final String object = "chat.completion";
+  final String object = 'chat.completion';
   final DateTime created;
   final List<GPTChoice> choices;
   final GPTUsage usage;
@@ -114,10 +114,10 @@ class GPTMessage {
 /// A tool call in a GPT response.
 class GPTToolCall {
   GPTToolCall({
-    this.id,
-    this.type,
     required this.function,
     required this.index,
+    this.id,
+    this.type,
   });
 
   final String? id;
@@ -250,7 +250,7 @@ class GPTChunk extends LLMChunk {
        );
 
   final String id;
-  final String object = "chat.completion.chunk";
+  final String object = 'chat.completion.chunk';
   final DateTime created;
   final String? systemFingerprint;
   final List<GPTChunkChoice> choices;
@@ -290,7 +290,7 @@ class GPTChunk extends LLMChunk {
               final newArguments =
                   newChunk.choices[0].delta.toolCalls?[0].function.arguments ??
                   '';
-              String arguments = toolCall.function.arguments + newArguments;
+              final String arguments = toolCall.function.arguments + newArguments;
               return GPTToolCall(
                 id: toolCall.id,
                 index: toolCall.index,

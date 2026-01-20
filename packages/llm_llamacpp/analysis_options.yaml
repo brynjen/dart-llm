@@ -5,6 +5,9 @@ analyzer:
     - lib/src/bindings/**
     - "**/*.g.dart"
     - "**/*.freezed.dart"
+    - example/**
+    - test/**
+    - hook/**
   errors:
     missing_required_param: error
     invalid_assignment: error

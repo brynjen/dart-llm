@@ -1,7 +1,7 @@
 import 'package:http/http.dart' as http;
 import 'package:llm_core/llm_core.dart';
 
-import 'ollama_chat_repository.dart';
+import 'package:llm_ollama/src/ollama_chat_repository.dart';
 
 /// Builder for creating [OllamaChatRepository] instances with complex configurations.
 ///

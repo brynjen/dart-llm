@@ -2,15 +2,15 @@ import 'dart:async';
 
 import 'package:http/http.dart' as http;
 
-import 'backend_info.dart';
-import 'bindings/llama_bindings.dart';
-import 'huggingface_client.dart';
-import 'llamacpp_model.dart';
-import 'lora_adapter.dart';
-import 'model_converter.dart';
-import 'model_discovery.dart';
-import 'model_info.dart';
-import 'model_loader.dart';
+import 'package:llm_llamacpp/src/backend_info.dart';
+import 'package:llm_llamacpp/src/bindings/llama_bindings.dart';
+import 'package:llm_llamacpp/src/huggingface_client.dart';
+import 'package:llm_llamacpp/src/llamacpp_model.dart';
+import 'package:llm_llamacpp/src/lora_adapter.dart';
+import 'package:llm_llamacpp/src/model_converter.dart';
+import 'package:llm_llamacpp/src/model_discovery.dart';
+import 'package:llm_llamacpp/src/model_info.dart';
+import 'package:llm_llamacpp/src/model_loader.dart';
 
 // Re-export components for convenience
 export 'backend_info.dart';

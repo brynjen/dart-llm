@@ -1,4 +1,4 @@
-import 'llm_tool_param.dart';
+import 'package:llm_core/src/tool/llm_tool_param.dart';
 
 /// Abstract base class for LLM tools (function calling).
 ///
@@ -61,15 +61,15 @@ abstract class LLMTool {
     ];
 
     return {
-      "type": "function",
-      "function": {
-        "name": name,
-        "description": description,
+      'type': 'function',
+      'function': {
+        'name': name,
+        'description': description,
         if (parameters.isNotEmpty)
-          "parameters": {
-            "type": "object",
-            "properties": props,
-            if (reqs.isNotEmpty) "required": reqs,
+          'parameters': {
+            'type': 'object',
+            'properties': props,
+            if (reqs.isNotEmpty) 'required': reqs,
           },
       },
     };

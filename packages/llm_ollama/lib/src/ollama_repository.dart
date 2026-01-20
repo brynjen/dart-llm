@@ -2,7 +2,7 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
-import 'dto/ollama_model.dart';
+import 'package:llm_ollama/src/dto/ollama_model.dart';
 
 /// Repository for managing Ollama models and server operations.
 ///
@@ -18,7 +18,7 @@ import 'dto/ollama_model.dart';
 /// ```
 class OllamaRepository {
   OllamaRepository({
-    this.baseUrl = "http://localhost:11434",
+    this.baseUrl = 'http://localhost:11434',
     http.Client? httpClient,
   }) : httpClient = httpClient ?? http.Client();
 
@@ -67,7 +67,7 @@ class OllamaRepository {
     final bodyBytes = utf8.encode(json.encode({'model': modelName}));
     request.headers['content-length'] = bodyBytes.length.toString();
     request.sink.add(bodyBytes);
-    request.sink.close();
+    await request.sink.close();
 
     final response = await httpClient.send(request);
 

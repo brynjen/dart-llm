@@ -45,7 +45,7 @@ void main() {
 
     test('propagates errors from stream', () async {
       final mock = MockLLMChatRepository();
-      mock.setError(LLMApiException('API error', statusCode: 500));
+      mock.setError(const LLMApiException('API error', statusCode: 500));
 
       expect(
         () => mock.chatResponse(

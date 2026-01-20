@@ -10,8 +10,8 @@ void main() {
     });
 
     test('creates with custom configuration', () {
-      final retryConfig = RetryConfig(maxAttempts: 5);
-      final timeoutConfig = TimeoutConfig(
+      const retryConfig = RetryConfig(maxAttempts: 5);
+      const timeoutConfig = TimeoutConfig(
         connectionTimeout: Duration(seconds: 5),
         readTimeout: Duration(minutes: 3),
       );
@@ -33,7 +33,7 @@ void main() {
       final repo = OllamaChatRepositoryBuilder()
           .baseUrl('http://test:8080')
           .maxToolAttempts(15)
-          .retryConfig(RetryConfig(maxAttempts: 3))
+          .retryConfig(const RetryConfig(maxAttempts: 3))
           .build();
 
       expect(repo.baseUrl, 'http://test:8080');

@@ -475,6 +475,7 @@ class ModelConverter {
       final outputPath = '$outputDir/${file.filename}';
 
       // Skip if already downloaded
+      // ignore: avoid_slow_async_io
       if (await File(outputPath).exists()) {
         final existingSize = await File(outputPath).length();
         if (existingSize == file.size) {
@@ -511,6 +512,7 @@ class ModelConverter {
     ];
 
     for (final path in searchPaths) {
+      // ignore: avoid_slow_async_io
       if (await File(path).exists()) {
         return path;
       }
@@ -540,6 +542,7 @@ class ModelConverter {
     ];
 
     for (final path in searchPaths) {
+      // ignore: avoid_slow_async_io
       if (await File(path).exists()) {
         return path;
       }

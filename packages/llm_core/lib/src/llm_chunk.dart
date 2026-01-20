@@ -1,5 +1,5 @@
-import 'llm_message.dart';
-import 'tool/llm_tool_call.dart';
+import 'package:llm_core/src/llm_message.dart';
+import 'package:llm_core/src/tool/llm_tool_call.dart';
 
 /// Represents a streaming chunk from an LLM response.
 ///
@@ -41,8 +41,8 @@ class LLMChunk {
 class LLMChunkMessage {
   LLMChunkMessage({
     required this.content,
-    this.thinking,
     required this.role,
+    this.thinking,
     this.toolCallId,
     this.toolCalls,
     this.images,

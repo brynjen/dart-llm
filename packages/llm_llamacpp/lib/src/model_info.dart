@@ -1,5 +1,5 @@
-import 'gguf_metadata.dart';
-import 'model_converter.dart';
+import 'package:llm_llamacpp/src/gguf_metadata.dart';
+import 'package:llm_llamacpp/src/model_converter.dart';
 
 // ============================================================
 // Model Acquisition Progress

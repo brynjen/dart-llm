@@ -67,7 +67,7 @@ void main() {
       expect(response, isNotEmpty);
       // Most models should get this right
       expect(response.toLowerCase(), anyOf(contains('4'), contains('four')));
-    }, timeout: Timeout(Duration(minutes: 2)));
+    }, timeout: const Timeout(Duration(minutes: 2)));
 
     test('generates streaming tokens', () async {
       if (modelPath == null) {
@@ -96,7 +96,7 @@ void main() {
 
       expect(tokenCount, greaterThan(0), reason: 'Should generate tokens');
       expect(sawDone, isTrue, reason: 'Should signal completion');
-    }, timeout: Timeout(Duration(minutes: 2)));
+    }, timeout: const Timeout(Duration(minutes: 2)));
 
     test('handles system prompt', () async {
       if (modelPath == null) {
@@ -136,7 +136,7 @@ void main() {
         isTrue,
         reason: 'Expected pirate-like language or non-empty response',
       );
-    }, timeout: Timeout(Duration(minutes: 2)));
+    }, timeout: const Timeout(Duration(minutes: 2)));
 
     test('maintains conversation context', () async {
       if (modelPath == null) {
@@ -177,7 +177,7 @@ void main() {
       print('Turn 2 response: $response2');
 
       expect(response2, contains('blue'));
-    }, timeout: Timeout(Duration(minutes: 3)));
+    }, timeout: const Timeout(Duration(minutes: 3)));
 
     test('respects max tokens limit', () async {
       if (modelPath == null) {
@@ -207,7 +207,7 @@ void main() {
 
       // Should be a short response
       expect(response.split(' ').length, lessThanOrEqualTo(10));
-    }, timeout: Timeout(Duration(minutes: 1)));
+    }, timeout: const Timeout(Duration(minutes: 1)));
 
     test(
       'handles empty message list gracefully',
@@ -231,7 +231,7 @@ void main() {
         // Should complete without error
         expect(true, isTrue);
       },
-      timeout: Timeout(Duration(minutes: 1)),
+      timeout: const Timeout(Duration(minutes: 1)),
     );
 
     test('throws when no model loaded', () async {
@@ -336,7 +336,7 @@ void main() {
       }
 
       expect(buffer.toString(), isNotEmpty);
-    }, timeout: Timeout(Duration(minutes: 1)));
+    }, timeout: const Timeout(Duration(minutes: 1)));
   });
 
   group('Performance', () {
@@ -390,7 +390,7 @@ void main() {
       if (evalTokens != null) {
         expect(evalTokens, greaterThanOrEqualTo(0));
       }
-    }, timeout: Timeout(Duration(minutes: 2)));
+    }, timeout: const Timeout(Duration(minutes: 2)));
 
     test('measures generation speed', () async {
       if (modelPath == null) {
@@ -426,6 +426,6 @@ void main() {
       print('Speed: $tokensPerSecond tokens/sec');
 
       expect(tokenCount, greaterThan(0));
-    }, timeout: Timeout(Duration(minutes: 2)));
+    }, timeout: const Timeout(Duration(minutes: 2)));
   });
 }

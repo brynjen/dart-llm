@@ -1,7 +1,7 @@
 import 'package:http/http.dart' as http;
 import 'package:llm_core/llm_core.dart';
 
-import 'chatgpt_chat_repository.dart';
+import 'package:llm_chatgpt/src/chatgpt_chat_repository.dart';
 
 /// Builder for creating [ChatGPTChatRepository] instances with complex configurations.
 ///

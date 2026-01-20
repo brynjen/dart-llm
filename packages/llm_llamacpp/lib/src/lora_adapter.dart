@@ -2,9 +2,9 @@ import 'dart:ffi';
 
 import 'package:ffi/ffi.dart';
 
-import 'bindings/llama_bindings.dart';
-import 'exceptions.dart';
-import 'llamacpp_model.dart';
+import 'package:llm_llamacpp/src/bindings/llama_bindings.dart';
+import 'package:llm_llamacpp/src/exceptions.dart';
+import 'package:llm_llamacpp/src/llamacpp_model.dart';
 
 /// Represents a loaded LoRA adapter.
 ///
@@ -60,7 +60,7 @@ class LlamaLoraAdapter {
   String? getMetadataValue(String key) {
     _checkNotDisposed();
     final keyPtr = key.toNativeUtf8();
-    final bufSize = 256;
+    const bufSize = 256;
     final buf = calloc<Char>(bufSize);
 
     try {
@@ -82,7 +82,7 @@ class LlamaLoraAdapter {
   /// Get a metadata key by index.
   String? getMetadataKeyByIndex(int index) {
     _checkNotDisposed();
-    final bufSize = 256;
+    const bufSize = 256;
     final buf = calloc<Char>(bufSize);
 
     try {
@@ -103,7 +103,7 @@ class LlamaLoraAdapter {
   /// Get a metadata value by index.
   String? getMetadataValueByIndex(int index) {
     _checkNotDisposed();
-    final bufSize = 256;
+    const bufSize = 256;
     final buf = calloc<Char>(bufSize);
 
     try {

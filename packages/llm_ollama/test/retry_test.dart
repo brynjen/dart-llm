@@ -4,7 +4,7 @@ import 'package:test/test.dart';
 void main() {
   group('OllamaChatRepository retry', () {
     test('retry config is applied', () {
-      final retryConfig = RetryConfig(maxAttempts: 5);
+      const retryConfig = RetryConfig(maxAttempts: 5);
       final repo = OllamaChatRepository(retryConfig: retryConfig);
 
       expect(repo.retryConfig, retryConfig);
@@ -12,7 +12,7 @@ void main() {
     });
 
     test('timeout config is applied', () {
-      final timeoutConfig = TimeoutConfig(
+      const timeoutConfig = TimeoutConfig(
         connectionTimeout: Duration(seconds: 5),
         readTimeout: Duration(minutes: 3),
       );

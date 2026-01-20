@@ -12,7 +12,6 @@ void main() {
           callCount++;
           return 'success';
         },
-        config: null,
       );
 
       expect(result, 'success');
@@ -26,7 +25,7 @@ void main() {
           callCount++;
           return 'success';
         },
-        config: RetryConfig(maxAttempts: 0),
+        config: const RetryConfig(maxAttempts: 0),
       );
 
       expect(result, 'success');
@@ -35,7 +34,7 @@ void main() {
 
     test('retries on retryable errors', () async {
       var callCount = 0;
-      final error = LLMApiException('Server error', statusCode: 500);
+      const error = LLMApiException('Server error', statusCode: 500);
 
       await expectLater(
         RetryUtil.executeWithRetry(
@@ -46,8 +45,7 @@ void main() {
             }
             return 'success';
           },
-          config: RetryConfig(
-            maxAttempts: 3,
+          config: const RetryConfig(
             initialDelay: Duration(milliseconds: 10),
           ),
         ),
@@ -59,7 +57,7 @@ void main() {
 
     test('stops retrying after max attempts', () async {
       var callCount = 0;
-      final error = LLMApiException('Server error', statusCode: 500);
+      const error = LLMApiException('Server error', statusCode: 500);
 
       await expectLater(
         RetryUtil.executeWithRetry(
@@ -67,7 +65,7 @@ void main() {
             callCount++;
             throw error;
           },
-          config: RetryConfig(
+          config: const RetryConfig(
             maxAttempts: 2,
             initialDelay: Duration(milliseconds: 10),
           ),
@@ -80,7 +78,7 @@ void main() {
 
     test('does not retry on non-retryable errors', () async {
       var callCount = 0;
-      final error = LLMApiException('Client error', statusCode: 400);
+      const error = LLMApiException('Client error', statusCode: 400);
 
       await expectLater(
         RetryUtil.executeWithRetry(
@@ -88,7 +86,7 @@ void main() {
             callCount++;
             throw error;
           },
-          config: RetryConfig(maxAttempts: 3),
+          config: const RetryConfig(),
         ),
         throwsA(isA<LLMApiException>()),
       );
@@ -108,7 +106,7 @@ void main() {
             }
             return 'success';
           },
-          config: RetryConfig(
+          config: const RetryConfig(
             maxAttempts: 2,
             initialDelay: Duration(milliseconds: 10),
           ),

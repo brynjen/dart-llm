@@ -13,9 +13,11 @@ DynamicLibrary loadLibrary() {
     _loadAndroidDependencies();
     try {
       final lib = DynamicLibrary.open('libllama.so');
+      // ignore: avoid_print
       print('[llm_llamacpp] Successfully loaded libllama.so');
       return lib;
     } catch (e) {
+      // ignore: avoid_print
       print('[llm_llamacpp] ERROR loading libllama.so: $e');
       rethrow;
     }
@@ -53,8 +55,10 @@ void _loadAndroidDependencies() {
   // Load base library first
   try {
     DynamicLibrary.open('libggml-base.so');
+    // ignore: avoid_print
     print('[llm_llamacpp] Loaded dependency: libggml-base.so');
   } catch (e) {
+    // ignore: avoid_print
     print('[llm_llamacpp] Failed to load libggml-base.so: $e');
   }
 
@@ -62,8 +66,10 @@ void _loadAndroidDependencies() {
   // With GGML_BACKEND_DL=ON, this will dynamically load the optimal CPU backend
   try {
     DynamicLibrary.open('libggml.so');
+    // ignore: avoid_print
     print('[llm_llamacpp] Loaded dependency: libggml.so');
   } catch (e) {
+    // ignore: avoid_print
     print('[llm_llamacpp] Failed to load libggml.so: $e');
   }
 }

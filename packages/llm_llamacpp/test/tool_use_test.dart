@@ -235,7 +235,7 @@ Available tools:
           print('Contains tool JSON: $hasToolJson');
         }
       },
-      timeout: Timeout(Duration(minutes: 2)),
+      timeout: const Timeout(Duration(minutes: 2)),
     );
 
     test('executes tool and returns result', () async {
@@ -297,7 +297,7 @@ Tools:
 
       // The tool should have been called (if model follows instructions)
       // Note: Small models may not reliably follow tool-calling instructions
-    }, timeout: Timeout(Duration(minutes: 2)));
+    }, timeout: const Timeout(Duration(minutes: 2)));
 
     test('handles multiple tools', () async {
       if (modelPath == null) {
@@ -374,12 +374,12 @@ Use JSON format: {"name": "tool_name", "arguments": {"a": 5, "b": 3}}''',
       }
 
       print('Response: ${buffer.toString()}');
-    }, timeout: Timeout(Duration(minutes: 2)));
+    }, timeout: const Timeout(Duration(minutes: 2)));
   });
 
   group('Tool Call Parsing', () {
     test('parses standard JSON format', () {
-      final content = '''Let me calculate that for you.
+      const content = '''Let me calculate that for you.
 {"name": "calculator", "arguments": {"expression": "5 + 3"}}
 The result is 8.''';
 
@@ -394,7 +394,7 @@ The result is 8.''';
     });
 
     test('parses XML-wrapped JSON format', () {
-      final content = '''I'll use the tool:
+      const content = '''I'll use the tool:
 <tool_call>
 {"name": "get_weather", "arguments": {"city": "Tokyo"}}
 </tool_call>
@@ -407,7 +407,7 @@ Done.''';
     });
 
     test('parses multiple tool calls', () {
-      final content = '''
+      const content = '''
 {"name": "tool1", "arguments": {"x": 1}}
 Some text in between.
 {"name": "tool2", "arguments": {"y": 2}}
@@ -421,7 +421,7 @@ Some text in between.
     });
 
     test('handles malformed JSON gracefully', () {
-      final content = '''{"name": "broken", "arguments": {invalid json}}''';
+      const content = '''{"name": "broken", "arguments": {invalid json}}''';
 
       final toolCalls = _parseToolCalls(content);
 
@@ -430,7 +430,7 @@ Some text in between.
     });
 
     test('returns empty list for no tool calls', () {
-      final content = 'Just a regular response with no tools.';
+      const content = 'Just a regular response with no tools.';
 
       final toolCalls = _parseToolCalls(content);
 
@@ -497,7 +497,7 @@ Some text in between.
 
       // Should be limited by maxToolAttempts
       expect(executionCount, lessThanOrEqualTo(3));
-    }, timeout: Timeout(Duration(minutes: 3)));
+    }, timeout: const Timeout(Duration(minutes: 3)));
 
     test('passes extra context to tool', () async {
       if (modelPath == null) {
@@ -542,7 +542,7 @@ Some text in between.
       if (receivedExtra != null) {
         expect(receivedExtra, equals(extraData));
       }
-    }, timeout: Timeout(Duration(minutes: 2)));
+    }, timeout: const Timeout(Duration(minutes: 2)));
   });
 }
 

@@ -1,11 +1,11 @@
-import 'llm_chunk.dart';
-import 'llm_embedding.dart';
-import 'llm_message.dart';
-import 'llm_response.dart';
-import 'stream_chat_options.dart';
-import 'tool/llm_tool.dart';
-import 'tool/llm_tool_call.dart';
-import 'validation.dart';
+import 'package:llm_core/src/llm_chunk.dart';
+import 'package:llm_core/src/llm_embedding.dart';
+import 'package:llm_core/src/llm_message.dart';
+import 'package:llm_core/src/llm_response.dart';
+import 'package:llm_core/src/stream_chat_options.dart';
+import 'package:llm_core/src/tool/llm_tool.dart';
+import 'package:llm_core/src/tool/llm_tool_call.dart';
+import 'package:llm_core/src/validation.dart';
 
 /// Abstract repository interface for LLM chat operations.
 ///
@@ -178,12 +178,12 @@ abstract class LLMChatRepository {
           thinking = (thinking ?? '') + (chunk.message!.thinking ?? '');
         }
         // Only capture tool calls from the final response (when done is true)
-        if (chunk.done == true && chunk.message!.toolCalls != null) {
+        if ((chunk.done ?? false) && chunk.message!.toolCalls != null) {
           finalToolCalls = chunk.message!.toolCalls;
         }
       }
 
-      if (chunk.done == true) {
+      if (chunk.done ?? false) {
         promptEvalCount = chunk.promptEvalCount;
         evalCount = chunk.evalCount;
         doneReason = 'stop'; // Default, backends may override

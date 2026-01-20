@@ -181,7 +181,7 @@ void main() {
 
         expect(response, isNotEmpty);
       },
-      timeout: Timeout(Duration(minutes: 2)),
+      timeout: const Timeout(Duration(minutes: 2)),
     );
 
     test(
@@ -256,7 +256,7 @@ void main() {
         // The response should mention Alice
         expect(response2.toLowerCase(), contains('alice'));
       },
-      timeout: Timeout(Duration(minutes: 3)),
+      timeout: const Timeout(Duration(minutes: 3)),
     );
   });
 }

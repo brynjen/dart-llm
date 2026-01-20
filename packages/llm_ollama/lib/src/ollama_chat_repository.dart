@@ -4,8 +4,8 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:llm_core/llm_core.dart';
 
-import 'dto/ollama_embedding_response.dart';
-import 'dto/ollama_response.dart';
+import 'package:llm_ollama/src/dto/ollama_embedding_response.dart';
+import 'package:llm_ollama/src/dto/ollama_response.dart';
 
 /// Repository for chatting with Ollama.
 ///
@@ -27,7 +27,7 @@ import 'dto/ollama_response.dart';
 /// ```
 class OllamaChatRepository extends LLMChatRepository {
   OllamaChatRepository({
-    this.baseUrl = "http://localhost:11434",
+    this.baseUrl = 'http://localhost:11434',
     this.maxToolAttempts = 25,
     this.retryConfig,
     this.timeoutConfig,
@@ -250,7 +250,7 @@ class OllamaChatRepository extends LLMChatRepository {
       request.headers['content-length'] = bodyBytes.length.toString();
       request.sink.add(bodyBytes);
     }
-    request.sink.close();
+    await request.sink.close();
 
     // Use configured timeout or default
     final config = timeoutConfig ?? TimeoutConfig.defaultConfig;
@@ -301,8 +301,8 @@ class OllamaChatRepository extends LLMChatRepository {
     Map<String, dynamic> options = const {},
     int toolAttempts = 5,
   }) async* {
-    List<LLMMessage> workingMessages = List.from(messages);
-    List<dynamic> collectedToolCalls = [];
+    final List<LLMMessage> workingMessages = List.from(messages);
+    final List<dynamic> collectedToolCalls = [];
 
     await for (final line
         in response.stream

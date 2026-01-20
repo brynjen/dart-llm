@@ -19,6 +19,7 @@ DynamicLibrary loadLibrary() {
         return DynamicLibrary.open(searchPath);
       } catch (e) {
         // Continue to next path
+        // ignore: avoid_print
         print('Failed to load from $searchPath: $e');
       }
     }

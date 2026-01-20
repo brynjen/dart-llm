@@ -1,4 +1,4 @@
-import 'tool/llm_tool_call.dart';
+import 'package:llm_core/src/tool/llm_tool_call.dart';
 
 /// Represents a complete (non-streaming) response from an LLM.
 class LLMResponse {

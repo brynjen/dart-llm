@@ -1,6 +1,6 @@
-import 'bindings/llama_bindings.dart';
-import 'llamacpp_model.dart';
-import 'loader/loader.dart';
+import 'package:llm_llamacpp/src/bindings/llama_bindings.dart';
+import 'package:llm_llamacpp/src/llamacpp_model.dart';
+import 'package:llm_llamacpp/src/loader/loader.dart';
 
 /// Manages loading and unloading of llama.cpp models with pooling support.
 ///

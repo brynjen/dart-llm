@@ -193,6 +193,7 @@ class GgufMetadata {
   /// This reads only the header and metadata, not the tensor data.
   static Future<GgufMetadata> fromFile(String path) async {
     final file = File(path);
+    // ignore: avoid_slow_async_io
     if (!await file.exists()) {
       throw FileSystemException('File not found', path);
     }

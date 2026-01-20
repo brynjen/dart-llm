@@ -1,4 +1,4 @@
-import 'model_converter.dart';
+import 'package:llm_llamacpp/src/model_converter.dart';
 
 // ============================================================
 // Model Exceptions

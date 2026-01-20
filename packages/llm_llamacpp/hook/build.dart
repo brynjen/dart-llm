@@ -29,6 +29,7 @@ void main(List<String> args) async {
   await build(args, (input, output) async {
     final logger = Logger('')
       ..level = Level.ALL
+      // ignore: avoid_print
       ..onRecord.listen((record) => print(record.message));
 
     final targetOS = input.config.code.targetOS;

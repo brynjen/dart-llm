@@ -1,5 +1,5 @@
-import 'retry_config.dart';
-import 'tool/llm_tool.dart';
+import 'package:llm_core/src/retry_config.dart';
+import 'package:llm_core/src/tool/llm_tool.dart';
 
 /// Options for streaming chat requests.
 ///

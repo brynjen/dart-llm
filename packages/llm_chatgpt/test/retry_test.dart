@@ -4,7 +4,7 @@ import 'package:test/test.dart';
 void main() {
   group('ChatGPTChatRepository retry', () {
     test('retry config is applied', () {
-      final retryConfig = RetryConfig(maxAttempts: 5);
+      const retryConfig = RetryConfig(maxAttempts: 5);
       final repo = ChatGPTChatRepository(
         apiKey: 'test-key',
         retryConfig: retryConfig,
@@ -15,7 +15,7 @@ void main() {
     });
 
     test('timeout config is applied', () {
-      final timeoutConfig = TimeoutConfig(
+      const timeoutConfig = TimeoutConfig(
         connectionTimeout: Duration(seconds: 5),
         readTimeout: Duration(minutes: 3),
       );
