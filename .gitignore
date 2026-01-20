@@ -96,3 +96,6 @@ build-android/deps/
 
 # Generated files
 **/flutter/ephemeral/.plugin_symlinks/
+
+# Explicitly don't ignore the llamacpp submodule (even though it's excluded from pub.dev via .pubignore)
+!packages/llm_llamacpp/llamacpp
