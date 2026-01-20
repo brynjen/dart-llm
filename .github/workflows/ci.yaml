@@ -21,18 +21,21 @@ jobs:
       - name: Install Melos
         run: dart pub global activate melos
       
-      - name: Install dependencies
-        run: melos bootstrap
+      - name: Install dependencies (excluding llm_llamacpp which requires Flutter)
+        run: |
+          # Temporarily remove llm_llamacpp from workspace to avoid Flutter requirement
+          cp pubspec.yaml pubspec.yaml.backup
+          sed -i '/packages\/llm_llamacpp/d' pubspec.yaml
+          # Run melos bootstrap
+          melos bootstrap --scope="!llm_llamacpp"
+          # Restore original pubspec.yaml
+          mv pubspec.yaml.backup pubspec.yaml
       
       - name: Verify formatting
-        run: melos format:check
+        run: melos format:check --scope="!llm_llamacpp"
       
       - name: Analyze code
-        run: |
-          cd packages/llm_core && dart analyze
-          cd ../llm_ollama && dart analyze
-          cd ../llm_chatgpt && dart analyze
-          cd ../llm_llamacpp && dart analyze || true
+        run: melos run analyze --scope="!llm_llamacpp"
 
   test:
     name: Test Packages
@@ -52,15 +55,14 @@ jobs:
         with:
           sdk: stable
       
+      - name: Install Melos
+        run: dart pub global activate melos
+      
       - name: Install dependencies
-        run: |
-          cd packages/llm_core && dart pub get
-          cd ../${{ matrix.package }} && dart pub get
+        run: melos bootstrap --scope="${{ matrix.package }}"
       
       - name: Run tests
-        run: |
-          cd packages/llm_core && dart test
-          cd ../${{ matrix.package }} && dart test
+        run: melos run test --scope="${{ matrix.package }}"
 
   test-llm_core:
     name: Test llm_core
@@ -73,11 +75,14 @@ jobs:
         with:
           sdk: stable
       
+      - name: Install Melos
+        run: dart pub global activate melos
+      
       - name: Install dependencies
-        run: cd packages/llm_core && dart pub get
+        run: melos bootstrap --scope="llm_core"
       
       - name: Run tests
-        run: cd packages/llm_core && dart test
+        run: melos run test --scope="llm_core"
 
   test-llm_ollama:
     name: Test llm_ollama
@@ -90,13 +95,14 @@ jobs:
         with:
           sdk: stable
       
+      - name: Install Melos
+        run: dart pub global activate melos
+      
       - name: Install dependencies
-        run: |
-          cd packages/llm_core && dart pub get
-          cd ../llm_ollama && dart pub get
+        run: melos bootstrap --scope="llm_ollama"
       
       - name: Run tests
-        run: cd packages/llm_ollama && dart test
+        run: melos run test --scope="llm_ollama"
 
   test-llm_chatgpt:
     name: Test llm_chatgpt
@@ -109,13 +115,14 @@ jobs:
         with:
           sdk: stable
       
+      - name: Install Melos
+        run: dart pub global activate melos
+      
       - name: Install dependencies
-        run: |
-          cd packages/llm_core && dart pub get
-          cd ../llm_chatgpt && dart pub get
+        run: melos bootstrap --scope="llm_chatgpt"
       
       - name: Run tests
-        run: cd packages/llm_chatgpt && dart test
+        run: melos run test --scope="llm_chatgpt"
 
   check-dependencies:
     name: Check Dependencies
@@ -128,17 +135,21 @@ jobs:
         with:
           sdk: stable
       
+      - name: Install Melos
+        run: dart pub global activate melos
+      
+      - name: Install dependencies (excluding llm_llamacpp which requires Flutter)
+        run: melos bootstrap --scope="!llm_llamacpp"
+      
       - name: Check for outdated dependencies
         run: |
           cd packages/llm_core && dart pub outdated
           cd ../llm_ollama && dart pub outdated
           cd ../llm_chatgpt && dart pub outdated
-          cd ../llm_llamacpp && dart pub outdated || true
       
       - name: Check for security issues
         run: |
           cd packages/llm_core && dart pub outdated --security || true
           cd ../llm_ollama && dart pub outdated --security || true
           cd ../llm_chatgpt && dart pub outdated --security || true
-          cd ../llm_llamacpp && dart pub outdated --security || true
 
