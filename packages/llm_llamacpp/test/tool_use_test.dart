@@ -238,66 +238,70 @@ Available tools:
       timeout: const Timeout(Duration(minutes: 2)),
     );
 
-    test('executes tool and returns result', () async {
-      if (modelPath == null) {
-        markTestSkipped('No model available');
-        return;
-      }
+    test(
+      'executes tool and returns result',
+      () async {
+        if (modelPath == null) {
+          markTestSkipped('No model available');
+          return;
+        }
 
-      await repo.loadModel(modelPath!);
+        await repo.loadModel(modelPath!);
 
-      bool toolWasExecuted = false;
-      String? toolResult;
+        bool toolWasExecuted = false;
+        String? toolResult;
 
-      final weatherTool = TestTool(
-        toolName: 'get_weather',
-        toolDescription: 'Get current weather for a city',
-        toolParameters: [
-          LLMToolParam(
-            name: 'city',
-            type: 'string',
-            description: 'City name',
-            isRequired: true,
-          ),
-        ],
-        executeFunction: (args, {extra}) async {
-          toolWasExecuted = true;
-          final city = args['city'] ?? 'Unknown';
-          toolResult = 'Weather in $city: Sunny, 25°C';
-          return toolResult;
-        },
-      );
+        final weatherTool = TestTool(
+          toolName: 'get_weather',
+          toolDescription: 'Get current weather for a city',
+          toolParameters: [
+            LLMToolParam(
+              name: 'city',
+              type: 'string',
+              description: 'City name',
+              isRequired: true,
+            ),
+          ],
+          executeFunction: (args, {extra}) async {
+            toolWasExecuted = true;
+            final city = args['city'] ?? 'Unknown';
+            toolResult = 'Weather in $city: Sunny, 25°C';
+            return toolResult;
+          },
+        );
 
-      final messages = [
-        LLMMessage(
-          role: LLMRole.system,
-          content:
-              '''You have access to tools. To use a tool, respond with JSON:
+        final messages = [
+          LLMMessage(
+            role: LLMRole.system,
+            content:
+                '''You have access to tools. To use a tool, respond with JSON:
 {"name": "get_weather", "arguments": {"city": "Paris"}}
 
 Tools:
 - get_weather: Get current weather. Parameters: city (string)''',
-        ),
-        LLMMessage(
-          role: LLMRole.user,
-          content: 'What\'s the weather in London?',
-        ),
-      ];
+          ),
+          LLMMessage(
+            role: LLMRole.user,
+            content: 'What\'s the weather in London?',
+          ),
+        ];
 
-      await for (final _ in repo.streamChat(
-        'test',
-        messages: messages,
-        tools: [weatherTool],
-      )) {
-        // Process stream
-      }
+        await for (final _ in repo.streamChat(
+          'test',
+          messages: messages,
+          tools: [weatherTool],
+        )) {
+          // Process stream
+        }
 
-      print('Tool was executed: $toolWasExecuted');
-      print('Tool result: $toolResult');
+        print('Tool was executed: $toolWasExecuted');
+        print('Tool result: $toolResult');
 
-      // The tool should have been called (if model follows instructions)
-      // Note: Small models may not reliably follow tool-calling instructions
-    }, timeout: const Timeout(Duration(minutes: 2)));
+        // The tool should have been called (if model follows instructions)
+        // Note: Small models may not reliably follow tool-calling instructions
+      },
+      timeout: const Timeout(Duration(minutes: 2)),
+    );
 
     test('handles multiple tools', () async {
       if (modelPath == null) {
@@ -458,46 +462,50 @@ Some text in between.
       repo.dispose();
     });
 
-    test('limits tool execution attempts', () async {
-      if (modelPath == null) {
-        markTestSkipped('No model available');
-        return;
-      }
+    test(
+      'limits tool execution attempts',
+      () async {
+        if (modelPath == null) {
+          markTestSkipped('No model available');
+          return;
+        }
 
-      await repo.loadModel(modelPath!);
+        await repo.loadModel(modelPath!);
 
-      int executionCount = 0;
+        int executionCount = 0;
 
-      final loopingTool = TestTool(
-        toolName: 'always_call_again',
-        toolDescription: 'A tool that always suggests calling itself again',
-        toolParameters: [],
-        executeFunction: (args, {extra}) async {
-          executionCount++;
-          return 'Please call me again';
-        },
-      );
+        final loopingTool = TestTool(
+          toolName: 'always_call_again',
+          toolDescription: 'A tool that always suggests calling itself again',
+          toolParameters: [],
+          executeFunction: (args, {extra}) async {
+            executionCount++;
+            return 'Please call me again';
+          },
+        );
 
-      final messages = [
-        LLMMessage(
-          role: LLMRole.system,
-          content: '''You must use the tool every response.
+        final messages = [
+          LLMMessage(
+            role: LLMRole.system,
+            content: '''You must use the tool every response.
 {"name": "always_call_again", "arguments": {}}''',
-        ),
-        LLMMessage(role: LLMRole.user, content: 'Start'),
-      ];
+          ),
+          LLMMessage(role: LLMRole.user, content: 'Start'),
+        ];
 
-      await for (final _ in repo.streamChat(
-        'test',
-        messages: messages,
-        tools: [loopingTool],
-      )) {}
+        await for (final _ in repo.streamChat(
+          'test',
+          messages: messages,
+          tools: [loopingTool],
+        )) {}
 
-      print('Tool execution count: $executionCount');
+        print('Tool execution count: $executionCount');
 
-      // Should be limited by maxToolAttempts
-      expect(executionCount, lessThanOrEqualTo(3));
-    }, timeout: const Timeout(Duration(minutes: 3)));
+        // Should be limited by maxToolAttempts
+        expect(executionCount, lessThanOrEqualTo(3));
+      },
+      timeout: const Timeout(Duration(minutes: 3)),
+    );
 
     test('passes extra context to tool', () async {
       if (modelPath == null) {

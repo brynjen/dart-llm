@@ -28,11 +28,7 @@ void main() {
     });
 
     test('construction with empty arguments', () {
-      final toolCall = LLMToolCall(
-        id: 'call_1',
-        name: 'tool',
-        arguments: '{}',
-      );
+      final toolCall = LLMToolCall(id: 'call_1', name: 'tool', arguments: '{}');
 
       expect(toolCall.arguments, '{}');
     });
@@ -44,7 +40,10 @@ void main() {
         arguments: '{"nested": {"value": 42}, "array": [1, 2, 3]}',
       );
 
-      expect(toolCall.arguments, '{"nested": {"value": 42}, "array": [1, 2, 3]}');
+      expect(
+        toolCall.arguments,
+        '{"nested": {"value": 42}, "array": [1, 2, 3]}',
+      );
     });
   });
 }

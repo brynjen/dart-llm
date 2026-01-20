@@ -26,9 +26,7 @@ void main() {
     });
 
     test('getReadTimeoutForPayload with exact threshold value', () {
-      const config = TimeoutConfig(
-        largePayloadThreshold: 1024 * 1024,
-      );
+      const config = TimeoutConfig(largePayloadThreshold: 1024 * 1024);
 
       // Exactly at threshold should use large payload timeout
       expect(

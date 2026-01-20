@@ -45,9 +45,7 @@ void main() {
             }
             return 'success';
           },
-          config: const RetryConfig(
-            initialDelay: Duration(milliseconds: 10),
-          ),
+          config: const RetryConfig(initialDelay: Duration(milliseconds: 10)),
         ),
         completion('success'),
       );

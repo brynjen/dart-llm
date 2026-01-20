@@ -19,7 +19,10 @@ class Validation {
   /// Throws [LLMApiException] if validation fails.
   static void validateMessages(List<LLMMessage> messages) {
     if (messages.isEmpty) {
-      throw const LLMApiException('Messages list cannot be empty', statusCode: 400);
+      throw const LLMApiException(
+        'Messages list cannot be empty',
+        statusCode: 400,
+      );
     }
 
     if (messages.length > maxMessages) {
@@ -127,7 +130,10 @@ class Validation {
   /// Throws [LLMApiException] if validation fails.
   static void validateModelName(String model) {
     if (model.isEmpty) {
-      throw const LLMApiException('Model name cannot be empty', statusCode: 400);
+      throw const LLMApiException(
+        'Model name cannot be empty',
+        statusCode: 400,
+      );
     }
 
     if (model.length > 200) {

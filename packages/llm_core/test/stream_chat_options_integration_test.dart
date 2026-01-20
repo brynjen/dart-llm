@@ -9,10 +9,7 @@ void main() {
       final mock = MockLLMChatRepository();
       mock.setResponse('Response');
 
-      const options = StreamChatOptions(
-        think: true,
-        toolAttempts: 5,
-      );
+      const options = StreamChatOptions(think: true, toolAttempts: 5);
 
       final stream = mock.streamChat(
         'test-model',

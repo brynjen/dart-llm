@@ -99,73 +99,77 @@ void main() {
       timeout: const Timeout(Duration(minutes: 2)),
     );
 
-    test('vision model maintains conversation', () async {
-      if (visionModelPath == null) {
-        markTestSkipped('No vision model available');
-        return;
-      }
-
-      await repo.loadModel(visionModelPath!);
-
-      // Turn 1
-      final messages1 = [
-        LLMMessage(
-          role: LLMRole.system,
-          content: 'You are a helpful assistant. Be concise.',
-        ),
-        LLMMessage(role: LLMRole.user, content: 'Remember this number: 42'),
-      ];
-
-      String response1 = '';
-      try {
-        final buffer1 = StringBuffer();
-        await for (final chunk in repo.streamChat(
-          'test',
-          messages: messages1,
-        )) {
-          buffer1.write(chunk.message?.content ?? '');
+    test(
+      'vision model maintains conversation',
+      () async {
+        if (visionModelPath == null) {
+          markTestSkipped('No vision model available');
+          return;
         }
-        response1 = buffer1.toString();
-        print('Turn 1: $response1');
-      } catch (e) {
-        // Vision models can sometimes produce incomplete UTF-8 sequences
-        print('Turn 1 had inference error (expected with some models): $e');
-        response1 = 'I will remember the number 42.';
-      }
 
-      // Turn 2 - recall
-      final messages2 = [
-        ...messages1,
-        LLMMessage(role: LLMRole.assistant, content: response1),
-        LLMMessage(
-          role: LLMRole.user,
-          content: 'What number did I ask you to remember?',
-        ),
-      ];
+        await repo.loadModel(visionModelPath!);
 
-      try {
-        final buffer2 = StringBuffer();
-        await for (final chunk in repo.streamChat(
-          'test',
-          messages: messages2,
-        )) {
-          buffer2.write(chunk.message?.content ?? '');
+        // Turn 1
+        final messages1 = [
+          LLMMessage(
+            role: LLMRole.system,
+            content: 'You are a helpful assistant. Be concise.',
+          ),
+          LLMMessage(role: LLMRole.user, content: 'Remember this number: 42'),
+        ];
+
+        String response1 = '';
+        try {
+          final buffer1 = StringBuffer();
+          await for (final chunk in repo.streamChat(
+            'test',
+            messages: messages1,
+          )) {
+            buffer1.write(chunk.message?.content ?? '');
+          }
+          response1 = buffer1.toString();
+          print('Turn 1: $response1');
+        } catch (e) {
+          // Vision models can sometimes produce incomplete UTF-8 sequences
+          print('Turn 1 had inference error (expected with some models): $e');
+          response1 = 'I will remember the number 42.';
         }
-        final response2 = buffer2.toString();
-        print('Turn 2: $response2');
 
-        expect(response2, contains('42'));
-      } catch (e) {
-        // Vision models can sometimes produce incomplete UTF-8 sequences
-        print('Turn 2 had inference error (expected with some models): $e');
-        // Still pass the test if inference ran at all
-        expect(
-          true,
-          isTrue,
-          reason: 'Inference completed with minor encoding issue',
-        );
-      }
-    }, timeout: const Timeout(Duration(minutes: 3)));
+        // Turn 2 - recall
+        final messages2 = [
+          ...messages1,
+          LLMMessage(role: LLMRole.assistant, content: response1),
+          LLMMessage(
+            role: LLMRole.user,
+            content: 'What number did I ask you to remember?',
+          ),
+        ];
+
+        try {
+          final buffer2 = StringBuffer();
+          await for (final chunk in repo.streamChat(
+            'test',
+            messages: messages2,
+          )) {
+            buffer2.write(chunk.message?.content ?? '');
+          }
+          final response2 = buffer2.toString();
+          print('Turn 2: $response2');
+
+          expect(response2, contains('42'));
+        } catch (e) {
+          // Vision models can sometimes produce incomplete UTF-8 sequences
+          print('Turn 2 had inference error (expected with some models): $e');
+          // Still pass the test if inference ran at all
+          expect(
+            true,
+            isTrue,
+            reason: 'Inference completed with minor encoding issue',
+          );
+        }
+      },
+      timeout: const Timeout(Duration(minutes: 3)),
+    );
   });
 
   group('Vision Model Text Generation', () {
@@ -187,40 +191,44 @@ void main() {
       repo.dispose();
     });
 
-    test('generates coherent text response', () async {
-      if (visionModelPath == null) {
-        markTestSkipped('No vision model available');
-        return;
-      }
+    test(
+      'generates coherent text response',
+      () async {
+        if (visionModelPath == null) {
+          markTestSkipped('No vision model available');
+          return;
+        }
 
-      await repo.loadModel(visionModelPath!);
+        await repo.loadModel(visionModelPath!);
 
-      final messages = [
-        LLMMessage(
-          role: LLMRole.user,
-          content: 'Explain what a cat is in 2-3 sentences.',
-        ),
-      ];
+        final messages = [
+          LLMMessage(
+            role: LLMRole.user,
+            content: 'Explain what a cat is in 2-3 sentences.',
+          ),
+        ];
 
-      final buffer = StringBuffer();
-      await for (final chunk in repo.streamChat('test', messages: messages)) {
-        buffer.write(chunk.message?.content ?? '');
-      }
+        final buffer = StringBuffer();
+        await for (final chunk in repo.streamChat('test', messages: messages)) {
+          buffer.write(chunk.message?.content ?? '');
+        }
 
-      final response = buffer.toString().toLowerCase();
-      print('Response: $response');
+        final response = buffer.toString().toLowerCase();
+        print('Response: $response');
 
-      // Should mention cat-related things
-      expect(
-        response,
-        anyOf(
-          contains('cat'),
-          contains('animal'),
-          contains('pet'),
-          contains('feline'),
-        ),
-      );
-    }, timeout: const Timeout(Duration(minutes: 2)));
+        // Should mention cat-related things
+        expect(
+          response,
+          anyOf(
+            contains('cat'),
+            contains('animal'),
+            contains('pet'),
+            contains('feline'),
+          ),
+        );
+      },
+      timeout: const Timeout(Duration(minutes: 2)),
+    );
 
     test('handles multi-turn reasoning', () async {
       if (visionModelPath == null) {
@@ -250,47 +258,51 @@ void main() {
       expect(response, contains('42'));
     }, timeout: const Timeout(Duration(minutes: 2)));
 
-    test('vision model with system prompt', () async {
-      if (visionModelPath == null) {
-        markTestSkipped('No vision model available');
-        return;
-      }
+    test(
+      'vision model with system prompt',
+      () async {
+        if (visionModelPath == null) {
+          markTestSkipped('No vision model available');
+          return;
+        }
 
-      await repo.loadModel(visionModelPath!);
+        await repo.loadModel(visionModelPath!);
 
-      final messages = [
-        LLMMessage(
-          role: LLMRole.system,
-          content:
-              'You are a Shakespearean actor. Respond in Early Modern English.',
-        ),
-        LLMMessage(role: LLMRole.user, content: 'Good morning!'),
-      ];
+        final messages = [
+          LLMMessage(
+            role: LLMRole.system,
+            content:
+                'You are a Shakespearean actor. Respond in Early Modern English.',
+          ),
+          LLMMessage(role: LLMRole.user, content: 'Good morning!'),
+        ];
 
-      final buffer = StringBuffer();
-      await for (final chunk in repo.streamChat('test', messages: messages)) {
-        buffer.write(chunk.message?.content ?? '');
-      }
+        final buffer = StringBuffer();
+        await for (final chunk in repo.streamChat('test', messages: messages)) {
+          buffer.write(chunk.message?.content ?? '');
+        }
 
-      final response = buffer.toString().toLowerCase();
-      print('Shakespearean response: $response');
+        final response = buffer.toString().toLowerCase();
+        print('Shakespearean response: $response');
 
-      // Should have some archaic language or at minimum respond
-      final hasArchaicLanguage =
-          response.contains('thee') ||
-          response.contains('thou') ||
-          response.contains('good morrow') ||
-          response.contains('prithee') ||
-          response.contains('hath') ||
-          response.contains('doth') ||
-          response.contains('art') ||
-          response.contains('morn');
-      expect(
-        hasArchaicLanguage || response.isNotEmpty,
-        isTrue,
-        reason: 'Expected archaic language or non-empty response',
-      );
-    }, timeout: const Timeout(Duration(minutes: 2)));
+        // Should have some archaic language or at minimum respond
+        final hasArchaicLanguage =
+            response.contains('thee') ||
+            response.contains('thou') ||
+            response.contains('good morrow') ||
+            response.contains('prithee') ||
+            response.contains('hath') ||
+            response.contains('doth') ||
+            response.contains('art') ||
+            response.contains('morn');
+        expect(
+          hasArchaicLanguage || response.isNotEmpty,
+          isTrue,
+          reason: 'Expected archaic language or non-empty response',
+        );
+      },
+      timeout: const Timeout(Duration(minutes: 2)),
+    );
   });
 
   group('Vision Model Image Placeholders', () {

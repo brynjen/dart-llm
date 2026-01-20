@@ -9,7 +9,10 @@ void main() {
         'Model does not support thinking',
       );
 
-      expect(exception.toString(), 'ThinkingNotSupportedException: Model does not support thinking');
+      expect(
+        exception.toString(),
+        'ThinkingNotSupportedException: Model does not support thinking',
+      );
       expect(exception.model, 'gpt-4o');
       expect(exception.message, 'Model does not support thinking');
     });
@@ -22,7 +25,10 @@ void main() {
         'Model does not support tools',
       );
 
-      expect(exception.toString(), 'ToolsNotSupportedException: Model does not support tools');
+      expect(
+        exception.toString(),
+        'ToolsNotSupportedException: Model does not support tools',
+      );
       expect(exception.model, 'gpt-3.5');
       expect(exception.message, 'Model does not support tools');
     });
@@ -35,7 +41,10 @@ void main() {
         'Model does not support vision',
       );
 
-      expect(exception.toString(), 'VisionNotSupportedException: Model does not support vision');
+      expect(
+        exception.toString(),
+        'VisionNotSupportedException: Model does not support vision',
+      );
       expect(exception.model, 'gpt-3.5');
       expect(exception.message, 'Model does not support vision');
     });
@@ -43,12 +52,12 @@ void main() {
 
   group('LLMApiException', () {
     test('toString with status code', () {
-      const exception = LLMApiException(
-        'API request failed',
-        statusCode: 500,
-      );
+      const exception = LLMApiException('API request failed', statusCode: 500);
 
-      expect(exception.toString(), 'LLMApiException: HTTP 500 - API request failed');
+      expect(
+        exception.toString(),
+        'LLMApiException: HTTP 500 - API request failed',
+      );
       expect(exception.message, 'API request failed');
       expect(exception.statusCode, 500);
       expect(exception.responseBody, null);
@@ -68,7 +77,10 @@ void main() {
         responseBody: '{"error": "Invalid request"}',
       );
 
-      expect(exception.toString(), 'LLMApiException: HTTP 400 - API request failed');
+      expect(
+        exception.toString(),
+        'LLMApiException: HTTP 400 - API request failed',
+      );
       expect(exception.statusCode, 400);
       expect(exception.responseBody, '{"error": "Invalid request"}');
     });
@@ -77,10 +89,7 @@ void main() {
       final statusCodes = [400, 401, 403, 404, 429, 500, 502, 503, 504];
 
       for (final code in statusCodes) {
-        final exception = LLMApiException(
-          'Error',
-          statusCode: code,
-        );
+        final exception = LLMApiException('Error', statusCode: code);
 
         expect(exception.statusCode, code);
         expect(exception.toString(), contains('HTTP $code'));

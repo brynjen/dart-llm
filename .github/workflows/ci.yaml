@@ -26,16 +26,22 @@ jobs:
           # Temporarily remove llm_llamacpp from workspace to avoid Flutter requirement
           cp pubspec.yaml pubspec.yaml.backup
           sed -i '/packages\/llm_llamacpp/d' pubspec.yaml
-          # Run melos bootstrap
-          melos bootstrap --scope="!llm_llamacpp"
+          # Run melos bootstrap (will only bootstrap packages in the modified workspace)
+          melos bootstrap
           # Restore original pubspec.yaml
           mv pubspec.yaml.backup pubspec.yaml
       
       - name: Verify formatting
-        run: melos format:check --scope="!llm_llamacpp"
+        run: |
+          melos exec --scope="llm_core" -- "dart format --set-exit-if-changed ."
+          melos exec --scope="llm_ollama" -- "dart format --set-exit-if-changed ."
+          melos exec --scope="llm_chatgpt" -- "dart format --set-exit-if-changed ."
       
       - name: Analyze code
-        run: melos run analyze --scope="!llm_llamacpp"
+        run: |
+          melos exec --scope="llm_core" -- "dart analyze"
+          melos exec --scope="llm_ollama" -- "dart analyze"
+          melos exec --scope="llm_chatgpt" -- "dart analyze"
 
   test:
     name: Test Packages
@@ -139,7 +145,12 @@ jobs:
         run: dart pub global activate melos
       
       - name: Install dependencies (excluding llm_llamacpp which requires Flutter)
-        run: melos bootstrap --scope="!llm_llamacpp"
+        run: |
+          # Temporarily remove llm_llamacpp from workspace to avoid Flutter requirement
+          cp pubspec.yaml pubspec.yaml.backup
+          sed -i '/packages\/llm_llamacpp/d' pubspec.yaml
+          melos bootstrap
+          mv pubspec.yaml.backup pubspec.yaml
       
       - name: Check for outdated dependencies
         run: |

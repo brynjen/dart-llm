@@ -7,10 +7,7 @@ void main() {
       final chunk = LLMChunk(
         model: 'gpt-4o',
         createdAt: DateTime(2024, 1, 1),
-        message: LLMChunkMessage(
-          content: 'Hello',
-          role: LLMRole.assistant,
-        ),
+        message: LLMChunkMessage(content: 'Hello', role: LLMRole.assistant),
         done: true,
         promptEvalCount: 10,
         evalCount: 5,
@@ -31,10 +28,7 @@ void main() {
       final chunk = LLMChunk(
         model: 'gpt-4o',
         createdAt: DateTime(2024, 1, 1),
-        message: LLMChunkMessage(
-          content: 'Hello',
-          role: LLMRole.assistant,
-        ),
+        message: LLMChunkMessage(content: 'Hello', role: LLMRole.assistant),
       );
 
       expect(chunk.model, 'gpt-4o');
@@ -100,13 +94,7 @@ void main() {
         thinking: 'I should greet',
         toolCallId: 'call_1',
         images: ['image1'],
-        toolCalls: [
-          LLMToolCall(
-            id: 'call_1',
-            name: 'tool',
-            arguments: '{}',
-          ),
-        ],
+        toolCalls: [LLMToolCall(id: 'call_1', name: 'tool', arguments: '{}')],
       );
 
       expect(message.content, 'Hello');
@@ -132,19 +120,13 @@ void main() {
     });
 
     test('construction with null content', () {
-      final message = LLMChunkMessage(
-        content: null,
-        role: LLMRole.assistant,
-      );
+      final message = LLMChunkMessage(content: null, role: LLMRole.assistant);
 
       expect(message.content, null);
     });
 
     test('construction with null role', () {
-      final message = LLMChunkMessage(
-        content: 'Hello',
-        role: null,
-      );
+      final message = LLMChunkMessage(content: 'Hello', role: null);
 
       expect(message.role, null);
     });

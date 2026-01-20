@@ -98,24 +98,12 @@ void main() {
       );
 
       // Special characters (should be allowed in model names)
-      expect(
-        () => Validation.validateModelName('gpt-4o'),
-        returnsNormally,
-      );
-      expect(
-        () => Validation.validateModelName('model_name'),
-        returnsNormally,
-      );
-      expect(
-        () => Validation.validateModelName('model.name'),
-        returnsNormally,
-      );
+      expect(() => Validation.validateModelName('gpt-4o'), returnsNormally);
+      expect(() => Validation.validateModelName('model_name'), returnsNormally);
+      expect(() => Validation.validateModelName('model.name'), returnsNormally);
 
       // Unicode characters
-      expect(
-        () => Validation.validateModelName('模型名称'),
-        returnsNormally,
-      );
+      expect(() => Validation.validateModelName('模型名称'), returnsNormally);
     });
 
     test('message validation with all role combinations', () {
@@ -187,10 +175,7 @@ void main() {
       );
 
       // Extra fields (validation doesn't check this)
-      final extraFields = {
-        'required': 'value',
-        'extra': 'field',
-      };
+      final extraFields = {'required': 'value', 'extra': 'field'};
       expect(
         () => Validation.validateToolArguments(extraFields, 'test-tool'),
         returnsNormally,

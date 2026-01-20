@@ -75,11 +75,7 @@ void main() {
         name: 'tags',
         type: 'array',
         description: 'Tags',
-        items: LLMToolParam(
-          name: 'tag',
-          type: 'string',
-          description: 'A tag',
-        ),
+        items: LLMToolParam(name: 'tag', type: 'string', description: 'A tag'),
       );
 
       final schema = param.toJsonSchema();
@@ -96,10 +92,7 @@ void main() {
         description: 'Tags',
       );
 
-      expect(
-        () => param.toJsonSchema(),
-        throwsA(isA<StateError>()),
-      );
+      expect(() => param.toJsonSchema(), throwsA(isA<StateError>()));
     });
 
     test('array with minItems and maxItems', () {
@@ -254,11 +247,7 @@ void main() {
             type: 'object',
             description: 'Inner object',
             properties: [
-              LLMToolParam(
-                name: 'value',
-                type: 'string',
-                description: 'Value',
-              ),
+              LLMToolParam(name: 'value', type: 'string', description: 'Value'),
             ],
           ),
         ],
@@ -268,7 +257,10 @@ void main() {
 
       expect(schema['type'], 'object');
       expect(schema['properties']['inner']['type'], 'object');
-      expect(schema['properties']['inner']['properties']['value']['type'], 'string');
+      expect(
+        schema['properties']['inner']['properties']['value']['type'],
+        'string',
+      );
     });
 
     test('nested array', () {
@@ -305,11 +297,7 @@ void main() {
           type: 'object',
           description: 'User',
           properties: [
-            LLMToolParam(
-              name: 'name',
-              type: 'string',
-              description: 'Name',
-            ),
+            LLMToolParam(name: 'name', type: 'string', description: 'Name'),
           ],
         ),
       );

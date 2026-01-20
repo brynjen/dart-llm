@@ -290,7 +290,8 @@ class GPTChunk extends LLMChunk {
               final newArguments =
                   newChunk.choices[0].delta.toolCalls?[0].function.arguments ??
                   '';
-              final String arguments = toolCall.function.arguments + newArguments;
+              final String arguments =
+                  toolCall.function.arguments + newArguments;
               return GPTToolCall(
                 id: toolCall.id,
                 index: toolCall.index,

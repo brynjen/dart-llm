@@ -63,7 +63,10 @@ void main() {
       expect(json['function']['name'], 'calculator');
       expect(json['function']['parameters'], isA<Map>());
       expect(json['function']['parameters']['type'], 'object');
-      expect(json['function']['parameters']['properties']['expression']['type'], 'string');
+      expect(
+        json['function']['parameters']['properties']['expression']['type'],
+        'string',
+      );
       expect(json['function']['parameters']['required'], ['expression']);
     });
 
@@ -90,7 +93,10 @@ void main() {
       final json = tool.toJson;
 
       expect(json['function']['parameters']['required'], ['query']);
-      expect(json['function']['parameters']['required'].contains('limit'), false);
+      expect(
+        json['function']['parameters']['required'].contains('limit'),
+        false,
+      );
     });
 
     test('tool with all optional parameters', () {
@@ -146,8 +152,14 @@ void main() {
 
       final json = tool.toJson;
 
-      expect(json['function']['parameters']['properties']['config']['type'], 'object');
-      expect(json['function']['parameters']['properties']['config']['properties']['items']['type'], 'array');
+      expect(
+        json['function']['parameters']['properties']['config']['type'],
+        'object',
+      );
+      expect(
+        json['function']['parameters']['properties']['config']['properties']['items']['type'],
+        'array',
+      );
     });
   });
 

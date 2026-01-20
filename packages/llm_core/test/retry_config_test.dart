@@ -18,9 +18,7 @@ void main() {
     });
 
     test('getDelayForAttempt calculates exponential backoff', () {
-      const config = RetryConfig(
-        
-      );
+      const config = RetryConfig();
 
       expect(config.getDelayForAttempt(0), const Duration(seconds: 1));
       expect(config.getDelayForAttempt(1), const Duration(seconds: 2));
@@ -64,9 +62,7 @@ void main() {
     });
 
     test('custom retryable status codes', () {
-      const config = RetryConfig(
-        retryableStatusCodes: [408, 503],
-      );
+      const config = RetryConfig(retryableStatusCodes: [408, 503]);
 
       expect(config.shouldRetryForStatusCode(408), true);
       expect(config.shouldRetryForStatusCode(503), true);
@@ -98,7 +94,10 @@ void main() {
       );
       expect(config2.getDelayForAttempt(0), const Duration(milliseconds: 100));
       expect(config2.getDelayForAttempt(1), const Duration(milliseconds: 1000));
-      expect(config2.getDelayForAttempt(2), const Duration(seconds: 1)); // Capped
+      expect(
+        config2.getDelayForAttempt(2),
+        const Duration(seconds: 1),
+      ); // Capped
     });
   });
 }

@@ -12,10 +12,7 @@ void main() {
         'choices': [
           {
             'index': 0,
-            'message': {
-              'role': 'assistant',
-              'content': 'Hello!',
-            },
+            'message': {'role': 'assistant', 'content': 'Hello!'},
             'finish_reason': 'stop',
             'logprobs': null,
           },
@@ -81,7 +78,10 @@ void main() {
 
       expect(response.choices[0].message.toolCalls, isNotNull);
       expect(response.choices[0].message.toolCalls?.length, 1);
-      expect(response.choices[0].message.toolCalls?.first.function.name, 'calculator');
+      expect(
+        response.choices[0].message.toolCalls?.first.function.name,
+        'calculator',
+      );
     });
 
     test('fromJson without system fingerprint', () {
@@ -93,10 +93,7 @@ void main() {
         'choices': [
           {
             'index': 0,
-            'message': {
-              'role': 'assistant',
-              'content': 'Hello!',
-            },
+            'message': {'role': 'assistant', 'content': 'Hello!'},
             'finish_reason': 'stop',
           },
         ],
@@ -117,10 +114,7 @@ void main() {
     test('fromJson and toJson', () {
       final json = {
         'index': 0,
-        'message': {
-          'role': 'assistant',
-          'content': 'Hello!',
-        },
+        'message': {'role': 'assistant', 'content': 'Hello!'},
         'finish_reason': 'stop',
         'logProbs': null,
       };
@@ -137,10 +131,7 @@ void main() {
 
   group('GPTMessage', () {
     test('fromJson and toJson with content', () {
-      final json = {
-        'role': 'assistant',
-        'content': 'Hello!',
-      };
+      final json = {'role': 'assistant', 'content': 'Hello!'};
 
       final message = GPTMessage.fromJson(json);
       final reconstructed = message.toJson();
@@ -159,10 +150,7 @@ void main() {
           {
             'id': 'call_1',
             'type': 'function',
-            'function': {
-              'name': 'calculator',
-              'arguments': '{}',
-            },
+            'function': {'name': 'calculator', 'arguments': '{}'},
             'index': 0,
           },
         ],
@@ -192,10 +180,7 @@ void main() {
       final json = {
         'id': 'call_1',
         'type': 'function',
-        'function': {
-          'name': 'calculator',
-          'arguments': '{"a": 2, "b": 2}',
-        },
+        'function': {'name': 'calculator', 'arguments': '{"a": 2, "b": 2}'},
         'index': 0,
       };
 
@@ -214,10 +199,7 @@ void main() {
         id: 'call_1',
         index: 0,
         type: 'function',
-        function: GPTToolFunctionCall(
-          name: 'calculator',
-          arguments: '{"a": 2',
-        ),
+        function: GPTToolFunctionCall(name: 'calculator', arguments: '{"a": 2'),
       );
 
       final newChunk = GPTChunk(
@@ -249,7 +231,9 @@ void main() {
         ],
       );
 
-      final merged = original.copyWith(newFunction: newChunk.choices[0].delta.toolCalls![0].function);
+      final merged = original.copyWith(
+        newFunction: newChunk.choices[0].delta.toolCalls![0].function,
+      );
 
       expect(merged.function.arguments, '{"a": 2, "b": 2}');
     });
@@ -257,10 +241,7 @@ void main() {
 
   group('GPTToolFunctionCall', () {
     test('fromJson and toJson', () {
-      final json = {
-        'name': 'calculator',
-        'arguments': '{"a": 2, "b": 2}',
-      };
+      final json = {'name': 'calculator', 'arguments': '{"a": 2, "b": 2}'};
 
       final functionCall = GPTToolFunctionCall.fromJson(json);
       final reconstructed = functionCall.toJson();
@@ -272,9 +253,7 @@ void main() {
     });
 
     test('fromJson with empty arguments', () {
-      final json = {
-        'name': 'calculator',
-      };
+      final json = {'name': 'calculator'};
 
       final functionCall = GPTToolFunctionCall.fromJson(json);
 
@@ -300,10 +279,7 @@ void main() {
         'prompt_tokens': 10,
         'completion_tokens': 5,
         'total_tokens': 15,
-        'prompt_tokens_details': {
-          'cached_tokens': 2,
-          'audio_tokens': 0,
-        },
+        'prompt_tokens_details': {'cached_tokens': 2, 'audio_tokens': 0},
       };
 
       final usage = GPTUsage.fromJson(json);
@@ -331,10 +307,7 @@ void main() {
 
   group('GPTUsageTokenDetails', () {
     test('fromJson and toJson', () {
-      final json = {
-        'cached_tokens': 2,
-        'audio_tokens': 0,
-      };
+      final json = {'cached_tokens': 2, 'audio_tokens': 0};
 
       final details = GPTUsageTokenDetails.fromJson(json);
       final reconstructed = details.toJson();
@@ -355,9 +328,7 @@ void main() {
         'choices': [
           {
             'index': 0,
-            'delta': {
-              'content': 'Hello',
-            },
+            'delta': {'content': 'Hello'},
             'finish_reason': null,
           },
         ],
@@ -382,9 +353,7 @@ void main() {
         'choices': [
           {
             'index': 0,
-            'delta': {
-              'content': '!',
-            },
+            'delta': {'content': '!'},
             'finish_reason': 'stop',
           },
         ],
@@ -409,10 +378,7 @@ void main() {
                 {
                   'id': 'call_1',
                   'type': 'function',
-                  'function': {
-                    'name': 'calculator',
-                    'arguments': '{"a": 2',
-                  },
+                  'function': {'name': 'calculator', 'arguments': '{"a": 2'},
                   'index': 0,
                 },
               ],
@@ -432,9 +398,7 @@ void main() {
     test('fromJson and toJson', () {
       final json = {
         'index': 0,
-        'delta': {
-          'content': 'Hello',
-        },
+        'delta': {'content': 'Hello'},
         'finish_reason': null,
       };
 
@@ -456,10 +420,7 @@ void main() {
           {
             'id': 'call_1',
             'type': 'function',
-            'function': {
-              'name': 'calculator',
-              'arguments': '{}',
-            },
+            'function': {'name': 'calculator', 'arguments': '{}'},
             'index': 0,
           },
         ],
@@ -506,10 +467,7 @@ void main() {
           id: 'call_2',
           index: 1,
           type: 'function',
-          function: GPTToolFunctionCall(
-            name: 'search',
-            arguments: '{}',
-          ),
+          function: GPTToolFunctionCall(name: 'search', arguments: '{}'),
         ),
       ];
 
@@ -546,10 +504,7 @@ void main() {
             id: 'call_1',
             index: 0,
             type: 'function',
-            function: GPTToolFunctionCall(
-              name: 'calculator',
-              arguments: '{}',
-            ),
+            function: GPTToolFunctionCall(name: 'calculator', arguments: '{}'),
           ),
         ],
       );

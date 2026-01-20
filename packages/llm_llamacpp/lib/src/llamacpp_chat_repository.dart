@@ -718,7 +718,10 @@ class LlamaCppChatRepository extends LLMChatRepository {
 
     // Validate inputs
     if (messages.isEmpty) {
-      throw const LLMApiException('Messages list cannot be empty', statusCode: 400);
+      throw const LLMApiException(
+        'Messages list cannot be empty',
+        statusCode: 400,
+      );
     }
 
     // Create a receive port to get embeddings from the isolate
@@ -786,7 +789,9 @@ class _InferenceRequest {
     required this.stopTokens,
     required this.contextSize,
     required this.batchSize,
-    required this.nGpuLayers, required this.options, this.threads,
+    required this.nGpuLayers,
+    required this.options,
+    this.threads,
     this.loraPath,
     this.loraScale = 1.0,
   });
@@ -833,7 +838,8 @@ class _EmbeddingRequest {
     required this.messages,
     required this.contextSize,
     required this.batchSize,
-    required this.nGpuLayers, this.threads,
+    required this.nGpuLayers,
+    this.threads,
   });
 
   final SendPort sendPort;

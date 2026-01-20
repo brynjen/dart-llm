@@ -7,10 +7,7 @@ void main() {
       final json = {
         'model': 'text-embedding-3-small',
         'object': 'list',
-        'usage': {
-          'prompt_tokens': 5,
-          'total_tokens': 5,
-        },
+        'usage': {'prompt_tokens': 5, 'total_tokens': 5},
         'data': [
           {
             'object': 'embedding',
@@ -42,10 +39,7 @@ void main() {
       final json = {
         'model': 'text-embedding-3-small',
         'object': 'list',
-        'usage': {
-          'prompt_tokens': 5,
-          'total_tokens': 5,
-        },
+        'usage': {'prompt_tokens': 5, 'total_tokens': 5},
         'data': [
           {
             'object': 'embedding',
@@ -96,10 +90,7 @@ void main() {
 
   group('ChatGPTEmbeddingsUsage', () {
     test('fromJson and toJson', () {
-      final json = {
-        'prompt_tokens': 10,
-        'total_tokens': 10,
-      };
+      final json = {'prompt_tokens': 10, 'total_tokens': 10};
 
       final usage = ChatGPTEmbeddingsUsage.fromJson(json);
       final reconstructed = usage.toJson();
@@ -115,19 +106,10 @@ void main() {
     test('toLLMEmbedding converts correctly', () {
       final response = ChatGPTEmbeddingsResponse(
         model: 'text-embedding-3-small',
-        usage: ChatGPTEmbeddingsUsage(
-          promptTokens: 5,
-          totalTokens: 5,
-        ),
+        usage: ChatGPTEmbeddingsUsage(promptTokens: 5, totalTokens: 5),
         data: [
-          ChatGPTEmbedding(
-            index: 0,
-            embedding: [0.1, 0.2, 0.3],
-          ),
-          ChatGPTEmbedding(
-            index: 1,
-            embedding: [0.4, 0.5, 0.6],
-          ),
+          ChatGPTEmbedding(index: 0, embedding: [0.1, 0.2, 0.3]),
+          ChatGPTEmbedding(index: 1, embedding: [0.4, 0.5, 0.6]),
         ],
       );
 

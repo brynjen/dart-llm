@@ -4,10 +4,7 @@ import 'package:test/test.dart';
 void main() {
   group('LLMMessage.toJson', () {
     test('user message with content only', () {
-      final message = LLMMessage(
-        role: LLMRole.user,
-        content: 'Hello, world!',
-      );
+      final message = LLMMessage(role: LLMRole.user, content: 'Hello, world!');
 
       final json = message.toJson();
 
@@ -32,9 +29,15 @@ void main() {
       final content = json['content'] as List;
       expect(content.length, 2);
       expect(content[0]['type'], 'image_url');
-      expect(content[0]['image_url']['url'], 'data:image/png;base64,base64image1');
+      expect(
+        content[0]['image_url']['url'],
+        'data:image/png;base64,base64image1',
+      );
       expect(content[1]['type'], 'image_url');
-      expect(content[1]['image_url']['url'], 'data:image/png;base64,base64image2');
+      expect(
+        content[1]['image_url']['url'],
+        'data:image/png;base64,base64image2',
+      );
     });
 
     test('user message with content and images', () {
@@ -53,7 +56,10 @@ void main() {
       expect(content[0]['type'], 'text');
       expect(content[0]['text'], 'What is in this image?');
       expect(content[1]['type'], 'image_url');
-      expect(content[1]['image_url']['url'], 'data:image/png;base64,base64image1');
+      expect(
+        content[1]['image_url']['url'],
+        'data:image/png;base64,base64image1',
+      );
     });
 
     test('system message with content', () {
@@ -88,10 +94,7 @@ void main() {
           {
             'id': 'call_1',
             'type': 'function',
-            'function': {
-              'name': 'calculator',
-              'arguments': '{"a": 2, "b": 2}',
-            },
+            'function': {'name': 'calculator', 'arguments': '{"a": 2, "b": 2}'},
           },
         ],
       );
@@ -135,9 +138,7 @@ void main() {
     });
 
     test('user message with null content and null images', () {
-      final message = LLMMessage(
-        role: LLMRole.user,
-      );
+      final message = LLMMessage(role: LLMRole.user);
 
       final json = message.toJson();
 
@@ -147,9 +148,7 @@ void main() {
     });
 
     test('assistant message with null content', () {
-      final message = LLMMessage(
-        role: LLMRole.assistant,
-      );
+      final message = LLMMessage(role: LLMRole.assistant);
 
       final json = message.toJson();
 

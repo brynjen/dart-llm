@@ -44,11 +44,7 @@ void main() {
         promptEvalCount: 10,
         evalCount: 0,
         toolCalls: [
-          LLMToolCall(
-            id: 'call_1',
-            name: 'calculator',
-            arguments: '{}',
-          ),
+          LLMToolCall(id: 'call_1', name: 'calculator', arguments: '{}'),
         ],
       );
 

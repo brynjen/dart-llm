@@ -65,9 +65,7 @@ void main() {
       expect(withAttempts.toolAttempts, 5);
 
       // Copy with timeout
-      final withTimeout = original.copyWith(
-        timeout: Duration(minutes: 10),
-      );
+      final withTimeout = original.copyWith(timeout: Duration(minutes: 10));
       expect(withTimeout.timeout, Duration(minutes: 10));
 
       // Copy with retryConfig

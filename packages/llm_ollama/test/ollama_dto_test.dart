@@ -7,10 +7,7 @@ void main() {
       final json = {
         'model': 'qwen3:0.6b',
         'created_at': '2024-01-01T00:00:00.000Z',
-        'message': {
-          'role': 'assistant',
-          'content': 'Hello',
-        },
+        'message': {'role': 'assistant', 'content': 'Hello'},
         'done': true,
         'prompt_eval_count': 10,
         'eval_count': 5,
@@ -122,10 +119,7 @@ void main() {
       final json = {
         'model': 'qwen3:0.6b',
         'created_at': '2024-01-01T00:00:00.000Z',
-        'message': {
-          'role': 'invalid_role',
-          'content': 'Hello',
-        },
+        'message': {'role': 'invalid_role', 'content': 'Hello'},
         'done': false,
       };
 
@@ -254,11 +248,7 @@ void main() {
     });
 
     test('progress getter with zero total', () {
-      final json = {
-        'status': 'pulling',
-        'total': 0,
-        'completed': 0,
-      };
+      final json = {'status': 'pulling', 'total': 0, 'completed': 0};
 
       final progress = OllamaPullProgress.fromJson(json);
 
@@ -266,9 +256,7 @@ void main() {
     });
 
     test('progress getter with null values', () {
-      final json = {
-        'status': 'pulling',
-      };
+      final json = {'status': 'pulling'};
 
       final progress = OllamaPullProgress.fromJson(json);
 
@@ -278,11 +266,7 @@ void main() {
     });
 
     test('progress getter with 100% progress', () {
-      final json = {
-        'status': 'complete',
-        'total': 1000,
-        'completed': 1000,
-      };
+      final json = {'status': 'complete', 'total': 1000, 'completed': 1000};
 
       final progress = OllamaPullProgress.fromJson(json);
 

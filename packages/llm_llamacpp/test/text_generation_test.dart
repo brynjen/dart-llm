@@ -37,37 +37,41 @@ void main() {
       repo.dispose();
     });
 
-    test('generates response to simple prompt', () async {
-      if (modelPath == null) {
-        markTestSkipped('No model available');
-        return;
-      }
+    test(
+      'generates response to simple prompt',
+      () async {
+        if (modelPath == null) {
+          markTestSkipped('No model available');
+          return;
+        }
 
-      await repo.loadModel(modelPath!);
+        await repo.loadModel(modelPath!);
 
-      final messages = [
-        LLMMessage(
-          role: LLMRole.user,
-          content: 'What is 2 + 2? Answer with just the number.',
-        ),
-      ];
+        final messages = [
+          LLMMessage(
+            role: LLMRole.user,
+            content: 'What is 2 + 2? Answer with just the number.',
+          ),
+        ];
 
-      print('Prompt: ${messages.first.content}');
-      print('Response: ');
+        print('Prompt: ${messages.first.content}');
+        print('Response: ');
 
-      final buffer = StringBuffer();
-      await for (final chunk in repo.streamChat('test', messages: messages)) {
-        final content = chunk.message?.content ?? '';
-        buffer.write(content);
-        stdout.write(content);
-      }
-      print('\n');
+        final buffer = StringBuffer();
+        await for (final chunk in repo.streamChat('test', messages: messages)) {
+          final content = chunk.message?.content ?? '';
+          buffer.write(content);
+          stdout.write(content);
+        }
+        print('\n');
 
-      final response = buffer.toString();
-      expect(response, isNotEmpty);
-      // Most models should get this right
-      expect(response.toLowerCase(), anyOf(contains('4'), contains('four')));
-    }, timeout: const Timeout(Duration(minutes: 2)));
+        final response = buffer.toString();
+        expect(response, isNotEmpty);
+        // Most models should get this right
+        expect(response.toLowerCase(), anyOf(contains('4'), contains('four')));
+      },
+      timeout: const Timeout(Duration(minutes: 2)),
+    );
 
     test('generates streaming tokens', () async {
       if (modelPath == null) {
@@ -138,46 +142,56 @@ void main() {
       );
     }, timeout: const Timeout(Duration(minutes: 2)));
 
-    test('maintains conversation context', () async {
-      if (modelPath == null) {
-        markTestSkipped('No model available');
-        return;
-      }
+    test(
+      'maintains conversation context',
+      () async {
+        if (modelPath == null) {
+          markTestSkipped('No model available');
+          return;
+        }
 
-      await repo.loadModel(modelPath!);
+        await repo.loadModel(modelPath!);
 
-      // First turn - introduce a name
-      final messages1 = [
-        LLMMessage(
-          role: LLMRole.system,
-          content: 'Remember what the user tells you. Be brief.',
-        ),
-        LLMMessage(role: LLMRole.user, content: 'My favorite color is blue.'),
-      ];
+        // First turn - introduce a name
+        final messages1 = [
+          LLMMessage(
+            role: LLMRole.system,
+            content: 'Remember what the user tells you. Be brief.',
+          ),
+          LLMMessage(role: LLMRole.user, content: 'My favorite color is blue.'),
+        ];
 
-      final buffer1 = StringBuffer();
-      await for (final chunk in repo.streamChat('test', messages: messages1)) {
-        buffer1.write(chunk.message?.content ?? '');
-      }
-      final response1 = buffer1.toString();
-      print('Turn 1 response: $response1');
+        final buffer1 = StringBuffer();
+        await for (final chunk in repo.streamChat(
+          'test',
+          messages: messages1,
+        )) {
+          buffer1.write(chunk.message?.content ?? '');
+        }
+        final response1 = buffer1.toString();
+        print('Turn 1 response: $response1');
 
-      // Second turn - ask about the name
-      final messages2 = [
-        ...messages1,
-        LLMMessage(role: LLMRole.assistant, content: response1),
-        LLMMessage(role: LLMRole.user, content: 'What is my favorite color?'),
-      ];
+        // Second turn - ask about the name
+        final messages2 = [
+          ...messages1,
+          LLMMessage(role: LLMRole.assistant, content: response1),
+          LLMMessage(role: LLMRole.user, content: 'What is my favorite color?'),
+        ];
 
-      final buffer2 = StringBuffer();
-      await for (final chunk in repo.streamChat('test', messages: messages2)) {
-        buffer2.write(chunk.message?.content ?? '');
-      }
-      final response2 = buffer2.toString().toLowerCase();
-      print('Turn 2 response: $response2');
+        final buffer2 = StringBuffer();
+        await for (final chunk in repo.streamChat(
+          'test',
+          messages: messages2,
+        )) {
+          buffer2.write(chunk.message?.content ?? '');
+        }
+        final response2 = buffer2.toString().toLowerCase();
+        print('Turn 2 response: $response2');
 
-      expect(response2, contains('blue'));
-    }, timeout: const Timeout(Duration(minutes: 3)));
+        expect(response2, contains('blue'));
+      },
+      timeout: const Timeout(Duration(minutes: 3)),
+    );
 
     test('respects max tokens limit', () async {
       if (modelPath == null) {
@@ -319,24 +333,28 @@ void main() {
       expect(repo.template, isA<Llama3Template>());
     });
 
-    test('generates with explicit template', () async {
-      if (modelPath == null) {
-        markTestSkipped('No model available');
-        return;
-      }
+    test(
+      'generates with explicit template',
+      () async {
+        if (modelPath == null) {
+          markTestSkipped('No model available');
+          return;
+        }
 
-      await repo.loadModel(modelPath!);
-      repo.template = ChatMLTemplate();
+        await repo.loadModel(modelPath!);
+        repo.template = ChatMLTemplate();
 
-      final messages = [LLMMessage(role: LLMRole.user, content: 'Hi')];
+        final messages = [LLMMessage(role: LLMRole.user, content: 'Hi')];
 
-      final buffer = StringBuffer();
-      await for (final chunk in repo.streamChat('test', messages: messages)) {
-        buffer.write(chunk.message?.content ?? '');
-      }
+        final buffer = StringBuffer();
+        await for (final chunk in repo.streamChat('test', messages: messages)) {
+          buffer.write(chunk.message?.content ?? '');
+        }
 
-      expect(buffer.toString(), isNotEmpty);
-    }, timeout: const Timeout(Duration(minutes: 1)));
+        expect(buffer.toString(), isNotEmpty);
+      },
+      timeout: const Timeout(Duration(minutes: 1)),
+    );
   });
 
   group('Performance', () {
