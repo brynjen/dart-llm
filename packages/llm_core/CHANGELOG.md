@@ -11,13 +11,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Initial release
 - Core abstractions for LLM interactions:
-  - `LlmChatRepository` - Abstract interface for chat completions
-  - `LlmMessage` - Message representation with roles and content
-  - `LlmResponse` - Response wrapper with metadata
-  - `LlmChunk` - Streaming response chunks
-  - `LlmEmbedding` - Text embedding representation
+  - `LLMChatRepository` - Abstract interface for chat completions
+  - `LLMMessage` - Message representation with roles and content
+  - `LLMResponse` - Response wrapper with metadata
+  - `LLMChunk` - Streaming response chunks
+  - `LLMEmbedding` - Text embedding representation
 - Tool calling support:
-  - `LlmTool` - Tool definition with JSON Schema parameters
-  - `LlmToolCall` - Tool invocation representation
-  - `LlmToolParam` - Parameter definitions
+  - `LLMTool` - Tool definition with JSON Schema parameters
+  - `LLMToolCall` - Tool invocation representation
+  - `LLMToolParam` - Parameter definitions
 - Exception types for error handling

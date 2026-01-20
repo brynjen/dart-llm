@@ -8,10 +8,10 @@ A Dart monorepo for interacting with Large Language Models (LLMs). Supports mult
 
 | Package | Description | pub.dev |
 |---------|-------------|---------|
-| [llm_core](packages/llm_core/) | Core abstractions and interfaces | - |
-| [llm_ollama](packages/llm_ollama/) | Ollama backend | - |
-| [llm_chatgpt](packages/llm_chatgpt/) | OpenAI/ChatGPT backend | - |
-| [llm_llamacpp](packages/llm_llamacpp/) | Local inference via llama.cpp | - |
+| [llm_core](packages/llm_core/) | Core abstractions and interfaces | [llm_core](https://pub.dev/packages/llm_core) |
+| [llm_ollama](packages/llm_ollama/) | Ollama backend | [llm_ollama](https://pub.dev/packages/llm_ollama) |
+| [llm_chatgpt](packages/llm_chatgpt/) | OpenAI/ChatGPT backend | [llm_chatgpt](https://pub.dev/packages/llm_chatgpt) |
+| [llm_llamacpp](packages/llm_llamacpp/) | Local inference via llama.cpp | [llm_llamacpp](https://pub.dev/packages/llm_llamacpp) |
 
 ## Features
 
@@ -98,22 +98,13 @@ Add the package(s) you need to your `pubspec.yaml`:
 ```yaml
 dependencies:
   # For Ollama backend
-  llm_ollama:
-    git:
-      url: https://github.com/brynjen/dart-llm.git
-      path: packages/llm_ollama
+  llm_ollama: ^0.1.0
 
   # For ChatGPT/OpenAI backend
-  llm_chatgpt:
-    git:
-      url: https://github.com/brynjen/dart-llm.git
-      path: packages/llm_chatgpt
+  llm_chatgpt: ^0.1.0
 
   # For local llama.cpp inference
-  llm_llamacpp:
-    git:
-      url: https://github.com/brynjen/dart-llm.git
-      path: packages/llm_llamacpp
+  llm_llamacpp: ^0.1.0
 ```
 
 ## Package Details

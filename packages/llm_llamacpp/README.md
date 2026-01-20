@@ -18,10 +18,7 @@ Local LLM inference via llama.cpp for Dart and Flutter.
 
 ```yaml
 dependencies:
-  llm_llamacpp:
-    git:
-      url: https://github.com/brynjen/dart-llm.git
-      path: packages/llm_llamacpp
+  llm_llamacpp: ^0.1.0
 ```
 
 ## Prerequisites

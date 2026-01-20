@@ -13,10 +13,7 @@ OpenAI/ChatGPT backend implementation for LLM interactions in Dart.
 
 ```yaml
 dependencies:
-  llm_chatgpt:
-    git:
-      url: https://github.com/brynjen/dart-llm.git
-      path: packages/llm_chatgpt
+  llm_chatgpt: ^0.1.0
 ```
 
 ## Prerequisites
