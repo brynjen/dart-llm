@@ -44,5 +44,61 @@ void main() {
       expect(config.shouldRetryForStatusCode(200), false);
       expect(config.shouldRetryForStatusCode(404), false);
     });
+
+    test('getDelayForAttempt with negative numbers', () {
+      const config = RetryConfig();
+      // Negative should return initialDelay
+      expect(config.getDelayForAttempt(-1), config.initialDelay);
+      expect(config.getDelayForAttempt(-10), config.initialDelay);
+    });
+
+    test('getDelayForAttempt with very large attempt numbers', () {
+      const config = RetryConfig(
+        initialDelay: Duration(seconds: 1),
+        maxDelay: Duration(seconds: 30),
+      );
+
+      // Very large attempt should be capped at maxDelay
+      expect(config.getDelayForAttempt(100), config.maxDelay);
+      expect(config.getDelayForAttempt(1000), config.maxDelay);
+    });
+
+    test('custom retryable status codes', () {
+      const config = RetryConfig(
+        retryableStatusCodes: [408, 503],
+      );
+
+      expect(config.shouldRetryForStatusCode(408), true);
+      expect(config.shouldRetryForStatusCode(503), true);
+      expect(config.shouldRetryForStatusCode(500), false);
+      expect(config.shouldRetryForStatusCode(429), false);
+    });
+
+    test('disabled retry (maxAttempts: 0)', () {
+      const config = RetryConfig(maxAttempts: 0);
+      expect(config.enabled, false);
+      expect(config.maxAttempts, 0);
+    });
+
+    test('backoff multiplier edge cases', () {
+      // Multiplier of 1.0 (no backoff)
+      const config1 = RetryConfig(
+        initialDelay: Duration(seconds: 1),
+        backoffMultiplier: 1.0,
+      );
+      expect(config1.getDelayForAttempt(0), const Duration(seconds: 1));
+      expect(config1.getDelayForAttempt(1), const Duration(seconds: 1));
+      expect(config1.getDelayForAttempt(2), const Duration(seconds: 1));
+
+      // Very large multiplier
+      const config2 = RetryConfig(
+        initialDelay: Duration(milliseconds: 100),
+        backoffMultiplier: 10.0,
+        maxDelay: Duration(seconds: 1),
+      );
+      expect(config2.getDelayForAttempt(0), const Duration(milliseconds: 100));
+      expect(config2.getDelayForAttempt(1), const Duration(milliseconds: 1000));
+      expect(config2.getDelayForAttempt(2), const Duration(seconds: 1)); // Capped
+    });
   });
 }

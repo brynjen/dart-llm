@@ -89,5 +89,112 @@ void main() {
         throwsA(isA<LLMApiException>()),
       );
     });
+
+    test('model name validation edge cases', () {
+      // Whitespace-only
+      expect(
+        () => Validation.validateModelName('   '),
+        throwsA(isA<LLMApiException>()),
+      );
+
+      // Special characters (should be allowed in model names)
+      expect(
+        () => Validation.validateModelName('gpt-4o'),
+        returnsNormally,
+      );
+      expect(
+        () => Validation.validateModelName('model_name'),
+        returnsNormally,
+      );
+      expect(
+        () => Validation.validateModelName('model.name'),
+        returnsNormally,
+      );
+
+      // Unicode characters
+      expect(
+        () => Validation.validateModelName('模型名称'),
+        returnsNormally,
+      );
+    });
+
+    test('message validation with all role combinations', () {
+      // System message must have content
+      expect(
+        () => Validation.validateMessage(
+          LLMMessage(role: LLMRole.system, content: 'System prompt'),
+        ),
+        returnsNormally,
+      );
+      expect(
+        () => Validation.validateMessage(LLMMessage(role: LLMRole.system)),
+        throwsA(isA<LLMApiException>()),
+      );
+
+      // User message must have content or images
+      expect(
+        () => Validation.validateMessage(
+          LLMMessage(role: LLMRole.user, content: 'Hello'),
+        ),
+        returnsNormally,
+      );
+      expect(
+        () => Validation.validateMessage(
+          LLMMessage(role: LLMRole.user, images: ['base64']),
+        ),
+        returnsNormally,
+      );
+      expect(
+        () => Validation.validateMessage(LLMMessage(role: LLMRole.user)),
+        throwsA(isA<LLMApiException>()),
+      );
+
+      // Tool message must have toolCallId
+      expect(
+        () => Validation.validateMessage(
+          LLMMessage(
+            role: LLMRole.tool,
+            content: 'Result',
+            toolCallId: 'call_1',
+          ),
+        ),
+        returnsNormally,
+      );
+      expect(
+        () => Validation.validateMessage(
+          LLMMessage(role: LLMRole.tool, content: 'Result'),
+        ),
+        throwsA(isA<LLMApiException>()),
+      );
+    });
+
+    test('tool argument validation edge cases', () {
+      // Missing required field (validation doesn't check this, but we test structure)
+      final args = {'optional': 'value'};
+      expect(
+        () => Validation.validateToolArguments(args, 'test-tool'),
+        returnsNormally,
+      );
+
+      // Wrong types (validation doesn't check types, but we test structure)
+      final wrongTypes = {
+        'string': 123, // Should be string
+        'number': 'not a number', // Should be number
+      };
+      expect(
+        () => Validation.validateToolArguments(wrongTypes, 'test-tool'),
+        returnsNormally, // Type validation is not done here
+      );
+
+      // Extra fields (validation doesn't check this)
+      final extraFields = {
+        'required': 'value',
+        'extra': 'field',
+      };
+      expect(
+        () => Validation.validateToolArguments(extraFields, 'test-tool'),
+        returnsNormally,
+      );
+    });
   });
 }
