@@ -4,14 +4,30 @@ Core abstractions for LLM (Large Language Model) interactions in Dart.
 
 This package provides the foundational interfaces and models used by LLM backend implementations such as `llm_ollama`, `llm_chatgpt`, and `llm_llamacpp`.
 
+## Important: interfaces only
+
+`llm_core` **does not connect to any LLM by itself**. It defines the shared types (messages, chunks, tools, options, etc.) and the `LLMChatRepository` interface.
+
+To actually run chat/embeddings you must use a backend implementation, for example:
+
+- `llm_ollama` (talks to a local/remote Ollama server)
+- `llm_chatgpt` (talks to OpenAI / ChatGPT-compatible APIs)
+- `llm_llamacpp` (runs local inference via llama.cpp)
+
 ## Installation
+
+Most users should depend on a backend implementation (it re-exports `llm_core` types):
 
 ```yaml
 dependencies:
-  llm_core:
-    git:
-      url: https://github.com/brynjen/dart-llm.git
-      path: packages/llm_core
+  llm_ollama: ^0.1.0
+```
+
+If you're implementing your own backend, depend on `llm_core` directly:
+
+```yaml
+dependencies:
+  llm_core: ^0.1.0
 ```
 
 ## Core Types
@@ -203,7 +219,14 @@ This package is typically used indirectly through backend packages:
 ```dart
 import 'package:llm_ollama/llm_ollama.dart'; // Re-exports llm_core
 
-final repo = OllamaChatRepository();
-// Use LLMMessage, LLMChunk, etc. from llm_core
+final repo = OllamaChatRepository(baseUrl: 'http://localhost:11434');
+
+final stream = repo.streamChat('qwen3:0.6b', messages: [
+  LLMMessage(role: LLMRole.user, content: 'Hello!'),
+]);
+
+await for (final chunk in stream) {
+  print(chunk.message?.content ?? '');
+}
 ```
 
