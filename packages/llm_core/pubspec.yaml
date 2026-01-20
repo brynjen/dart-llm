@@ -1,6 +1,7 @@
 name: llm_core
 description: Core abstractions for LLM (Large Language Model) interactions. Provides common interfaces, models, and utilities used by LLM backend implementations.
 version: 0.1.0
+resolution: workspace
 homepage: https://github.com/brynjen/dart-llm
 repository: https://github.com/brynjen/dart-llm
 issue_tracker: https://github.com/brynjen/dart-llm/issues

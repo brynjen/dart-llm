@@ -1,6 +1,7 @@
 name: llm_llamacpp
 description: llama.cpp backend implementation for LLM interactions. Enables local on-device inference with GGUF models on Android, iOS, macOS, Windows, and Linux.
 version: 0.1.0
+resolution: workspace
 homepage: https://github.com/brynjen/dart-llm
 repository: https://github.com/brynjen/dart-llm
 issue_tracker: https://github.com/brynjen/dart-llm/issues
