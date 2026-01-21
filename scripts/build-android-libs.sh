@@ -31,33 +31,99 @@ BUILD_DIR="$PROJECT_ROOT/build-android"
 BUILD_X86_64=${BUILD_X86_64:-OFF}
 BUILD_ARM64=${BUILD_ARM64:-ON}
 
-# Check that llama.cpp submodule exists
+# Check that llama.cpp submodule exists and is initialized
 if [ ! -d "$LLAMACPP_DIR" ]; then
-    echo "Error: llama.cpp not found at $LLAMACPP_DIR"
+    echo "Error: llama.cpp directory not found at $LLAMACPP_DIR"
     echo "Please clone the submodule first:"
     echo "  cd packages/llm_llamacpp"
     echo "  git submodule add https://github.com/ggml-org/llama.cpp.git llamacpp"
     exit 1
 fi
 
+if [ ! -f "$LLAMACPP_DIR/CMakeLists.txt" ]; then
+    echo "Error: llama.cpp submodule exists but is not initialized (CMakeLists.txt not found)"
+    echo "Please initialize the submodule:"
+    echo "  cd $PROJECT_ROOT"
+    echo "  git submodule update --init --recursive"
+    echo ""
+    echo "Or if the submodule path is incorrect:"
+    echo "  cd packages/llm_llamacpp"
+    echo "  git submodule add https://github.com/ggml-org/llama.cpp.git llamacpp"
+    exit 1
+fi
+
+# Preferred NDK version (should match build.gradle)
+PREFERRED_NDK_VERSION="26.3.11579264"
+
 # Find Android NDK
 if [ -n "$ANDROID_NDK_HOME" ]; then
     NDK_PATH="$ANDROID_NDK_HOME"
 elif [ -n "$ANDROID_NDK" ]; then
     NDK_PATH="$ANDROID_NDK"
-elif [ -d "$HOME/Android/Sdk/ndk" ]; then
-    NDK_PATH=$(find "$HOME/Android/Sdk/ndk" -maxdepth 1 -type d | sort -V | tail -1)
-elif [ -d "/usr/local/android-sdk/ndk" ]; then
-    NDK_PATH=$(find "/usr/local/android-sdk/ndk" -maxdepth 1 -type d | sort -V | tail -1)
-elif [ -d "/opt/android-sdk/ndk" ]; then
-    # Docker container path
-    NDK_PATH=$(find "/opt/android-sdk/ndk" -maxdepth 1 -type d | sort -V | tail -1)
-elif [ -d "$HOME/Library/Android/sdk/ndk" ]; then
-    # macOS Android Studio path
-    NDK_PATH=$(find "$HOME/Library/Android/sdk/ndk" -maxdepth 1 -type d | sort -V | tail -1)
 else
-    echo "Error: Android NDK not found. Please set ANDROID_NDK_HOME environment variable."
-    exit 1
+    # Try to find preferred version first
+    NDK_FOUND=false
+    
+    # Check common NDK locations for preferred version
+    for ndk_base in \
+        "$HOME/Library/Android/sdk/ndk" \
+        "$HOME/Android/Sdk/ndk" \
+        "/usr/local/android-sdk/ndk" \
+        "/opt/android-sdk/ndk"
+    do
+        if [ -d "$ndk_base/$PREFERRED_NDK_VERSION" ]; then
+            NDK_PATH="$ndk_base/$PREFERRED_NDK_VERSION"
+            NDK_FOUND=true
+            break
+        fi
+    done
+    
+    # If preferred version not found, use latest available
+    if [ "$NDK_FOUND" = false ]; then
+        for ndk_base in \
+            "$HOME/Library/Android/sdk/ndk" \
+            "$HOME/Android/Sdk/ndk" \
+            "/usr/local/android-sdk/ndk" \
+            "/opt/android-sdk/ndk"
+        do
+            if [ -d "$ndk_base" ]; then
+                NDK_PATH=$(find "$ndk_base" -maxdepth 1 -type d | sort -V | tail -1)
+                NDK_FOUND=true
+                break
+            fi
+        done
+    fi
+    
+    if [ "$NDK_FOUND" = false ]; then
+        echo "Error: Android NDK not found. Please set ANDROID_NDK_HOME environment variable."
+        echo ""
+        echo "Expected NDK version: $PREFERRED_NDK_VERSION"
+        echo "Please install it via Android Studio SDK Manager or set ANDROID_NDK_HOME"
+        exit 1
+    fi
+fi
+
+# Extract NDK version from path
+NDK_VERSION=$(basename "$NDK_PATH")
+
+# Warn if using different NDK version than preferred
+if [ "$NDK_VERSION" != "$PREFERRED_NDK_VERSION" ]; then
+    echo ""
+    echo "=========================================="
+    echo "WARNING: NDK version mismatch!"
+    echo "=========================================="
+    echo "Using NDK: $NDK_VERSION"
+    echo "Preferred: $PREFERRED_NDK_VERSION (as specified in build.gradle)"
+    echo ""
+    echo "This may cause C++ standard library symbol mismatches at runtime."
+    echo "To fix, install the preferred NDK version:"
+    echo "  Android Studio > SDK Manager > SDK Tools > NDK (Side by side) > $PREFERRED_NDK_VERSION"
+    echo ""
+    echo "Or set ANDROID_NDK_HOME to point to the preferred version:"
+    echo "  export ANDROID_NDK_HOME=\$HOME/Library/Android/sdk/ndk/$PREFERRED_NDK_VERSION"
+    echo ""
+    echo "Continuing with current NDK version..."
+    echo ""
 fi
 
 echo "Using Android NDK: $NDK_PATH"
@@ -137,15 +203,101 @@ build_for_abi() {
         echo "  $arg"
     done
     echo ""
+    echo "Configuring CMake (suppressing non-critical messages)..."
     
-    cmake "$LLAMACPP_DIR" "${CMAKE_ARGS[@]}"
+    # Filter CMake output to show only important messages and errors
+    # Hide: deprecation warnings, feature detection tests, informational messages
+    # Keep: errors, warnings (non-deprecation), configuration results
+    {
+        cmake "$LLAMACPP_DIR" "${CMAKE_ARGS[@]}" 2>&1 | \
+        awk '
+            # Always show errors and important warnings
+            /[Ee][Rr][Rr][Oo][Rr]/ || /[Ff][Aa][Ii][Ll][Ee][Dd]/ || /[Ff][Aa][Tt][Aa][Ll]/ { print; next }
+            # Show warnings except deprecation warnings
+            /[Ww][Aa][Rr][Nn][Ii][Nn][Gg]/ && !/CMake Deprecation Warning/ { print; next }
+            # Hide specific noisy patterns
+            /CMake Deprecation Warning/ { next }
+            /^-- Performing Test/ { next }
+            /^-- Looking for/ { next }
+            /^-- Check if compiler accepts/ { next }
+            /^-- Detecting C/ { next }
+            /^-- Detecting CXX/ { next }
+            /^-- The C compiler/ { next }
+            /^-- The CXX compiler/ { next }
+            /^-- The ASM compiler/ { next }
+            /^-- Found assembler:/ { next }
+            /^-- Found Git:/ { next }
+            /^CMAKE_BUILD_TYPE=/ { next }
+            /^-- Setting GGML/ { next }
+            /^-- ARM detected/ { next }
+            /^-- Checking for ARM features/ { next }
+            /^-- Using KleidiAI/ { next }
+            /^-- Adding CPU backend variant/ { next }
+            /^-- ggml version:/ { next }
+            /^-- ggml commit:/ { next }
+            /^-- Could NOT find OpenSSL/ { next }
+            /^-- OpenSSL not found/ { next }
+            /^-- Generating embedded license/ { next }
+            /^-- Found OpenMP/ { next }
+            /^-- Found Threads:/ { next }
+            /^-- Warning: ccache/ { next }
+            /^-- CMAKE_SYSTEM_PROCESSOR:/ { next }
+            /^-- GGML_SYSTEM_ARCH:/ { next }
+            /^-- Including CPU backend/ { next }
+            /^2$/ { next }
+            # Show everything else (including final status messages)
+            { print }
+        '
+    }
+    CMAKE_EXIT_CODE=${PIPESTATUS[0]}
+    
+    if [ $CMAKE_EXIT_CODE -ne 0 ]; then
+        echo ""
+        echo "ERROR: CMake configuration failed with exit code $CMAKE_EXIT_CODE"
+        exit $CMAKE_EXIT_CODE
+    fi
+    
+    echo "-- Configuring done"
+    echo "-- Generating done"
 
     # Build core targets
     # Note: With GGML_CPU_ALL_VARIANTS=ON, ggml-cpu is replaced by multiple variant targets
     # Just build "all" and let CMake handle the dependencies
     echo ""
     echo "Building all targets..."
-    if ! cmake --build . --config Release -j$(nproc); then
+    
+    # Get number of CPU cores (works on both Linux and macOS)
+    if command -v nproc >/dev/null 2>&1; then
+        NUM_CORES=$(nproc)
+    elif command -v sysctl >/dev/null 2>&1; then
+        NUM_CORES=$(sysctl -n hw.ncpu)
+    else
+        NUM_CORES=4  # Fallback to 4 cores
+    fi
+    
+    # Build with filtered output - only show errors and important messages
+    {
+        cmake --build . --config Release -j${NUM_CORES} 2>&1 | \
+        awk '
+            # Always show errors
+            /[Ee][Rr][Rr][Oo][Rr]/ || /[Ff][Aa][Ii][Ll][Ee][Dd]/ || /[Ff][Aa][Tt][Aa][Ll]/ { print; next }
+            # Show warnings
+            /[Ww][Aa][Rr][Nn][Ii][Nn][Gg]/ { print; next }
+            # Hide build progress messages
+            /^\[/ { next }
+            /Scanning dependencies/ { next }
+            /Building CXX object/ { next }
+            /Building C object/ { next }
+            /Linking CXX shared library/ { next }
+            /Linking C shared library/ { next }
+            /^-- / { next }
+            # Show everything else
+            { print }
+        '
+    }
+    BUILD_EXIT_CODE=${PIPESTATUS[0]}
+    
+    if [ $BUILD_EXIT_CODE -ne 0 ]; then
         echo ""
         echo "=========================================="
         echo "ERROR: Build failed for $ABI!"
@@ -183,6 +335,10 @@ copy_libraries() {
     echo "  Built libraries:"
     find "$BUILD_DIR/$ABI" -name "*.so" -type f 2>/dev/null | head -20
 
+    # Required libraries that must be present
+    local REQUIRED_LIBS=("libllama.so" "libggml.so" "libggml-base.so")
+    local found_libs=()
+
     # Copy libllama.so
     local found_llama=false
     for src_dir in "${SRC_DIRS[@]}"; do
@@ -190,11 +346,12 @@ copy_libraries() {
             cp "$src_dir/libllama.so" "$JNILIBS_DIR/$ABI/"
             echo "  ✓ Copied libllama.so"
             found_llama=true
+            found_libs+=("libllama.so")
             break
         fi
     done
     if [ "$found_llama" = false ]; then
-        echo "  ✗ WARNING: libllama.so not found!"
+        echo "  ✗ ERROR: libllama.so not found!"
     fi
 
     # Copy core ggml libraries
@@ -205,13 +362,25 @@ copy_libraries() {
     )
 
     # Copy core ggml libraries
-    for src_dir in "${GGML_DIRS[@]}"; do
-        for lib in libggml.so libggml-base.so; do
+    for lib in libggml.so libggml-base.so; do
+        local found=false
+        for src_dir in "${GGML_DIRS[@]}"; do
             if [ -f "$src_dir/$lib" ] && [ ! -f "$JNILIBS_DIR/$ABI/$lib" ]; then
                 cp "$src_dir/$lib" "$JNILIBS_DIR/$ABI/"
                 echo "  ✓ Copied $lib"
+                found=true
+                found_libs+=("$lib")
+                break
+            elif [ -f "$JNILIBS_DIR/$ABI/$lib" ]; then
+                # Already copied from a previous directory
+                found=true
+                found_libs+=("$lib")
+                break
             fi
         done
+        if [ "$found" = false ]; then
+            echo "  ✗ ERROR: $lib not found!"
+        fi
     done
 
     # Copy CPU backend variants (dynamically loaded at runtime for feature detection)
@@ -231,6 +400,92 @@ copy_libraries() {
     if [ $cpu_count -gt 0 ]; then
         echo "  ✓ Copied $cpu_count CPU backend variants"
     fi
+    
+    # Copy libomp.so from NDK (required for OpenMP support in CPU backends)
+    # This is needed because the CPU backends are built with GGML_OPENMP=ON
+    if [ "$ABI" = "arm64-v8a" ]; then
+        local OMP_ARCH="aarch64"
+    elif [ "$ABI" = "x86_64" ]; then
+        local OMP_ARCH="x86_64"
+    else
+        local OMP_ARCH=""
+    fi
+    
+    if [ -n "$OMP_ARCH" ]; then
+        # Find libomp.so in NDK
+        local OMP_LIB=$(find "$NDK_PATH/toolchains/llvm/prebuilt" -path "*lib/linux/$OMP_ARCH/libomp.so" -type f 2>/dev/null | head -1)
+        if [ -n "$OMP_LIB" ] && [ -f "$OMP_LIB" ]; then
+            cp "$OMP_LIB" "$JNILIBS_DIR/$ABI/"
+            echo "  ✓ Copied libomp.so (OpenMP runtime)"
+        else
+            echo "  ⚠ Warning: libomp.so not found in NDK for $OMP_ARCH"
+            echo "    CPU backends may fail to load at runtime."
+            echo "    NDK path: $NDK_PATH"
+        fi
+    fi
+
+    # Validate that all required libraries were copied
+    echo ""
+    echo "Validating required libraries for $ABI..."
+    local missing_libs=()
+    for lib in "${REQUIRED_LIBS[@]}"; do
+        if [ ! -f "$JNILIBS_DIR/$ABI/$lib" ]; then
+            missing_libs+=("$lib")
+        fi
+    done
+
+    if [ ${#missing_libs[@]} -gt 0 ]; then
+        echo ""
+        echo "=========================================="
+        echo "ERROR: Missing required libraries for $ABI!"
+        echo "=========================================="
+        echo "Missing libraries:"
+        for lib in "${missing_libs[@]}"; do
+            echo "  - $lib"
+        done
+        echo ""
+        echo "Location: $JNILIBS_DIR/$ABI/"
+        echo "Please check the build output above for errors."
+        return 1
+    fi
+
+    echo "  ✓ All required libraries present"
+    
+    # Optional: Verify library dependencies using readelf
+    # This checks that libllama.so actually declares dependencies on libggml.so
+    if command -v readelf >/dev/null 2>&1; then
+        local llama_so="$JNILIBS_DIR/$ABI/libllama.so"
+        if [ -f "$llama_so" ]; then
+            echo ""
+            echo "Verifying library dependencies using readelf..."
+            local deps=$(readelf -d "$llama_so" 2>/dev/null | grep "NEEDED" | sed 's/.*\[\(.*\)\]/\1/' || true)
+            local has_ggml=false
+            local has_ggml_base=false
+            
+            while IFS= read -r dep; do
+                if [[ "$dep" == *"libggml.so"* ]]; then
+                    has_ggml=true
+                fi
+                if [[ "$dep" == *"libggml-base.so"* ]]; then
+                    has_ggml_base=true
+                fi
+            done <<< "$deps"
+            
+            if [ "$has_ggml" = true ] || [ "$has_ggml_base" = true ]; then
+                echo "  ✓ Verified libllama.so dependencies"
+                if [ "$has_ggml" = true ]; then
+                    echo "    - Depends on libggml.so"
+                fi
+                if [ "$has_ggml_base" = true ]; then
+                    echo "    - Depends on libggml-base.so"
+                fi
+            else
+                echo "  ⚠ Warning: Could not verify dependencies (readelf may not show all dependencies)"
+            fi
+        fi
+    fi
+    
+    return 0
 }
 
 # ==========================================
@@ -250,7 +505,10 @@ echo ""
 # Build for x86_64 (emulator)
 if [ "$BUILD_X86_64" = "ON" ]; then
     if build_for_abi "x86_64" "android-28"; then
-        copy_libraries "x86_64"
+        if ! copy_libraries "x86_64"; then
+            echo "ERROR: Failed to copy libraries for x86_64"
+            exit 1
+        fi
     else
         echo "WARNING: x86_64 build failed, continuing with arm64..."
     fi
@@ -258,8 +516,14 @@ fi
 
 # Build for arm64-v8a (physical devices)
 if [ "$BUILD_ARM64" = "ON" ]; then
-    build_for_abi "arm64-v8a" "android-28"
-    copy_libraries "arm64-v8a"
+    if ! build_for_abi "arm64-v8a" "android-28"; then
+        echo "ERROR: Build failed for arm64-v8a"
+        exit 1
+    fi
+    if ! copy_libraries "arm64-v8a"; then
+        echo "ERROR: Failed to copy libraries for arm64-v8a"
+        exit 1
+    fi
 fi
 
 # ==========================================
@@ -286,13 +550,36 @@ echo "  ✓ KleidiAI (Arm optimized inference)"
 echo "  ✓ SME2/SVE2 (Scalable Matrix/Vector Extensions)"
 echo "  ✓ Dynamic backend loading (runtime detection)"
 
-# Check for critical missing libraries
-if [ ! -f "$JNILIBS_DIR/arm64-v8a/libllama.so" ] || [ ! -f "$JNILIBS_DIR/arm64-v8a/libggml.so" ]; then
-    echo ""
-    echo "=========================================="
-    echo "WARNING: Essential libraries are missing!"
-    echo "=========================================="
-    echo "The build may have failed. Check the build output above for errors."
+# Final validation: Check for critical missing libraries
+# This is a redundant check in case copy_libraries() didn't catch everything
+validation_failed=false
+for ABI in arm64-v8a x86_64; do
+    if [ -d "$JNILIBS_DIR/$ABI" ]; then
+        missing=()
+        for lib in libllama.so libggml.so libggml-base.so; do
+            if [ ! -f "$JNILIBS_DIR/$ABI/$lib" ]; then
+                missing+=("$lib")
+            fi
+        done
+        
+        if [ ${#missing[@]} -gt 0 ]; then
+            echo ""
+            echo "=========================================="
+            echo "ERROR: Essential libraries are missing for $ABI!"
+            echo "=========================================="
+            echo "Missing libraries:"
+            for lib in "${missing[@]}"; do
+                echo "  - $lib"
+            done
+            echo ""
+            echo "Location: $JNILIBS_DIR/$ABI/"
+            echo "The build may have failed. Check the build output above for errors."
+            validation_failed=true
+        fi
+    fi
+done
+
+if [ "$validation_failed" = true ]; then
     exit 1
 fi
 

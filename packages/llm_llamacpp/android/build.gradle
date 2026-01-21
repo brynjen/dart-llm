@@ -1,3 +1,4 @@
+
 group 'dev.brynje.llm_llamacpp'
 version '1.0'
 
@@ -42,3 +43,342 @@ android {
         }
     }
 }
+
+// ==========================================
+// Validate Native Libraries Task
+// ==========================================
+// This task validates that all required native library dependencies
+// are present before building the app. This prevents runtime failures
+// when libllama.so tries to load libggml.so and libggml-base.so.
+// If libraries are missing, it will automatically run the build script.
+task validateNativeLibraries {
+    description = 'Validates that all required native library dependencies are present, builds them if missing'
+    group = 'verification'
+    
+    doLast {
+        def jniLibsDir = file('src/main/jniLibs')
+        def needsBuild = false
+        
+        // Check if jniLibs directory exists
+        if (!jniLibsDir.exists()) {
+            println "jniLibs directory not found, will build libraries..."
+            needsBuild = true
+        } else {
+            // Required libraries for each ABI
+            def requiredLibs = ['libllama.so', 'libggml.so', 'libggml-base.so']
+            def abis = ['arm64-v8a', 'x86_64']
+            def errors = []
+            
+            // Check each ABI directory
+            abis.each { abi ->
+                def abiDir = new File(jniLibsDir, abi)
+                if (abiDir.exists()) {
+                    requiredLibs.each { libName ->
+                        def libFile = new File(abiDir, libName)
+                        if (!libFile.exists()) {
+                            errors.add("  Missing: ${libName} (required by libllama.so)")
+                            errors.add("  Location: ${abiDir.absolutePath}/")
+                            needsBuild = true
+                        }
+                    }
+                } else {
+                    // ABI directory doesn't exist, need to build
+                    needsBuild = true
+                }
+            }
+            
+            // If we have at least one ABI directory, check if it's complete
+            def hasAnyAbi = abis.any { abi ->
+                new File(jniLibsDir, abi).exists()
+            }
+            
+            if (!hasAnyAbi) {
+                println "No ABI directories found, will build libraries..."
+                needsBuild = true
+            }
+            
+            if (!errors.isEmpty() && !needsBuild) {
+                // If we have errors but didn't detect need to build, show them
+                def errorMsg = """
+ERROR: Missing required native library dependencies for Android build:
+${errors.join('\n')}
+
+Please run: ./scripts/build-android-libs.sh
+"""
+                throw new Exception(errorMsg)
+            }
+        }
+        
+        // If libraries are missing, automatically run the build script
+        if (needsBuild) {
+            println ""
+            println "=========================================="
+            println "Missing native libraries detected"
+            println "Automatically building libraries..."
+            println "=========================================="
+            println ""
+            
+            // Find project root (go up from android/ to project root)
+            // android/ is at packages/llm_llamacpp/android/
+            // So we need to go up 3 levels: android -> llm_llamacpp -> packages -> root
+            def projectRoot = project.projectDir.parentFile.parentFile.parentFile
+            def buildScript = new File(projectRoot, 'scripts/build-android-libs.sh')
+            
+            if (!buildScript.exists()) {
+                // Try alternative: maybe we're in a different structure
+                // Try going up from android/ to find scripts/
+                def altRoot = project.projectDir
+                while (altRoot != null && altRoot.parentFile != null) {
+                    def altScript = new File(altRoot, 'scripts/build-android-libs.sh')
+                    if (altScript.exists()) {
+                        buildScript = altScript
+                        projectRoot = altRoot
+                        break
+                    }
+                    altRoot = altRoot.parentFile
+                }
+            }
+            
+            if (!buildScript.exists()) {
+                throw new Exception("""
+ERROR: Could not find build script at: ${buildScript.absolutePath}
+Please run manually: ./scripts/build-android-libs.sh
+""")
+            }
+            
+            // Check prerequisites before running build script
+            def llamacppDir = new File(projectRoot, 'packages/llm_llamacpp/llamacpp')
+            if (!llamacppDir.exists() || !new File(llamacppDir, 'CMakeLists.txt').exists()) {
+                throw new Exception("""
+ERROR: llama.cpp submodule not found or not initialized.
+  Expected location: ${llamacppDir.absolutePath}
+  
+Please initialize the submodule:
+  cd ${projectRoot.absolutePath}
+  git submodule update --init --recursive
+  
+Or if using the submodule for the first time:
+  cd packages/llm_llamacpp
+  git submodule add https://github.com/ggml-org/llama.cpp.git llamacpp
+""")
+            }
+            
+            // Check for Android NDK
+            def preferredNdkVersion = '26.3.11579264'  // Should match ndkVersion in android block
+            def ndkHome = System.getenv('ANDROID_NDK_HOME') ?: System.getenv('ANDROID_NDK')
+            def ndkPath = null
+            
+            if (ndkHome != null) {
+                ndkPath = new File(ndkHome)
+            } else {
+                // Try common locations, prefer the version specified in build.gradle
+                def homeDir = System.getProperty('user.home')
+                def commonNdkBases = [
+                    new File(homeDir, 'Library/Android/sdk/ndk'),
+                    new File(homeDir, 'Android/Sdk/ndk'),
+                    new File('/usr/local/android-sdk/ndk'),
+                    new File('/opt/android-sdk/ndk')
+                ]
+                
+                // First try to find preferred version
+                for (def ndkBase : commonNdkBases) {
+                    def preferredNdk = new File(ndkBase, preferredNdkVersion)
+                    if (preferredNdk.exists()) {
+                        ndkPath = preferredNdk
+                        break
+                    }
+                }
+                
+                // If preferred not found, use latest available
+                if (ndkPath == null) {
+                    for (def ndkBase : commonNdkBases) {
+                        if (ndkBase.exists()) {
+                            def versions = ndkBase.listFiles({ file -> file.isDirectory() } as FileFilter)
+                            if (versions != null && versions.length > 0) {
+                                // Sort and get latest
+                                versions.sort { a, b -> b.name <=> a.name }
+                                ndkPath = versions[0]
+                                break
+                            }
+                        }
+                    }
+                }
+            }
+            
+            if (ndkPath == null || !ndkPath.exists()) {
+                throw new Exception("""
+ERROR: Android NDK not found.
+Please set ANDROID_NDK_HOME environment variable or install Android NDK.
+  
+Preferred NDK version: ${preferredNdkVersion} (as specified in build.gradle)
+Common locations:
+  - macOS: ~/Library/Android/sdk/ndk/${preferredNdkVersion}
+  - Linux: ~/Android/Sdk/ndk/${preferredNdkVersion}
+  
+You can set it in your shell:
+  export ANDROID_NDK_HOME=\$HOME/Library/Android/sdk/ndk/${preferredNdkVersion}
+""")
+            }
+            
+            // Warn if NDK version doesn't match
+            def actualNdkVersion = ndkPath.name
+            if (actualNdkVersion != preferredNdkVersion) {
+                println ""
+                println "=========================================="
+                println "WARNING: NDK version mismatch!"
+                println "=========================================="
+                println "Using NDK: ${actualNdkVersion}"
+                println "Preferred: ${preferredNdkVersion} (as specified in build.gradle)"
+                println ""
+                println "This may cause C++ standard library symbol mismatches at runtime."
+                println "To fix:"
+                println "  1. Install NDK ${preferredNdkVersion} via Android Studio SDK Manager"
+                println "  2. Set: export ANDROID_NDK_HOME=\$HOME/Library/Android/sdk/ndk/${preferredNdkVersion}"
+                println "  3. Rebuild libraries: ${buildScript.absolutePath}"
+                println ""
+            }
+            
+            if (!buildScript.canExecute()) {
+                // Make it executable
+                buildScript.setExecutable(true)
+            }
+            
+            println "Running: ${buildScript.absolutePath}"
+            println ""
+            
+            // Run the build script using Gradle's exec
+            def result = project.exec {
+                workingDir = projectRoot
+                executable = 'bash'
+                args = [buildScript.absolutePath]
+                ignoreExitValue = false
+            }
+            
+            if (result.exitValue != 0) {
+                throw new Exception("""
+ERROR: Build script failed with exit code ${result.exitValue}
+
+Common issues:
+1. llama.cpp submodule not initialized:
+   cd ${projectRoot.absolutePath}
+   git submodule update --init --recursive
+
+2. Android NDK not found or wrong version:
+   Set ANDROID_NDK_HOME environment variable
+
+3. Missing build tools (CMake, Ninja):
+   Install via Android Studio SDK Manager or:
+   - macOS: brew install cmake ninja
+   - Linux: sudo apt-get install cmake ninja-build
+
+Please check the build output above for specific errors.
+You can also run manually: ${buildScript.absolutePath}
+""")
+            }
+            
+            println ""
+            println "✓ Library build completed successfully"
+            println ""
+            
+            // Re-validate after build
+            if (!jniLibsDir.exists()) {
+                throw new Exception("""
+ERROR: jniLibs directory still not found after build: ${jniLibsDir.absolutePath}
+Please check the build script output above for errors.
+""")
+            }
+            
+            // Re-check required libraries
+            def requiredLibs = ['libllama.so', 'libggml.so', 'libggml-base.so']
+            def abis = ['arm64-v8a', 'x86_64']
+            def postBuildErrors = []
+            
+            abis.each { abi ->
+                def abiDir = new File(jniLibsDir, abi)
+                if (abiDir.exists()) {
+                    requiredLibs.each { libName ->
+                        def libFile = new File(abiDir, libName)
+                        if (!libFile.exists()) {
+                            postBuildErrors.add("  Missing: ${libName} (required by libllama.so)")
+                            postBuildErrors.add("  Location: ${abiDir.absolutePath}/")
+                        }
+                    }
+                }
+            }
+            
+            if (!postBuildErrors.isEmpty()) {
+                def errorMsg = """
+ERROR: Required libraries still missing after build:
+${postBuildErrors.join('\n')}
+
+Please check the build script output above for errors.
+"""
+                throw new Exception(errorMsg)
+            }
+        }
+        
+        // Optional: Verify library dependencies using readelf (if available)
+        def readelfPath = null
+        def ndkPath = project.android.ndkDirectory
+        if (ndkPath != null && ndkPath.exists()) {
+            // Try to find readelf in NDK toolchain
+            def toolchains = new File(ndkPath, 'toolchains')
+            if (toolchains.exists()) {
+                toolchains.eachDir { toolchain ->
+                    def readelf = new File(toolchain, 'prebuilt/linux-x86_64/bin/aarch64-linux-android-readelf')
+                    if (!readelf.exists()) {
+                        readelf = new File(toolchain, 'prebuilt/darwin-x86_64/bin/aarch64-linux-android-readelf')
+                    }
+                    if (readelf.exists() && readelf.canExecute()) {
+                        readelfPath = readelf.absolutePath
+                        return
+                    }
+                }
+            }
+        }
+        
+        // Try system readelf as fallback
+        if (readelfPath == null) {
+            try {
+                def proc = ['which', 'readelf'].execute()
+                proc.waitFor()
+                if (proc.exitValue() == 0) {
+                    readelfPath = proc.text.trim()
+                }
+            } catch (Exception e) {
+                // readelf not available, skip dependency verification
+            }
+        }
+        
+        if (readelfPath != null) {
+            def verified = false
+            def abis = ['arm64-v8a', 'x86_64']
+            abis.each { abi ->
+                def abiDir = new File(jniLibsDir, abi)
+                if (abiDir.exists()) {
+                    def llamaSo = new File(abiDir, 'libllama.so')
+                    if (llamaSo.exists()) {
+                        try {
+                            def proc = [readelfPath, '-d', llamaSo.absolutePath].execute()
+                            proc.waitFor()
+                            def output = proc.text
+                            if (output.contains('libggml.so') || output.contains('libggml-base.so')) {
+                                verified = true
+                            }
+                        } catch (Exception e) {
+                            // readelf failed, skip verification
+                        }
+                    }
+                }
+            }
+            if (verified) {
+                println "✓ Verified library dependencies using readelf"
+            }
+        }
+        
+        println "✓ Native library validation passed"
+    }
+}
+
+// Run validation before building
+preBuild.dependsOn validateNativeLibraries

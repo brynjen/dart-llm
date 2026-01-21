@@ -354,7 +354,7 @@ class LlamaBindings {
     ffi.Pointer<llama_context_params> cparams,
     ffi.Pointer<ffi.Float> tensor_split,
     ffi.Pointer<llama_model_tensor_buft_override> tensor_buft_overrides,
-    int margin,
+    ffi.Pointer<ffi.Size> margins,
     int n_ctx_min,
     ggml_log_level log_level,
   ) {
@@ -365,7 +365,7 @@ class LlamaBindings {
         cparams,
         tensor_split,
         tensor_buft_overrides,
-        margin,
+        margins,
         n_ctx_min,
         log_level.value,
       ),
@@ -381,7 +381,7 @@ class LlamaBindings {
             ffi.Pointer<llama_context_params>,
             ffi.Pointer<ffi.Float>,
             ffi.Pointer<llama_model_tensor_buft_override>,
-            ffi.Size,
+            ffi.Pointer<ffi.Size>,
             ffi.Uint32,
             ffi.UnsignedInt,
           )
@@ -395,7 +395,7 @@ class LlamaBindings {
           ffi.Pointer<llama_context_params>,
           ffi.Pointer<ffi.Float>,
           ffi.Pointer<llama_model_tensor_buft_override>,
-          int,
+          ffi.Pointer<ffi.Size>,
           int,
           int,
         )
@@ -687,6 +687,17 @@ class LlamaBindings {
         'llama_model_n_embd_inp',
       );
   late final _llama_model_n_embd_inp = _llama_model_n_embd_inpPtr
+      .asFunction<int Function(ffi.Pointer<llama_model>)>();
+
+  int llama_model_n_embd_out(ffi.Pointer<llama_model> model) {
+    return _llama_model_n_embd_out(model);
+  }
+
+  late final _llama_model_n_embd_outPtr =
+      _lookup<ffi.NativeFunction<ffi.Int32 Function(ffi.Pointer<llama_model>)>>(
+        'llama_model_n_embd_out',
+      );
+  late final _llama_model_n_embd_out = _llama_model_n_embd_outPtr
       .asFunction<int Function(ffi.Pointer<llama_model>)>();
 
   int llama_model_n_layer(ffi.Pointer<llama_model> model) {
@@ -1090,6 +1101,8 @@ class LlamaBindings {
       >();
 
   /// Load a LoRA adapter from file
+  /// The adapter is valid as long as the associated model is not freed
+  /// All adapters must be loaded before context creation
   ffi.Pointer<llama_adapter_lora> llama_adapter_lora_init(
     ffi.Pointer<llama_model> model,
     ffi.Pointer<ffi.Char> path_lora,
@@ -2391,6 +2404,135 @@ class LlamaBindings {
         ffi.Pointer<ffi.Float> Function(ffi.Pointer<llama_context>, int)
       >();
 
+  /// Get the backend sampled token for the ith token.
+  /// Returns LLAMA_TOKEN_NULL if no token was sampled.
+  int llama_get_sampled_token_ith(ffi.Pointer<llama_context> ctx, int i) {
+    return _llama_get_sampled_token_ith(ctx, i);
+  }
+
+  late final _llama_get_sampled_token_ithPtr =
+      _lookup<
+        ffi.NativeFunction<
+          llama_token Function(ffi.Pointer<llama_context>, ffi.Int32)
+        >
+      >('llama_get_sampled_token_ith');
+  late final _llama_get_sampled_token_ith = _llama_get_sampled_token_ithPtr
+      .asFunction<int Function(ffi.Pointer<llama_context>, int)>();
+
+  /// Get the backend sampled probabilites for the ith token
+  /// The index matches llama_get_sampled_token_ith().
+  /// Returns NULL if no probabilites were generated.
+  ffi.Pointer<ffi.Float> llama_get_sampled_probs_ith(
+    ffi.Pointer<llama_context> ctx,
+    int i,
+  ) {
+    return _llama_get_sampled_probs_ith(ctx, i);
+  }
+
+  late final _llama_get_sampled_probs_ithPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Pointer<ffi.Float> Function(ffi.Pointer<llama_context>, ffi.Int32)
+        >
+      >('llama_get_sampled_probs_ith');
+  late final _llama_get_sampled_probs_ith = _llama_get_sampled_probs_ithPtr
+      .asFunction<
+        ffi.Pointer<ffi.Float> Function(ffi.Pointer<llama_context>, int)
+      >();
+
+  int llama_get_sampled_probs_count_ith(ffi.Pointer<llama_context> ctx, int i) {
+    return _llama_get_sampled_probs_count_ith(ctx, i);
+  }
+
+  late final _llama_get_sampled_probs_count_ithPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Uint32 Function(ffi.Pointer<llama_context>, ffi.Int32)
+        >
+      >('llama_get_sampled_probs_count_ith');
+  late final _llama_get_sampled_probs_count_ith =
+      _llama_get_sampled_probs_count_ithPtr
+          .asFunction<int Function(ffi.Pointer<llama_context>, int)>();
+
+  /// Get the backend sampled logits for the ith token
+  /// Returns NULL if no logits were sampled.
+  ffi.Pointer<ffi.Float> llama_get_sampled_logits_ith(
+    ffi.Pointer<llama_context> ctx,
+    int i,
+  ) {
+    return _llama_get_sampled_logits_ith(ctx, i);
+  }
+
+  late final _llama_get_sampled_logits_ithPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Pointer<ffi.Float> Function(ffi.Pointer<llama_context>, ffi.Int32)
+        >
+      >('llama_get_sampled_logits_ith');
+  late final _llama_get_sampled_logits_ith = _llama_get_sampled_logits_ithPtr
+      .asFunction<
+        ffi.Pointer<ffi.Float> Function(ffi.Pointer<llama_context>, int)
+      >();
+
+  int llama_get_sampled_logits_count_ith(
+    ffi.Pointer<llama_context> ctx,
+    int i,
+  ) {
+    return _llama_get_sampled_logits_count_ith(ctx, i);
+  }
+
+  late final _llama_get_sampled_logits_count_ithPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Uint32 Function(ffi.Pointer<llama_context>, ffi.Int32)
+        >
+      >('llama_get_sampled_logits_count_ith');
+  late final _llama_get_sampled_logits_count_ith =
+      _llama_get_sampled_logits_count_ithPtr
+          .asFunction<int Function(ffi.Pointer<llama_context>, int)>();
+
+  /// Get the backend sampled candidates (token ids) for the ith token
+  /// These are needed to map probability/logit indices to vocab token ids.
+  /// Returns NULL if no candidates were sampled.
+  ffi.Pointer<llama_token> llama_get_sampled_candidates_ith(
+    ffi.Pointer<llama_context> ctx,
+    int i,
+  ) {
+    return _llama_get_sampled_candidates_ith(ctx, i);
+  }
+
+  late final _llama_get_sampled_candidates_ithPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Pointer<llama_token> Function(
+            ffi.Pointer<llama_context>,
+            ffi.Int32,
+          )
+        >
+      >('llama_get_sampled_candidates_ith');
+  late final _llama_get_sampled_candidates_ith =
+      _llama_get_sampled_candidates_ithPtr
+          .asFunction<
+            ffi.Pointer<llama_token> Function(ffi.Pointer<llama_context>, int)
+          >();
+
+  int llama_get_sampled_candidates_count_ith(
+    ffi.Pointer<llama_context> ctx,
+    int i,
+  ) {
+    return _llama_get_sampled_candidates_count_ith(ctx, i);
+  }
+
+  late final _llama_get_sampled_candidates_count_ithPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Uint32 Function(ffi.Pointer<llama_context>, ffi.Int32)
+        >
+      >('llama_get_sampled_candidates_count_ith');
+  late final _llama_get_sampled_candidates_count_ith =
+      _llama_get_sampled_candidates_count_ithPtr
+          .asFunction<int Function(ffi.Pointer<llama_context>, int)>();
+
   /// Vocab
   ffi.Pointer<ffi.Char> llama_vocab_get_text(
     ffi.Pointer<llama_vocab> vocab,
@@ -3106,6 +3248,36 @@ class LlamaBindings {
   late final _llama_chat_builtin_templates = _llama_chat_builtin_templatesPtr
       .asFunction<int Function(ffi.Pointer<ffi.Pointer<ffi.Char>>, int)>();
 
+  /// [EXPERIMENTAL]
+  /// attach a sampler to the context
+  /// note: prefer initializing the context with llama_context_params.samplers when possible
+  bool llama_set_sampler(
+    ffi.Pointer<llama_context> ctx,
+    int seq_id,
+    ffi.Pointer<llama_sampler> smpl,
+  ) {
+    return _llama_set_sampler(ctx, seq_id, smpl);
+  }
+
+  late final _llama_set_samplerPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Bool Function(
+            ffi.Pointer<llama_context>,
+            llama_seq_id,
+            ffi.Pointer<llama_sampler>,
+          )
+        >
+      >('llama_set_sampler');
+  late final _llama_set_sampler = _llama_set_samplerPtr
+      .asFunction<
+        bool Function(
+          ffi.Pointer<llama_context>,
+          int,
+          ffi.Pointer<llama_sampler>,
+        )
+      >();
+
   /// mirror of llama_sampler_i:
   ffi.Pointer<llama_sampler> llama_sampler_init(
     ffi.Pointer<llama_sampler_i> iface,
@@ -3262,6 +3434,11 @@ class LlamaBindings {
         void Function(ffi.Pointer<llama_sampler>, ffi.Pointer<llama_sampler>)
       >();
 
+  /// return NULL if:
+  /// - the sampler is NULL
+  /// - the sampler is not a llama_sampler_chain
+  /// - the index is out of bounds, unless i == -1
+  /// - if i == -1, returns the chain itself (can be used to check if the sampler is a chain)
   ffi.Pointer<llama_sampler> llama_sampler_chain_get(
     ffi.Pointer<llama_sampler> chain,
     int i,
@@ -3283,6 +3460,7 @@ class LlamaBindings {
         ffi.Pointer<llama_sampler> Function(ffi.Pointer<llama_sampler>, int)
       >();
 
+  /// the total number of samplers in the chain
   int llama_sampler_chain_n(ffi.Pointer<llama_sampler> chain) {
     return _llama_sampler_chain_n(chain);
   }
@@ -3328,6 +3506,7 @@ class LlamaBindings {
   late final _llama_sampler_init_greedy = _llama_sampler_init_greedyPtr
       .asFunction<ffi.Pointer<llama_sampler> Function()>();
 
+  /// seed == LLAMA_DEFAULT_SEED to use a random seed.
   ffi.Pointer<llama_sampler> llama_sampler_init_dist(int seed) {
     return _llama_sampler_init_dist(seed);
   }
@@ -3738,6 +3917,44 @@ class LlamaBindings {
           int,
         )
       >();
+
+  /// adaptive-p: select tokens near a configurable target probability over time.
+  ///
+  /// the adaptive-p sampler transforms the token probability distribution to favor tokens
+  /// that fall near a user-configurable probability target.
+  ///
+  /// internally, the sampler maintains an exponential moving average of the *ORIGINAL*
+  /// probabilities of selected tokens at each sampling step. it uses this EMA to compute an
+  /// adapted target probability at each sampling step, thus maintaining the desired target
+  /// probability over time.
+  ///
+  /// adaptive-p selects a token ID rather than just mutating candidates, so it must be last
+  /// in the sampler chain (like mirostat, dist, greedy).
+  ///
+  /// only mild truncation before this sampler is recommended. we suggest applying min-p
+  /// before adaptive-p as the only other active sampler in the chain.
+  ///
+  /// @param target select tokens near this probability (valid range 0.0 to 1.0; negative = disabled)
+  /// @param decay  EMA decay for adaptation; history ≈ 1/(1-decay) tokens (valid range 0.0 - 0.99)
+  /// @param seed   RNG seed
+  ///
+  /// ref: https://github.com/ggml-org/llama.cpp/pull/17927
+  ffi.Pointer<llama_sampler> llama_sampler_init_adaptive_p(
+    double target,
+    double decay,
+    int seed,
+  ) {
+    return _llama_sampler_init_adaptive_p(target, decay, seed);
+  }
+
+  late final _llama_sampler_init_adaptive_pPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Pointer<llama_sampler> Function(ffi.Float, ffi.Float, ffi.Uint32)
+        >
+      >('llama_sampler_init_adaptive_p');
+  late final _llama_sampler_init_adaptive_p = _llama_sampler_init_adaptive_pPtr
+      .asFunction<ffi.Pointer<llama_sampler> Function(double, double, int)>();
 
   ffi.Pointer<llama_sampler> llama_sampler_init_logit_bias(
     int n_vocab,
@@ -4310,6 +4527,10 @@ class LlamaBindings {
       >();
 }
 
+final class ggml_context extends ffi.Opaque {}
+
+final class ggml_cgraph extends ffi.Opaque {}
+
 /// NOTE: always add types at the end of the enum to keep backward compatibility
 enum ggml_type {
   GGML_TYPE_F32(0),
@@ -4754,6 +4975,16 @@ final class llama_token_data_array extends ffi.Struct {
   external bool sorted;
 }
 
+final class llama_sampler_data extends ffi.Struct {
+  external ffi.Pointer<ggml_tensor> logits;
+
+  external ffi.Pointer<ggml_tensor> probs;
+
+  external ffi.Pointer<ggml_tensor> sampled;
+
+  external ffi.Pointer<ggml_tensor> candidates;
+}
+
 /// user code can implement the interface below in order to create custom llama_sampler
 final class llama_sampler_i extends ffi.Struct {
   /// can be NULL
@@ -4802,6 +5033,50 @@ final class llama_sampler_i extends ffi.Struct {
     ffi.NativeFunction<ffi.Void Function(ffi.Pointer<llama_sampler> smpl)>
   >
   free;
+
+  /// return true if the backend supports all ops needed by the sampler
+  /// note: call once per sampler
+  external ffi.Pointer<
+    ffi.NativeFunction<
+      ffi.Bool Function(
+        ffi.Pointer<llama_sampler> smpl,
+        ffi.Pointer<ggml_backend_buffer_type> buft,
+      )
+    >
+  >
+  backend_init;
+
+  /// call after .backend_apply()
+  external ffi.Pointer<
+    ffi.NativeFunction<
+      ffi.Void Function(
+        ffi.Pointer<llama_sampler> smpl,
+        ffi.Pointer<ggml_context> ctx,
+        ffi.Pointer<ggml_cgraph> gf,
+        ffi.Pointer<ggml_tensor> selected_token,
+      )
+    >
+  >
+  backend_accept;
+
+  /// call after .backend_init()
+  external ffi.Pointer<
+    ffi.NativeFunction<
+      ffi.Void Function(
+        ffi.Pointer<llama_sampler> smpl,
+        ffi.Pointer<ggml_context> ctx,
+        ffi.Pointer<ggml_cgraph> gf,
+        ffi.Pointer<llama_sampler_data> data,
+      )
+    >
+  >
+  backend_apply;
+
+  /// called before graph execution to set inputs for the current ubatch
+  external ffi.Pointer<
+    ffi.NativeFunction<ffi.Void Function(ffi.Pointer<llama_sampler> smpl)>
+  >
+  backend_set_input;
 }
 
 /// Sampling API
@@ -4836,8 +5111,6 @@ final class llama_sampler_i extends ffi.Struct {
 /// }
 ///
 /// llama_sampler_free(smpl);
-///
-/// TODO: In the future, llama_sampler will be utilized to offload the sampling to the backends (e.g. GPU).
 typedef llama_sampler_context_t = ffi.Pointer<ffi.Void>;
 
 final class llama_sampler extends ffi.Struct {
@@ -5396,6 +5669,10 @@ final class llama_model_params extends ffi.Struct {
   @ffi.Bool()
   external bool use_mmap;
 
+  /// use direct io, takes precedence over use_mmap
+  @ffi.Bool()
+  external bool use_direct_io;
+
   /// force system to keep model in RAM
   @ffi.Bool()
   external bool use_mlock;
@@ -5415,6 +5692,13 @@ final class llama_model_params extends ffi.Struct {
   /// only load metadata and simulate memory allocations
   @ffi.Bool()
   external bool no_alloc;
+}
+
+final class llama_sampler_seq_config extends ffi.Struct {
+  @llama_seq_id()
+  external int seq_id;
+
+  external ffi.Pointer<llama_sampler> sampler;
 }
 
 /// NOTE: changing the default values of parameters marked as [EXPERIMENTAL] may cause crashes or incorrect results in certain configurations
@@ -5566,6 +5850,14 @@ final class llama_context_params extends ffi.Struct {
   /// ref: https://github.com/ggml-org/llama.cpp/pull/14363
   @ffi.Bool()
   external bool kv_unified;
+
+  /// [EXPERIMENTAL]
+  /// backend sampler chain configuration (make sure the caller keeps the sampler chains alive)
+  /// note: the samplers must be sampler chains (i.e. use llama_sampler_chain_init)
+  external ffi.Pointer<llama_sampler_seq_config> samplers;
+
+  @ffi.Size()
+  external int n_samplers;
 }
 
 /// model quantization parameters

@@ -45,12 +45,14 @@ DynamicLibrary loadLibrary() {
 ///
 /// CPU Hardware Acceleration:
 /// The libraries are built with GGML_BACKEND_DL=ON and GGML_CPU_ALL_VARIANTS=ON.
-/// This means libggml.so will dynamically load the optimal CPU backend variant
-/// at runtime based on device capabilities (ARM dotprod, SVE, SME2, etc.).
+/// The CPU backend .so files (libggml-cpu-*.so) must be pre-loaded from Dart
+/// to ensure symbol visibility when ggml_backend_load() is called later.
 ///
 /// Load order:
 /// 1. libggml-base.so (base GGML library)
-/// 2. libggml.so (GGML coordinator - dynamically loads CPU backends)
+/// 2. libggml.so (GGML coordinator)
+/// 3. libomp.so (OpenMP runtime - required for multi-threaded CPU backends)
+/// 4. libggml-cpu-*.so (CPU backend variants - all of them for symbol visibility)
 void _loadAndroidDependencies() {
   // Load base library first
   try {
@@ -63,7 +65,6 @@ void _loadAndroidDependencies() {
   }
 
   // Load the GGML coordinator library
-  // With GGML_BACKEND_DL=ON, this will dynamically load the optimal CPU backend
   try {
     DynamicLibrary.open('libggml.so');
     // ignore: avoid_print
@@ -72,4 +73,51 @@ void _loadAndroidDependencies() {
     // ignore: avoid_print
     print('[llm_llamacpp] Failed to load libggml.so: $e');
   }
+  
+  // Load OpenMP runtime (required by CPU backends built with GGML_OPENMP=ON)
+  try {
+    DynamicLibrary.open('libomp.so');
+    // ignore: avoid_print
+    print('[llm_llamacpp] Loaded dependency: libomp.so');
+  } catch (e) {
+    // ignore: avoid_print
+    print('[llm_llamacpp] Failed to load libomp.so: $e');
+    // ignore: avoid_print
+    print('[llm_llamacpp] CPU backend loading will likely fail. Ensure libomp.so is bundled with the app.');
+  }
+  
+  // Pre-load all CPU backend variants from Dart.
+  // This is critical because:
+  // 1. Dart's DynamicLibrary.open() doesn't use RTLD_GLOBAL
+  // 2. When ggml_backend_load() tries to load these .so files via dlopen in C++,
+  //    the symbols from libggml.so/libggml-base.so aren't visible
+  // 3. By pre-loading them from Dart, we ensure symbol resolution works
+  // 
+  // The ggml_backend_load() call will still work because the libraries are
+  // already in memory - dlopen will just return a handle to the existing library.
+  final cpuBackends = [
+    'libggml-cpu-android_armv8.0_1.so',
+    'libggml-cpu-android_armv8.2_1.so',
+    'libggml-cpu-android_armv8.2_2.so',
+    'libggml-cpu-android_armv8.6_1.so',
+    'libggml-cpu-android_armv9.0_1.so',
+    'libggml-cpu-android_armv9.2_1.so',
+    'libggml-cpu-android_armv9.2_2.so',
+  ];
+  
+  int loadedCount = 0;
+  for (final backend in cpuBackends) {
+    try {
+      DynamicLibrary.open(backend);
+      // ignore: avoid_print
+      print('[llm_llamacpp] Pre-loaded CPU backend: $backend');
+      loadedCount++;
+    } catch (e) {
+      // Log the error for debugging
+      // ignore: avoid_print
+      print('[llm_llamacpp] Failed to pre-load $backend: $e');
+    }
+  }
+  // ignore: avoid_print
+  print('[llm_llamacpp] Pre-loaded $loadedCount CPU backend variant(s)');
 }

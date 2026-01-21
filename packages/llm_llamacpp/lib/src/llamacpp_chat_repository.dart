@@ -1,10 +1,6 @@
 import 'dart:async';
-import 'dart:convert';
-import 'dart:ffi';
 import 'dart:isolate';
-import 'dart:math' as math;
 
-import 'package:ffi/ffi.dart';
 import 'package:llm_core/llm_core.dart' show
     LLMApiException,
     LLMChatRepository,
@@ -17,20 +13,24 @@ import 'package:llm_core/llm_core.dart' show
     LLMMessage,
     LLMRole,
     LLMTool,
-    LLMToolCall,
     ModelLoadException,
     StreamChatOptions,
     Validation,
     VisionNotSupportedException;
-
+import 'package:llm_llamacpp/src/backend_initializer.dart';
 import 'package:llm_llamacpp/src/bindings/llama_bindings.dart';
+import 'package:llm_llamacpp/src/embedding_isolate.dart';
+import 'package:llm_llamacpp/src/error_translator.dart';
 import 'package:llm_llamacpp/src/exceptions.dart';
 import 'package:llm_llamacpp/src/generation_options.dart';
+import 'package:llm_llamacpp/src/persistent_inference_isolate.dart';
+import 'package:llm_llamacpp/src/isolate_messages.dart';
 import 'package:llm_llamacpp/src/llamacpp_model.dart';
 import 'package:llm_llamacpp/src/llamacpp_repository.dart';
 import 'package:llm_llamacpp/src/loader/loader.dart';
 import 'package:llm_llamacpp/src/prompt_template.dart';
-import 'package:llm_llamacpp/src/tool_call_parser.dart';
+import 'package:llm_llamacpp/src/tool_call_stream_handler.dart';
+import 'package:llm_llamacpp/src/tool_executor.dart';
 
 /// Repository for chatting with llama.cpp models locally.
 ///
@@ -139,6 +139,32 @@ class LlamaCppChatRepository extends LLMChatRepository {
        _loraPath = loraPath,
        _loraScale = loraScale,
        _ownsModel = false;
+  
+  /// Creates a chat repository with a model path for lazy loading.
+  ///
+  /// This is the recommended constructor for Android. Unlike [loadModel] which
+  /// loads the model in the main isolate, this constructor only stores the path.
+  /// The model is loaded in the inference isolate, avoiding FFI issues that can
+  /// occur when llama.cpp functions are called from multiple Dart isolates.
+  ///
+  /// [modelPath] - Path to the GGUF model file.
+  /// [loraPath] - Optional path to a LoRA adapter file to apply during inference.
+  /// [loraScale] - Scale factor for the LoRA adapter (0.0 to 1.0+). Default is 1.0.
+  LlamaCppChatRepository.withModelPath(
+    String modelPath, {
+    this.contextSize = 4096,
+    this.batchSize = 512,
+    this.threads,
+    this.nGpuLayers = 0,
+    this.maxToolAttempts = 25,
+    PromptTemplate? template,
+    String? loraPath,
+    double loraScale = 1.0,
+  }) : _template = template,
+       _modelPath = modelPath,
+       _loraPath = loraPath,
+       _loraScale = loraScale,
+       _ownsModel = false;
 
   /// The context size (number of tokens).
   final int contextSize;
@@ -162,6 +188,10 @@ class LlamaCppChatRepository extends LLMChatRepository {
   LlamaBindings? _bindings;
   LlamaCppModel? _model;
   bool _backendInitialized = false;
+  
+  /// Model path for lazy loading (model is loaded in inference isolate, not main isolate)
+  /// This is used when the repository is created with withModelPath constructor.
+  String? _modelPath;
 
   // LoRA configuration
   String? _loraPath;
@@ -233,6 +263,17 @@ class LlamaCppChatRepository extends LLMChatRepository {
 
     final lib = loadLlamaLibrary();
     _bindings = LlamaBindings(lib);
+    
+    // Load all backends before initializing
+    // This is required for dynamic backend loading (GGML_BACKEND_DL=ON)
+    // On Android with GGML_BACKEND_DL=ON, backends are loaded as separate .so files
+    final backendsLoaded = BackendInitializer.loadBackends(lib);
+    if (!backendsLoaded) {
+      _log.warning(
+        'Backend loading failed. This may cause model loading to fail on Android with dynamic backend loading enabled.',
+      );
+    }
+    
     _bindings!.llama_backend_init();
     _backendInitialized = true;
   }
@@ -315,14 +356,21 @@ class LlamaCppChatRepository extends LLMChatRepository {
     Validation.validateModelName(model);
     Validation.validateMessages(messages);
 
-    if (_model == null) {
+    // Determine the model path - either from loaded model or lazy loading path
+    final String modelPath;
+    if (_model != null) {
+      modelPath = _model!.path;
+    } else if (_modelPath != null) {
+      // Lazy loading mode - model will be loaded in the inference isolate
+      modelPath = _modelPath!;
+    } else {
       throw const ModelLoadException(
-        'No model loaded. Call loadModel() first or use LlamaCppChatRepository.withModel().',
+        'No model loaded. Call loadModel() first, use LlamaCppChatRepository.withModel(), or use LlamaCppChatRepository.withModelPath().',
       );
     }
 
-    // Validate context size against model limits
-    if (contextSize > _model!.contextSizeTrain) {
+    // Validate context size against model limits (only if model is loaded in main isolate)
+    if (_model != null && contextSize > _model!.contextSizeTrain) {
       _log.warning(
         'Requested context size ($contextSize) exceeds model training context size (${_model!.contextSizeTrain}). '
         'This may cause issues or be truncated.',
@@ -369,132 +417,68 @@ class LlamaCppChatRepository extends LLMChatRepository {
       _log.fine('--- PROMPT START ---\n$prompt\n--- PROMPT END ---');
     }
 
-    // Create a receive port to get tokens from the isolate
-    final receivePort = ReceivePort();
-
-    // Start inference in an isolate
-    final isolate = await Isolate.spawn(
-      _runInference,
-      _InferenceRequest(
-        sendPort: receivePort.sendPort,
-        modelPath: _model!.path,
-        prompt: prompt,
-        stopTokens: template.stopTokens,
-        contextSize: contextSize,
-        batchSize: batchSize,
-        threads: threads,
-        nGpuLayers: nGpuLayers,
-        options: genOptions,
-        loraPath: _loraPath,
-        loraScale: _loraScale,
-      ),
+    // Use the persistent inference isolate (follows fllama's pattern)
+    // This avoids re-initializing the library in each isolate which causes crashes on Android
+    final inferenceStream = PersistentInferenceIsolate.instance.runInference(
+      modelPath: modelPath,
+      prompt: prompt,
+      stopTokens: template.stopTokens,
+      contextSize: contextSize,
+      batchSize: batchSize,
+      threads: threads,
+      nGpuLayers: nGpuLayers,
+      options: genOptions,
+      loraPath: _loraPath,
+      loraScale: _loraScale,
     );
 
     try {
-      String accumulatedContent = '';
-      final List<LLMToolCall> collectedToolCalls = [];
-      // Buffer for detecting tool calls mid-stream
-      String pendingContent = '';
-      bool inPotentialToolCall = false;
+      final streamHandler = ToolCallStreamHandler(
+        logger: _log,
+        tools: effectiveTools,
+      );
 
-      await for (final message in receivePort) {
-        if (message is _InferenceToken) {
-          accumulatedContent += message.token;
-          pendingContent += message.token;
-
-          // Check if we might be in a tool call
-          // Look for opening brace that might start a tool call JSON
-          if (!inPotentialToolCall && pendingContent.contains('{')) {
-            inPotentialToolCall = true;
-            _log.fine('Detected potential tool call start');
-          }
-
-          // If we're in a potential tool call, buffer the content
-          if (inPotentialToolCall) {
-            // Check if we have a complete JSON object
-            final braceCount = ToolCallParser.countBraces(pendingContent);
-            if (braceCount == 0 && pendingContent.contains('}')) {
-              // Potential complete JSON - try to parse
-              _log.fine('Potential complete JSON, trying to parse');
-              final toolCalls = ToolCallParser.parseToolCalls(pendingContent);
-              if (toolCalls.isNotEmpty) {
-                _log.info(
-                  'Found ${toolCalls.length} tool calls in buffered content',
-                );
-                collectedToolCalls.addAll(toolCalls);
-                // Don't yield the tool call JSON to the user
-                pendingContent = '';
-                inPotentialToolCall = false;
-                continue;
-              } else {
-                // Not a valid tool call, yield the buffered content
-                _log.fine('Not a valid tool call, yielding buffered content');
-                yield LLMChunk(
-                  model: model,
-                  createdAt: DateTime.now(),
-                  message: LLMChunkMessage(
-                    content: pendingContent,
-                    role: LLMRole.assistant,
-                  ),
-                  done: false,
-                );
-                pendingContent = '';
-                inPotentialToolCall = false;
-              }
-            }
-            // Keep buffering if braces aren't balanced
-            continue;
-          }
-
-          // Normal token - yield immediately
-          yield LLMChunk(
-            model: model,
-            createdAt: DateTime.now(),
-            message: LLMChunkMessage(
-              content: message.token,
-              role: LLMRole.assistant,
-            ),
-            done: false,
-          );
-          pendingContent = '';
-        } else if (message is _InferenceComplete) {
-          _log.fine(
-            'Inference complete. Accumulated content (${accumulatedContent.length} chars)',
-          );
-          if (_log.isLoggable(LLMLogLevel.fine)) {
-            _log.fine(
-              '--- RESPONSE START ---\n$accumulatedContent\n--- RESPONSE END ---',
-            );
-          }
-
-          // Yield any remaining buffered content
-          if (pendingContent.isNotEmpty) {
-            _log.fine('Yielding remaining buffered content');
+      await for (final message in inferenceStream) {
+        if (message is InferenceToken) {
+          final result = streamHandler.processToken(message.token);
+          if (result.shouldYield && result.content != null) {
             yield LLMChunk(
               model: model,
               createdAt: DateTime.now(),
               message: LLMChunkMessage(
-                content: pendingContent,
+                content: result.content,
+                role: LLMRole.assistant,
+              ),
+              done: false,
+            );
+          }
+        } else if (message is InferenceComplete) {
+          _log.fine(
+            'Inference complete. Accumulated content (${streamHandler.accumulatedContent.length} chars)',
+          );
+          if (_log.isLoggable(LLMLogLevel.fine)) {
+            _log.fine(
+              '--- RESPONSE START ---\n${streamHandler.accumulatedContent}\n--- RESPONSE END ---',
+            );
+          }
+
+          // Yield any remaining buffered content
+          final remainingContent = streamHandler.finalize(
+            hasTools: effectiveTools.isNotEmpty,
+          );
+          if (remainingContent != null) {
+            yield LLMChunk(
+              model: model,
+              createdAt: DateTime.now(),
+              message: LLMChunkMessage(
+                content: remainingContent,
                 role: LLMRole.assistant,
               ),
               done: false,
             );
           }
 
-          // Check for tool calls in the full response if none found during streaming
-          if (tools.isNotEmpty && collectedToolCalls.isEmpty) {
-            _log.fine('Parsing tool calls from full response...');
-            final parsedToolCalls = ToolCallParser.parseToolCalls(accumulatedContent);
-            _log.info('Found ${parsedToolCalls.length} tool calls');
-            if (_log.isLoggable(LLMLogLevel.fine)) {
-              for (final tc in parsedToolCalls) {
-                _log.fine('  - Tool: ${tc.name}, Args: ${tc.arguments}');
-              }
-            }
-            if (parsedToolCalls.isNotEmpty) {
-              collectedToolCalls.addAll(parsedToolCalls);
-            }
-          }
+          final collectedToolCalls = streamHandler.collectedToolCalls;
 
           yield LLMChunk(
             model: model,
@@ -519,47 +503,18 @@ class LlamaCppChatRepository extends LLMChatRepository {
               workingMessages.add(
                 LLMMessage(
                   role: LLMRole.assistant,
-                  content: accumulatedContent,
+                  content: streamHandler.accumulatedContent,
                 ),
               );
 
               // Execute tools and add responses
-              for (final toolCall in collectedToolCalls) {
-                _log.fine('Executing tool: ${toolCall.name}');
-                final tool = effectiveTools.firstWhere(
-                  (t) => t.name == toolCall.name,
-                  orElse: () {
-                    _log.severe('Tool ${toolCall.name} not found!');
-                    throw Exception('Tool ${toolCall.name} not found');
-                  },
-                );
-
-                try {
-                  final args = json.decode(toolCall.arguments);
-                  _log.fine('Tool args: $args');
-                  final toolResponse =
-                      await tool.execute(args, extra: effectiveExtra) ??
-                      'Tool ${toolCall.name} returned null';
-                  _log.fine('Tool response: $toolResponse');
-
-                  workingMessages.add(
-                    LLMMessage(
-                      role: LLMRole.tool,
-                      content: toolResponse.toString(),
-                      toolCallId: toolCall.id,
-                    ),
-                  );
-                } catch (e) {
-                  _log.warning('Tool execution error: $e');
-                  workingMessages.add(
-                    LLMMessage(
-                      role: LLMRole.tool,
-                      content: 'Error executing tool: $e',
-                      toolCallId: toolCall.id,
-                    ),
-                  );
-                }
-              }
+              final toolMessages = await ToolExecutor.executeTools(
+                collectedToolCalls,
+                effectiveTools,
+                effectiveExtra,
+                _log,
+              );
+              workingMessages.addAll(toolMessages);
 
               _log.fine('Continuing conversation with tool results...');
               // Continue conversation with tool results
@@ -584,37 +539,19 @@ class LlamaCppChatRepository extends LLMChatRepository {
           }
 
           break;
-        } else if (message is _InferenceError) {
+        } else if (message is InferenceError) {
           _log.severe('Inference error: ${message.error}');
-          // Parse error type from error message
-          if (message.error.contains('Failed to load model') ||
-              message.error.contains('Failed to load LoRA adapter')) {
-            throw ModelLoadException(
-              message.error,
-              modelPath: _model?.path,
-            );
-          } else if (message.error.contains('Failed to tokenize')) {
-            throw TokenizationException(
-              message: message.error,
-              prompt: prompt,
-            );
-          } else if (message.error.contains('Failed to create context')) {
-            throw ContextCreationException(
-              message: message.error,
-              contextSize: contextSize,
-              batchSize: batchSize,
-            );
-          } else {
-            throw InferenceException(
-              message: message.error,
-              details: 'Model: ${_model?.path ?? "unknown"}',
-            );
-          }
+          throw InferenceErrorTranslator.translateInferenceError(
+            message.error,
+            modelPath: _model?.path,
+            prompt: prompt,
+            contextSize: contextSize,
+            batchSize: batchSize,
+          );
         }
       }
     } finally {
-      receivePort.close();
-      isolate.kill();
+      // No cleanup needed - persistent isolate stays alive
     }
   }
 
@@ -643,46 +580,42 @@ class LlamaCppChatRepository extends LLMChatRepository {
     final receivePort = ReceivePort();
 
     // Start embedding extraction in an isolate
-    final isolate = await Isolate.spawn(
-      _runEmbedding,
-      _EmbeddingRequest(
-        sendPort: receivePort.sendPort,
-        modelPath: _model!.path,
-        messages: messages,
-        contextSize: contextSize,
-        batchSize: batchSize,
-        threads: threads,
-        nGpuLayers: nGpuLayers,
-      ),
-    );
+    Isolate isolate;
+    try {
+      isolate = await Isolate.spawn(
+        runEmbedding,
+        EmbeddingRequest(
+          sendPort: receivePort.sendPort,
+          modelPath: _model!.path,
+          messages: messages,
+          contextSize: contextSize,
+          batchSize: batchSize,
+          threads: threads,
+          nGpuLayers: nGpuLayers,
+        ),
+      );
+    } catch (e) {
+      receivePort.close();
+      _log.severe('Failed to spawn embedding isolate: $e');
+      throw InferenceException(
+        message: 'Failed to spawn embedding isolate: $e',
+        details: 'Model: ${_model?.path ?? "unknown"}',
+      );
+    }
 
     try {
       final results = <LLMEmbedding>[];
       await for (final message in receivePort) {
-        if (message is _EmbeddingResult) {
+        if (message is EmbeddingResult) {
           results.add(message.embedding);
-        } else if (message is _EmbeddingError) {
-          // Parse error type from error message
-          if (message.error.contains('Failed to load model')) {
-            throw ModelLoadException(
-              message.error,
-              modelPath: _model?.path,
-            );
-          } else if (message.error.contains('Failed to tokenize')) {
-            throw TokenizationException(message: message.error);
-          } else if (message.error.contains('Failed to create context')) {
-            throw ContextCreationException(
-              message: message.error,
-              contextSize: contextSize,
-              batchSize: batchSize,
-            );
-          } else {
-            throw InferenceException(
-              message: message.error,
-              details: 'Model: ${_model?.path ?? "unknown"}',
-            );
-          }
-        } else if (message is _EmbeddingComplete) {
+        } else if (message is EmbeddingError) {
+          throw InferenceErrorTranslator.translateEmbeddingError(
+            message.error,
+            modelPath: _model?.path,
+            contextSize: contextSize,
+            batchSize: batchSize,
+          );
+        } else if (message is EmbeddingComplete) {
           break;
         }
       }
@@ -710,501 +643,5 @@ class LlamaCppChatRepository extends LLMChatRepository {
     // Clear references but don't dispose if we don't own the model
     _model = null;
     _bindings = null;
-  }
-}
-
-// Isolate communication messages
-
-class _InferenceRequest {
-  _InferenceRequest({
-    required this.sendPort,
-    required this.modelPath,
-    required this.prompt,
-    required this.stopTokens,
-    required this.contextSize,
-    required this.batchSize,
-    required this.nGpuLayers,
-    required this.options,
-    this.threads,
-    this.loraPath,
-    this.loraScale = 1.0,
-  });
-
-  final SendPort sendPort;
-  final String modelPath;
-  final String prompt;
-  final List<String> stopTokens;
-  final int contextSize;
-  final int batchSize;
-  final int? threads;
-  final int nGpuLayers;
-  final GenerationOptions options;
-
-  // LoRA configuration
-  final String? loraPath;
-  final double loraScale;
-}
-
-class _InferenceToken {
-  _InferenceToken(this.token);
-  final String token;
-}
-
-class _InferenceComplete {
-  _InferenceComplete({
-    required this.promptTokens,
-    required this.generatedTokens,
-  });
-  final int promptTokens;
-  final int generatedTokens;
-}
-
-class _InferenceError {
-  _InferenceError(this.error);
-  final String error;
-}
-
-// Embedding request/response classes
-class _EmbeddingRequest {
-  _EmbeddingRequest({
-    required this.sendPort,
-    required this.modelPath,
-    required this.messages,
-    required this.contextSize,
-    required this.batchSize,
-    required this.nGpuLayers,
-    this.threads,
-  });
-
-  final SendPort sendPort;
-  final String modelPath;
-  final List<String> messages;
-  final int contextSize;
-  final int batchSize;
-  final int? threads;
-  final int nGpuLayers;
-}
-
-class _EmbeddingResult {
-  _EmbeddingResult(this.embedding);
-  final LLMEmbedding embedding;
-}
-
-class _EmbeddingError {
-  _EmbeddingError(this.error);
-  final String error;
-}
-
-class _EmbeddingComplete {
-  _EmbeddingComplete();
-}
-
-/// Runs inference in an isolate.
-void _runInference(_InferenceRequest request) {
-  Pointer<llama_adapter_lora>? loraAdapter;
-
-  try {
-    // Initialize llama.cpp in this isolate
-    final lib = loadLlamaLibrary();
-    final bindings = LlamaBindings(lib);
-    bindings.llama_backend_init();
-
-    // Load the model
-    final modelParams = bindings.llama_model_default_params();
-    modelParams.n_gpu_layers = request.nGpuLayers;
-
-    final modelPathPtr = request.modelPath.toNativeUtf8();
-    final model = bindings.llama_load_model_from_file(
-      modelPathPtr.cast(),
-      modelParams,
-    );
-    calloc.free(modelPathPtr);
-
-    if (model == nullptr) {
-      request.sendPort.send(_InferenceError('Failed to load model'));
-      return;
-    }
-
-    // Load LoRA adapter if specified
-    if (request.loraPath != null) {
-      final loraPathPtr = request.loraPath!.toNativeUtf8();
-      loraAdapter = bindings.llama_adapter_lora_init(model, loraPathPtr.cast());
-      calloc.free(loraPathPtr);
-
-      if (loraAdapter == nullptr) {
-        bindings.llama_free_model(model);
-        request.sendPort.send(
-          _InferenceError('Failed to load LoRA adapter: ${request.loraPath}'),
-        );
-        return;
-      }
-    }
-
-    // Get vocab from model for tokenization
-    final vocab = bindings.llama_model_get_vocab(model);
-
-    // Create context
-    final ctxParams = bindings.llama_context_default_params();
-    ctxParams.n_ctx = request.contextSize;
-    ctxParams.n_batch = request.batchSize;
-    if (request.threads != null) {
-      ctxParams.n_threads = request.threads!;
-      ctxParams.n_threads_batch = request.threads!;
-    }
-
-    final ctx = bindings.llama_new_context_with_model(model, ctxParams);
-    if (ctx == nullptr) {
-      if (loraAdapter != null) {
-        bindings.llama_adapter_lora_free(loraAdapter);
-      }
-      bindings.llama_free_model(model);
-      final errorMsg =
-          'Failed to create context (contextSize: ${request.contextSize}, batchSize: ${request.batchSize})';
-      request.sendPort.send(_InferenceError(errorMsg));
-      return;
-    }
-
-    // Apply LoRA adapter to context if loaded
-    if (loraAdapter != null) {
-      final result = bindings.llama_set_adapter_lora(
-        ctx,
-        loraAdapter,
-        request.loraScale,
-      );
-      if (result != 0) {
-        bindings.llama_free(ctx);
-        bindings.llama_adapter_lora_free(loraAdapter);
-        bindings.llama_free_model(model);
-        request.sendPort.send(_InferenceError('Failed to apply LoRA adapter'));
-        return;
-      }
-    }
-
-    try {
-      // Tokenize prompt using vocab
-      final promptPtr = request.prompt.toNativeUtf8();
-      final maxTokens = request.prompt.length + 256;
-      final tokensPtr = calloc<Int32>(maxTokens);
-
-      final nTokens = bindings.llama_tokenize(
-        vocab, // Use vocab instead of model
-        promptPtr.cast(),
-        request.prompt.length,
-        tokensPtr,
-        maxTokens,
-        true, // add_special
-        true, // parse_special
-      );
-      calloc.free(promptPtr);
-
-      if (nTokens < 0) {
-        calloc.free(tokensPtr);
-        final errorMsg = nTokens == -1
-            ? 'Failed to tokenize prompt: buffer too small'
-            : 'Failed to tokenize prompt: error code $nTokens';
-        request.sendPort.send(_InferenceError(errorMsg));
-        return;
-      }
-
-      // Evaluate prompt using batch
-      var batch = bindings.llama_batch_get_one(tokensPtr, nTokens);
-      if (bindings.llama_decode(ctx, batch) != 0) {
-        calloc.free(tokensPtr);
-        request.sendPort.send(_InferenceError('Failed to evaluate prompt'));
-        return;
-      }
-
-      // Set up sampling chain
-      final samplerParams = bindings.llama_sampler_chain_default_params();
-      final sampler = bindings.llama_sampler_chain_init(samplerParams);
-
-      bindings.llama_sampler_chain_add(
-        sampler,
-        bindings.llama_sampler_init_temp(request.options.temperature),
-      );
-      bindings.llama_sampler_chain_add(
-        sampler,
-        bindings.llama_sampler_init_top_k(request.options.topK),
-      );
-      bindings.llama_sampler_chain_add(
-        sampler,
-        bindings.llama_sampler_init_top_p(request.options.topP, 1),
-      );
-
-      // Add penalties if specified
-      if (request.options.repeatPenalty != null ||
-          request.options.frequencyPenalty != null ||
-          request.options.presencePenalty != null) {
-        // Use default penalty_last_n of 64 if not specified
-        // Convert frequency/presence penalties: OpenAI uses -2.0 to 2.0, llama.cpp uses 0.0+
-        // For frequency: positive values increase likelihood, negative decrease
-        // For presence: positive values increase likelihood of new tokens
-        final repeatPenalty = request.options.repeatPenalty ?? 1.0;
-        final freqPenalty = request.options.frequencyPenalty != null
-            ? (request.options.frequencyPenalty! < 0
-                ? 1.0 + request.options.frequencyPenalty!.abs()
-                : 1.0 - request.options.frequencyPenalty!)
-            : 0.0;
-        final presencePenalty = request.options.presencePenalty != null
-            ? (request.options.presencePenalty! < 0
-                ? 1.0 + request.options.presencePenalty!.abs()
-                : 1.0 - request.options.presencePenalty!)
-            : 0.0;
-
-        bindings.llama_sampler_chain_add(
-          sampler,
-          bindings.llama_sampler_init_penalties(
-            64, // penalty_last_n: look at last 64 tokens
-            repeatPenalty,
-            freqPenalty,
-            presencePenalty,
-          ),
-        );
-      }
-
-      // Use provided seed or generate random one
-      final seed = request.options.seed ?? math.Random().nextInt(0x7FFFFFFF);
-      bindings.llama_sampler_chain_add(
-        sampler,
-        bindings.llama_sampler_init_dist(seed),
-      );
-
-      // Generate tokens
-      const bufferSize = 256;
-      var pieceBuffer = calloc<Char>(bufferSize);
-      var generatedTokens = 0;
-      final newTokenPtr = calloc<Int32>(1);
-
-      while (generatedTokens < request.options.maxTokens) {
-        // Sample next token
-        final newToken = bindings.llama_sampler_sample(sampler, ctx, -1);
-
-        // Check for end of generation using vocab
-        if (bindings.llama_vocab_is_eog(vocab, newToken)) {
-          break;
-        }
-
-        // Convert token to text using vocab
-        // First, try with the current buffer size
-        var pieceLen = bindings.llama_token_to_piece(
-          vocab, // Use vocab instead of model
-          newToken,
-          pieceBuffer,
-          bufferSize,
-          0, // lstrip
-          true, // special
-        );
-
-        // If buffer was too small (negative return), query the actual size needed
-        if (pieceLen < 0) {
-          // Query the actual size needed (negative value indicates required size)
-          final requiredSize = -pieceLen;
-          // Free old buffer and allocate larger one
-          calloc.free(pieceBuffer);
-          pieceBuffer = calloc<Char>(requiredSize);
-          
-          // Try again with the correct size
-          pieceLen = bindings.llama_token_to_piece(
-            vocab,
-            newToken,
-            pieceBuffer,
-            requiredSize,
-            0, // lstrip
-            true, // special
-          );
-        }
-
-        if (pieceLen > 0) {
-          final piece = pieceBuffer.cast<Utf8>().toDartString(length: pieceLen);
-
-          // Check for stop tokens
-          bool shouldStop = false;
-          for (final stopToken in request.stopTokens) {
-            if (piece.contains(stopToken)) {
-              shouldStop = true;
-              break;
-            }
-          }
-
-          if (shouldStop) break;
-
-          request.sendPort.send(_InferenceToken(piece));
-        }
-
-        // Decode the new token
-        newTokenPtr.value = newToken;
-        batch = bindings.llama_batch_get_one(newTokenPtr, 1);
-        if (bindings.llama_decode(ctx, batch) != 0) {
-          break;
-        }
-
-        generatedTokens++;
-      }
-
-      // Cleanup sampling
-      bindings.llama_sampler_free(sampler);
-      calloc.free(pieceBuffer);
-      calloc.free(newTokenPtr);
-      calloc.free(tokensPtr);
-
-      request.sendPort.send(
-        _InferenceComplete(
-          promptTokens: nTokens,
-          generatedTokens: generatedTokens,
-        ),
-      );
-    } finally {
-      // Clear LoRA from context before freeing
-      if (loraAdapter != null) {
-        bindings.llama_clear_adapter_lora(ctx);
-        bindings.llama_adapter_lora_free(loraAdapter);
-      }
-      bindings.llama_free(ctx);
-      bindings.llama_free_model(model);
-      bindings.llama_backend_free();
-    }
-  } catch (e) {
-    request.sendPort.send(_InferenceError(e.toString()));
-  }
-}
-
-/// Runs embedding extraction in an isolate.
-void _runEmbedding(_EmbeddingRequest request) {
-  try {
-    // Initialize llama.cpp in this isolate
-    final lib = loadLlamaLibrary();
-    final bindings = LlamaBindings(lib);
-    bindings.llama_backend_init();
-
-    // Load the model
-    final modelParams = bindings.llama_model_default_params();
-    modelParams.n_gpu_layers = request.nGpuLayers;
-
-    final modelPathPtr = request.modelPath.toNativeUtf8();
-    final model = bindings.llama_load_model_from_file(
-      modelPathPtr.cast(),
-      modelParams,
-    );
-    calloc.free(modelPathPtr);
-
-    if (model == nullptr) {
-      request.sendPort.send(_EmbeddingError('Failed to load model'));
-      return;
-    }
-
-    // Get embedding dimension
-    final nEmb = bindings.llama_model_n_embd(model);
-
-    // Create context
-    final ctxParams = bindings.llama_context_default_params();
-    ctxParams.n_ctx = request.contextSize;
-    ctxParams.n_batch = request.batchSize;
-    if (request.threads != null) {
-      ctxParams.n_threads = request.threads!;
-      ctxParams.n_threads_batch = request.threads!;
-    }
-
-    final ctx = bindings.llama_new_context_with_model(model, ctxParams);
-    if (ctx == nullptr) {
-      bindings.llama_free_model(model);
-      request.sendPort.send(_EmbeddingError('Failed to create context'));
-      return;
-    }
-
-    try {
-      // Get vocab from model for tokenization
-      final vocab = bindings.llama_model_get_vocab(model);
-      final poolingType = bindings.llama_pooling_type$1(ctx);
-
-      // Process each message
-      for (final message in request.messages) {
-        // Tokenize message
-        final messagePtr = message.toNativeUtf8();
-        final maxTokens = message.length + 256;
-        final tokensPtr = calloc<Int32>(maxTokens);
-
-        final nTokens = bindings.llama_tokenize(
-          vocab,
-          messagePtr.cast(),
-          message.length,
-          tokensPtr,
-          maxTokens,
-          true, // add_special
-          true, // parse_special
-        );
-        calloc.free(messagePtr);
-
-        if (nTokens < 0) {
-          calloc.free(tokensPtr);
-          request.sendPort.send(_EmbeddingError('Failed to tokenize message'));
-          continue;
-        }
-
-        // Clear KV cache (irrelevant for embeddings)
-        bindings.llama_memory_clear(bindings.llama_get_memory(ctx), true);
-
-        // Create batch and decode
-        final batch = bindings.llama_batch_get_one(tokensPtr, nTokens);
-        if (bindings.llama_decode(ctx, batch) != 0) {
-          calloc.free(tokensPtr);
-          request.sendPort.send(_EmbeddingError('Failed to decode message'));
-          continue;
-        }
-
-        // Get embeddings based on pooling type
-        Pointer<Float>? embdPtr;
-        if (poolingType.value == 0) {
-          // LLAMA_POOLING_TYPE_NONE - use token embeddings
-          // For simplicity, use the last token's embedding
-          embdPtr = bindings.llama_get_embeddings_ith(ctx, -1);
-        } else {
-          // Use sequence embedding (pooled)
-          embdPtr = bindings.llama_get_embeddings_seq(ctx, 0);
-        }
-
-        if (embdPtr == nullptr) {
-          calloc.free(tokensPtr);
-          request.sendPort.send(_EmbeddingError('Failed to get embeddings'));
-          continue;
-        }
-
-        // Copy embedding to Dart list
-        final embedding = embdPtr
-            .asTypedList(nEmb)
-            .map((f) => f.toDouble())
-            .toList();
-
-        // Normalize embedding (L2 normalization)
-        final norm = math.sqrt(
-          embedding.map((e) => e * e).reduce((a, b) => a + b),
-        );
-        if (norm > 0) {
-          for (int i = 0; i < embedding.length; i++) {
-            embedding[i] = embedding[i] / norm;
-          }
-        }
-
-        // Send embedding result
-        request.sendPort.send(
-          _EmbeddingResult(
-            LLMEmbedding(
-              model: request.modelPath,
-              embedding: embedding,
-              promptEvalCount: nTokens,
-            ),
-          ),
-        );
-
-        calloc.free(tokensPtr);
-      }
-
-      request.sendPort.send(_EmbeddingComplete());
-    } finally {
-      bindings.llama_free(ctx);
-      bindings.llama_free_model(model);
-      bindings.llama_backend_free();
-    }
-  } catch (e) {
-    request.sendPort.send(_EmbeddingError(e.toString()));
   }
 }

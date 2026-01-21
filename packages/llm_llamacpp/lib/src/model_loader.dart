@@ -1,3 +1,4 @@
+import 'dart:ffi' as ffi;
 import 'dart:io';
 
 import 'package:llm_core/llm_core.dart' show ModelLoadException;
@@ -26,6 +27,32 @@ class LlamaCppModelLoader {
 
     final lib = loadLlamaLibrary();
     _bindings = LlamaBindings(lib);
+    
+    // Load all backends before initializing
+    // This is required for dynamic backend loading (GGML_BACKEND_DL=ON)
+    // On Android with GGML_BACKEND_DL=ON, backends are loaded as separate .so files
+    try {
+      final ggmlBackendLoadAll = lib.lookupFunction<
+          ffi.Void Function(),
+          void Function()>('ggml_backend_load_all');
+      ggmlBackendLoadAll();
+    } catch (e) {
+      // If ggml_backend_load_all is not available, try ggml_backend_load_all_from_path
+      // On Android, libraries are in the app's native library directory
+      try {
+        final ggmlBackendLoadAllFromPath = lib.lookupFunction<
+            ffi.Void Function(ffi.Pointer<ffi.Char>),
+            void Function(ffi.Pointer<ffi.Char>)>('ggml_backend_load_all_from_path');
+        // Pass null to search default paths (where .so files are located)
+        ggmlBackendLoadAllFromPath(ffi.Pointer.fromAddress(0));
+      } catch (e2) {
+        // If neither is available, log a warning but continue
+        // The backends might be statically linked or the function might not be exported
+        print('[llm_llamacpp] Warning: Could not load backends dynamically: $e2');
+        print('[llm_llamacpp] This may cause model loading to fail if backends are not statically linked');
+      }
+    }
+    
     _bindings!.llama_backend_init();
     _backendInitialized = true;
   }
@@ -57,6 +84,16 @@ class LlamaCppModelLoader {
     if (!await file.exists()) {
       throw ModelLoadException(
         'Model file not found: $path',
+        modelPath: path,
+      );
+    }
+
+    // Validate file size (should not be empty)
+    final size = await file.length();
+    if (size == 0) {
+      throw ModelLoadException(
+        'Model file is empty (0 bytes): $path\n'
+        'The file may have been corrupted during download. Please try downloading again.',
         modelPath: path,
       );
     }

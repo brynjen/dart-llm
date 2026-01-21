@@ -1,4 +1,5 @@
-import 'dart:ffi';
+import 'dart:ffi' as ffi;
+import 'dart:io';
 
 import 'package:ffi/ffi.dart';
 
@@ -10,7 +11,7 @@ import 'package:llm_llamacpp/src/bindings/llama_bindings.dart';
 class LlamaCppModel {
   LlamaCppModel._({
     required this.path,
-    required Pointer<llama_model> modelPtr,
+    required ffi.Pointer<llama_model> modelPtr,
     required LlamaBindings bindings,
   }) : _modelPtr = modelPtr,
        _bindings = bindings;
@@ -18,7 +19,7 @@ class LlamaCppModel {
   /// The path to the GGUF model file.
   final String path;
 
-  final Pointer<llama_model> _modelPtr;
+  final ffi.Pointer<llama_model> _modelPtr;
   final LlamaBindings _bindings;
 
   bool _disposed = false;
@@ -26,13 +27,13 @@ class LlamaCppModel {
   /// Returns the internal model pointer.
   ///
   /// This should only be used by internal code.
-  Pointer<llama_model> get pointer {
+  ffi.Pointer<llama_model> get pointer {
     _checkNotDisposed();
     return _modelPtr;
   }
 
   /// Gets the vocabulary from the model.
-  Pointer<llama_vocab> get vocab {
+  ffi.Pointer<llama_vocab> get vocab {
     _checkNotDisposed();
     return _bindings.llama_model_get_vocab(_modelPtr);
   }
@@ -114,6 +115,35 @@ class LlamaCppModel {
     bool useMemoryLock = false,
     bool vocabOnly = false,
   }) {
+    // 1. Check file exists
+    final file = File(path);
+    if (!file.existsSync()) {
+      throw Exception('Model file not found: $path');
+    }
+
+    // 2. Check file size
+    final size = file.lengthSync();
+    if (size == 0) {
+      throw Exception('Model file is empty: $path');
+    }
+
+    // 3. Set up log callback to capture errors
+    // Use a class to hold the message lists since closures can't capture variables in fromFunction
+    final logData = _LogCaptureData();
+    
+    // Create our callback
+    // GGML_LOG_LEVEL_ERROR = 4, GGML_LOG_LEVEL_WARN = 3
+    final logCallbackPtr = ffi.Pointer.fromFunction<
+        ffi.Void Function(ffi.UnsignedInt, ffi.Pointer<ffi.Char>, ffi.Pointer<ffi.Void>)>(
+      _logCallback,
+    );
+    
+    // Store logData in global variable (needed because FFI callbacks can't capture closures)
+    _currentLogCapture = logData;
+    
+    // Set our callback
+    bindings.llama_log_set(logCallbackPtr, ffi.Pointer.fromAddress(0));
+
     final params = bindings.llama_model_default_params();
     params.n_gpu_layers = nGpuLayers;
     params.use_mmap = useMemoryMap;
@@ -127,8 +157,29 @@ class LlamaCppModel {
         params,
       );
 
-      if (modelPtr == nullptr) {
-        throw Exception('Failed to load model from: $path');
+      // Restore log callback to default (nullptr)
+      bindings.llama_log_set(ffi.Pointer.fromAddress(0), ffi.Pointer.fromAddress(0));
+      _currentLogCapture = null;
+
+      if (modelPtr.address == 0) {
+        // Build detailed error message
+        final errorDetails = <String>[];
+        errorDetails.add('Failed to load model from: $path');
+        errorDetails.add('File size: $size bytes');
+        
+        if (logData.errorMessages.isNotEmpty) {
+          errorDetails.add('');
+          errorDetails.add('llama.cpp errors:');
+          errorDetails.addAll(logData.errorMessages);
+        }
+        
+        if (logData.warnMessages.isNotEmpty) {
+          errorDetails.add('');
+          errorDetails.add('llama.cpp warnings:');
+          errorDetails.addAll(logData.warnMessages);
+        }
+        
+        throw Exception(errorDetails.join('\n'));
       }
 
       return LlamaCppModel._(
@@ -138,7 +189,34 @@ class LlamaCppModel {
       );
     } finally {
       calloc.free(pathPtr);
+      _currentLogCapture = null;
     }
+  }
+}
+
+/// Data structure to capture log messages
+class _LogCaptureData {
+  final List<String> errorMessages = [];
+  final List<String> warnMessages = [];
+}
+
+/// Global variable to hold current log capture data
+/// This is needed because FFI callbacks can't capture variables from closures
+_LogCaptureData? _currentLogCapture;
+
+/// Log callback function for capturing llama.cpp errors
+/// This must be a top-level function, not a closure
+void _logCallback(int level, ffi.Pointer<ffi.Char> text, ffi.Pointer<ffi.Void> userData) {
+  final capture = _currentLogCapture;
+  if (capture == null) return;
+  
+  final message = text.cast<Utf8>().toDartString();
+  if (level >= 4) {
+    // GGML_LOG_LEVEL_ERROR
+    capture.errorMessages.add(message);
+  } else if (level >= 3) {
+    // GGML_LOG_LEVEL_WARN
+    capture.warnMessages.add(message);
   }
 }
 

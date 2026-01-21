@@ -23,9 +23,9 @@ class _HomeScreenState extends State<HomeScreen> {
   String _statusMessage = '';
   String? _errorMessage;
 
-  // Qwen3-VL-2B: Supports tool calling and vision
-  static const _defaultRepoId = 'ggml-org/Qwen3-VL-2B-Instruct-GGUF';
-  static const _defaultFileName = 'Qwen3-VL-2B-Instruct-Q8_0.gguf';
+  // Qwen3-0.6B: Small, efficient model
+  static const _defaultRepoId = 'Qwen/Qwen3-0.6B-GGUF';
+  static const _defaultFileName = 'Qwen3-0.6B-Q8_0.gguf';
 
   @override
   void initState() {
@@ -89,12 +89,24 @@ class _HomeScreenState extends State<HomeScreen> {
 
     try {
       final outputDir = await _modelsDirectory;
+      print('[HomeScreen] Starting download:');
+      print('[HomeScreen]   Repo: $_defaultRepoId');
+      print('[HomeScreen]   File: $_defaultFileName');
+      print('[HomeScreen]   Output: $outputDir');
 
       await for (final status in _repository.getModelStream(
         _defaultRepoId,
         outputDir: outputDir,
         preferredFile: _defaultFileName,
       )) {
+        print('[HomeScreen] Status: ${status.stage.name} - ${status.message}');
+        if (status.progress != null) {
+          print('[HomeScreen]   Progress: ${(status.progress! * 100).toStringAsFixed(1)}%');
+        }
+        if (status.error != null) {
+          print('[HomeScreen]   Error: ${status.error}');
+        }
+        
         setState(() {
           _statusMessage = status.message;
           if (status.progress != null) {
@@ -102,6 +114,7 @@ class _HomeScreenState extends State<HomeScreen> {
           }
           if (status.isComplete && status.modelPath != null) {
             _modelPath = status.modelPath;
+            print('[HomeScreen]   Model path: ${status.modelPath}');
           }
           if (status.stage == ModelAcquisitionStage.failed) {
             _errorMessage = status.error ?? status.message;
@@ -112,7 +125,10 @@ class _HomeScreenState extends State<HomeScreen> {
       setState(() {
         _statusMessage = 'Download complete!';
       });
-    } catch (e) {
+      print('[HomeScreen] Download completed successfully');
+    } catch (e, stackTrace) {
+      print('[HomeScreen] Download exception: $e');
+      print('[HomeScreen] Stack trace: $stackTrace');
       setState(() {
         _errorMessage = 'Download failed: $e';
         _statusMessage = '';
@@ -223,13 +239,13 @@ class _HomeScreenState extends State<HomeScreen> {
                         ),
                         const SizedBox(height: 8),
                         Text(
-                          'Qwen3-VL-2B-Instruct (Q8_0)',
+                          'Qwen3-0.6B (Q8_0)',
                           style: theme.textTheme.bodyLarge?.copyWith(
                             color: theme.colorScheme.primary,
                           ),
                         ),
                         Text(
-                          '~2.5 GB • Tool calling • Vision capable',
+                          '~800 MB • Efficient inference',
                           style: theme.textTheme.bodySmall?.copyWith(
                             color: theme.colorScheme.onSurface.withValues(
                               alpha: 0.6,

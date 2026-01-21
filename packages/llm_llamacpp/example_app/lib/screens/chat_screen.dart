@@ -50,15 +50,16 @@ class _ChatScreenState extends State<ChatScreen> {
     });
 
     try {
-      print('[ChatScreen] Creating LlamaCppChatRepository...');
-      _chatRepo = LlamaCppChatRepository(
+      print('[ChatScreen] Creating LlamaCppChatRepository with lazy loading...');
+      // Use withModelPath for Android compatibility - the model will be loaded
+      // in the inference isolate, not the main isolate. This avoids FFI issues
+      // that occur when llama.cpp is called from multiple Dart isolates.
+      _chatRepo = LlamaCppChatRepository.withModelPath(
+        widget.modelPath,
         contextSize: 2048,
         nGpuLayers: 0, // CPU-only with hardware acceleration (KleidiAI, SME2)
       );
-
-      print('[ChatScreen] Loading model from: ${widget.modelPath}');
-      await _chatRepo!.loadModel(widget.modelPath);
-      print('[ChatScreen] Model loaded successfully!');
+      print('[ChatScreen] Repository ready (model will load on first chat)');
 
       setState(() {
         _isLoading = false;

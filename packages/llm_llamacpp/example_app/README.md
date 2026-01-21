@@ -61,7 +61,7 @@ flutter run -d "iPhone 15 Pro"
 
 ## Features
 
-1. **Model Download** - Downloads Qwen2.5-0.5B (~400MB) from HuggingFace
+1. **Model Download** - Downloads Qwen3-0.6B (~400MB) from HuggingFace
 2. **Chat Interface** - Stream chat with the local model
 3. **Offline Inference** - Works completely offline after model download
 
@@ -83,6 +83,20 @@ Ensure the xcframework is properly placed:
 - Check internet connection
 - Verify the HuggingFace model exists
 - Check app has storage permissions
+
+### "no backends are loaded" on Android
+
+This error occurs when native libraries are loaded directly from the APK instead of being extracted to the filesystem. To fix:
+
+Add `android:extractNativeLibs="true"` to your `AndroidManifest.xml`:
+
+```xml
+<application
+    android:extractNativeLibs="true"
+    ...>
+```
+
+This is required because `ggml_backend_load_all_from_path()` needs a real filesystem directory to find backend `.so` files.
 
 ### Slow inference
 
