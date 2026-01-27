@@ -50,7 +50,9 @@ class _ChatScreenState extends State<ChatScreen> {
     });
 
     try {
-      print('[ChatScreen] Creating LlamaCppChatRepository with lazy loading...');
+      print(
+        '[ChatScreen] Creating LlamaCppChatRepository with lazy loading...',
+      );
       // Use withModelPath for Android compatibility - the model will be loaded
       // in the inference isolate, not the main isolate. This avoids FFI issues
       // that occur when llama.cpp is called from multiple Dart isolates.

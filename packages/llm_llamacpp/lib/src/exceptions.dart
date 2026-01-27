@@ -215,11 +215,7 @@ class LoraLoadException implements Exception {
 
 /// Thrown when tokenization fails.
 class TokenizationException implements Exception {
-  TokenizationException({
-    required this.message,
-    this.prompt,
-    this.details,
-  });
+  TokenizationException({required this.message, this.prompt, this.details});
 
   /// Error message.
   final String message;

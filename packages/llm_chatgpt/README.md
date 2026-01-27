@@ -17,7 +17,7 @@ Available on [pub.dev](https://pub.dev/packages/llm_chatgpt).
 
 ```yaml
 dependencies:
-  llm_chatgpt: ^0.1.0
+  llm_chatgpt: ^0.1.5
 ```
 
 ## Prerequisites

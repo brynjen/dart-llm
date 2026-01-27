@@ -26,7 +26,7 @@ Available on [pub.dev](https://pub.dev/packages/llm_llamacpp).
 
 ```yaml
 dependencies:
-  llm_llamacpp: ^0.1.0
+  llm_llamacpp: ^0.1.5
 ```
 
 ## Prerequisites

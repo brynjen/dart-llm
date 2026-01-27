@@ -106,8 +106,7 @@ export 'src/gguf_metadata.dart';
 // Model conversion
 export 'src/model_converter.dart';
 
-// Prompt templates
-export 'src/prompt_template.dart';
+// Note: Prompt templates are now handled internally via llama_chat_apply_template()\n// which uses the template embedded in the GGUF model file.
 
 // Generation options
 export 'src/generation_options.dart';

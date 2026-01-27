@@ -4,7 +4,6 @@ import 'dart:math' as math;
 import 'package:ffi/ffi.dart';
 import 'package:llm_core/llm_core.dart' show LLMEmbedding;
 import 'package:llm_llamacpp/src/backend_initializer.dart';
-import 'package:llm_llamacpp/src/bindings/llama_bindings.dart';
 import 'package:llm_llamacpp/src/isolate_messages.dart';
 
 /// Runs embedding extraction in an isolate.

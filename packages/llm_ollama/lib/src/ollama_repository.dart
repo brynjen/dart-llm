@@ -1,3 +1,4 @@
+import 'dart:async' show unawaited;
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
@@ -67,7 +68,10 @@ class OllamaRepository {
     final bodyBytes = utf8.encode(json.encode({'model': modelName}));
     request.headers['content-length'] = bodyBytes.length.toString();
     request.sink.add(bodyBytes);
-    await request.sink.close();
+    // Do NOT await sink.close() - it may not complete until after the request is sent
+    // This would create a deadlock. Use unawaited() instead.
+    // See: https://pub.dev/documentation/http/latest/http/StreamedRequest-class.html
+    unawaited(request.sink.close());
 
     final response = await httpClient.send(request);
 
@@ -100,6 +104,27 @@ class OllamaRepository {
     );
     final json = jsonDecode(response.body);
     return OllamaVersion.fromJson(json);
+  }
+
+  /// Check if a model supports vision by querying its model info.
+  ///
+  /// Vision models have "vision" in their capabilities array.
+  Future<bool> supportsVision(String model) async {
+    try {
+      final response = await _sendRequest(
+        'POST',
+        Uri.parse('$baseUrl/api/show'),
+        body: {'model': model},
+      );
+      final json = jsonDecode(response.body);
+      final capabilities = json['capabilities'] as List<dynamic>?;
+      if (capabilities != null) {
+        return capabilities.contains('vision');
+      }
+      return false;
+    } catch (e) {
+      return false;
+    }
   }
 
   Future<http.Response> _sendRequest(

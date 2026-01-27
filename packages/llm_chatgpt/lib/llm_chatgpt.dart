@@ -26,5 +26,10 @@ export 'src/chatgpt_chat_repository_builder.dart';
 
 // DTOs (for advanced usage)
 export 'src/dto/gpt_response.dart';
+export 'src/dto/gpt_choice.dart';
+export 'src/dto/gpt_tool_call.dart';
+export 'src/dto/gpt_usage.dart';
+export 'src/dto/gpt_chunk.dart';
+export 'src/dto/gpt_extensions.dart';
 export 'src/dto/gpt_stream_decoder.dart';
 export 'src/dto/gpt_embedding_response.dart';

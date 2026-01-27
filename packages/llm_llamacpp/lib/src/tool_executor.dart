@@ -1,11 +1,7 @@
 import 'dart:convert';
 
-import 'package:llm_core/llm_core.dart' show
-    LLMLogger,
-    LLMMessage,
-    LLMRole,
-    LLMTool,
-    LLMToolCall;
+import 'package:llm_core/llm_core.dart'
+    show LLMLogger, LLMMessage, LLMRole, LLMTool, LLMToolCall;
 
 /// Executes tool calls and returns tool response messages.
 ///

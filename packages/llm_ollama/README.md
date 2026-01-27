@@ -19,7 +19,7 @@ Available on [pub.dev](https://pub.dev/packages/llm_ollama).
 
 ```yaml
 dependencies:
-  llm_ollama: ^0.1.0
+  llm_ollama: ^0.1.5
 ```
 
 ## Prerequisites

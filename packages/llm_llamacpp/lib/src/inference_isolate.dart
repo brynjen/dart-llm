@@ -83,14 +83,16 @@ void runInference(InferenceRequest request) {
       ctxParams.n_threads_batch = request.threads!;
     }
     // ignore: avoid_print
-    print('[inference_isolate] n_ctx: ${request.contextSize}, n_batch: ${request.batchSize}');
+    print(
+      '[inference_isolate] n_ctx: ${request.contextSize}, n_batch: ${request.batchSize}',
+    );
 
     // ignore: avoid_print
     print('[inference_isolate] Creating context...');
     final ctx = bindings.llama_new_context_with_model(model, ctxParams);
     // ignore: avoid_print
     print('[inference_isolate] Context created, address: ${ctx.address}');
-    
+
     if (ctx.address == 0) {
       if (loraAdapter != null) {
         bindings.llama_adapter_lora_free(loraAdapter);
@@ -180,13 +182,13 @@ void runInference(InferenceRequest request) {
         final repeatPenalty = request.options.repeatPenalty ?? 1.0;
         final freqPenalty = request.options.frequencyPenalty != null
             ? (request.options.frequencyPenalty! < 0
-                ? 1.0 + request.options.frequencyPenalty!.abs()
-                : 1.0 - request.options.frequencyPenalty!)
+                  ? 1.0 + request.options.frequencyPenalty!.abs()
+                  : 1.0 - request.options.frequencyPenalty!)
             : 0.0;
         final presencePenalty = request.options.presencePenalty != null
             ? (request.options.presencePenalty! < 0
-                ? 1.0 + request.options.presencePenalty!.abs()
-                : 1.0 - request.options.presencePenalty!)
+                  ? 1.0 + request.options.presencePenalty!.abs()
+                  : 1.0 - request.options.presencePenalty!)
             : 0.0;
 
         bindings.llama_sampler_chain_add(

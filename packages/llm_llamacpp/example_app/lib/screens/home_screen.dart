@@ -89,9 +89,13 @@ class _HomeScreenState extends State<HomeScreen> {
 
     try {
       final outputDir = await _modelsDirectory;
+      // ignore: avoid_print
       print('[HomeScreen] Starting download:');
+      // ignore: avoid_print
       print('[HomeScreen]   Repo: $_defaultRepoId');
+      // ignore: avoid_print
       print('[HomeScreen]   File: $_defaultFileName');
+      // ignore: avoid_print
       print('[HomeScreen]   Output: $outputDir');
 
       await for (final status in _repository.getModelStream(
@@ -99,14 +103,19 @@ class _HomeScreenState extends State<HomeScreen> {
         outputDir: outputDir,
         preferredFile: _defaultFileName,
       )) {
+        // ignore: avoid_print
         print('[HomeScreen] Status: ${status.stage.name} - ${status.message}');
         if (status.progress != null) {
-          print('[HomeScreen]   Progress: ${(status.progress! * 100).toStringAsFixed(1)}%');
+          // ignore: avoid_print
+          print(
+            '[HomeScreen]   Progress: ${(status.progress! * 100).toStringAsFixed(1)}%',
+          );
         }
         if (status.error != null) {
+          // ignore: avoid_print
           print('[HomeScreen]   Error: ${status.error}');
         }
-        
+
         setState(() {
           _statusMessage = status.message;
           if (status.progress != null) {
@@ -114,6 +123,7 @@ class _HomeScreenState extends State<HomeScreen> {
           }
           if (status.isComplete && status.modelPath != null) {
             _modelPath = status.modelPath;
+            // ignore: avoid_print
             print('[HomeScreen]   Model path: ${status.modelPath}');
           }
           if (status.stage == ModelAcquisitionStage.failed) {
@@ -125,9 +135,12 @@ class _HomeScreenState extends State<HomeScreen> {
       setState(() {
         _statusMessage = 'Download complete!';
       });
+      // ignore: avoid_print
       print('[HomeScreen] Download completed successfully');
     } catch (e, stackTrace) {
+      // ignore: avoid_print
       print('[HomeScreen] Download exception: $e');
+      // ignore: avoid_print
       print('[HomeScreen] Stack trace: $stackTrace');
       setState(() {
         _errorMessage = 'Download failed: $e';

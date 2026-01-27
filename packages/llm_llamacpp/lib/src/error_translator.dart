@@ -26,15 +26,9 @@ class InferenceErrorTranslator {
   }) {
     if (error.contains('Failed to load model') ||
         error.contains('Failed to load LoRA adapter')) {
-      return ModelLoadException(
-        error,
-        modelPath: modelPath,
-      );
+      return ModelLoadException(error, modelPath: modelPath);
     } else if (error.contains('Failed to tokenize')) {
-      return TokenizationException(
-        message: error,
-        prompt: prompt,
-      );
+      return TokenizationException(message: error, prompt: prompt);
     } else if (error.contains('Failed to create context')) {
       return ContextCreationException(
         message: error,
@@ -64,10 +58,7 @@ class InferenceErrorTranslator {
     int? batchSize,
   }) {
     if (error.contains('Failed to load model')) {
-      return ModelLoadException(
-        error,
-        modelPath: modelPath,
-      );
+      return ModelLoadException(error, modelPath: modelPath);
     } else if (error.contains('Failed to tokenize')) {
       return TokenizationException(message: error);
     } else if (error.contains('Failed to create context')) {

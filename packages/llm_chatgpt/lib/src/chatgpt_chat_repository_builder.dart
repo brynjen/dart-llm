@@ -1,4 +1,3 @@
-import 'package:http/http.dart' as http;
 import 'package:llm_core/llm_core.dart';
 
 import 'package:llm_chatgpt/src/chatgpt_chat_repository.dart';
@@ -19,13 +18,10 @@ import 'package:llm_chatgpt/src/chatgpt_chat_repository.dart';
 ///   .httpClient(customClient)
 ///   .build();
 /// ```
-class ChatGPTChatRepositoryBuilder {
+class ChatGPTChatRepositoryBuilder
+    extends ChatRepositoryBuilderBase<ChatGPTChatRepositoryBuilder> {
   String? _apiKey;
   String? _baseUrl;
-  int? _maxToolAttempts;
-  RetryConfig? _retryConfig;
-  TimeoutConfig? _timeoutConfig;
-  http.Client? _httpClient;
 
   /// Set the API key for OpenAI.
   ChatGPTChatRepositoryBuilder apiKey(String apiKey) {
@@ -39,31 +35,7 @@ class ChatGPTChatRepositoryBuilder {
     return this;
   }
 
-  /// Set the maximum number of tool attempts.
-  ChatGPTChatRepositoryBuilder maxToolAttempts(int maxToolAttempts) {
-    _maxToolAttempts = maxToolAttempts;
-    return this;
-  }
-
-  /// Set the retry configuration.
-  ChatGPTChatRepositoryBuilder retryConfig(RetryConfig retryConfig) {
-    _retryConfig = retryConfig;
-    return this;
-  }
-
-  /// Set the timeout configuration.
-  ChatGPTChatRepositoryBuilder timeoutConfig(TimeoutConfig timeoutConfig) {
-    _timeoutConfig = timeoutConfig;
-    return this;
-  }
-
-  /// Set a custom HTTP client.
-  ChatGPTChatRepositoryBuilder httpClient(http.Client httpClient) {
-    _httpClient = httpClient;
-    return this;
-  }
-
-  /// Build the [ChatGPTChatRepository] instance.
+  @override
   ChatGPTChatRepository build() {
     if (_apiKey == null) {
       throw ArgumentError('API key is required');
@@ -71,10 +43,10 @@ class ChatGPTChatRepositoryBuilder {
     return ChatGPTChatRepository(
       apiKey: _apiKey!,
       baseUrl: _baseUrl ?? 'https://api.openai.com',
-      maxToolAttempts: _maxToolAttempts ?? 25,
-      retryConfig: _retryConfig,
-      timeoutConfig: _timeoutConfig,
-      httpClient: _httpClient,
+      maxToolAttempts: maxToolAttemptsValue,
+      retryConfig: retryConfigValue,
+      timeoutConfig: timeoutConfigValue,
+      httpClient: httpClientValue,
     );
   }
 }

@@ -1,0 +1,147 @@
+name: Coverage Report
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  coverage-non-flutter:
+    name: Generate Coverage Report (Non-Flutter Packages)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Dart SDK
+        uses: dart-lang/setup-dart@v1
+        with:
+          sdk: stable
+      
+      - name: Install Melos
+        run: dart pub global activate melos
+      
+      - name: Install dependencies (excluding llm_llamacpp which requires Flutter)
+        run: |
+          cp pubspec.yaml pubspec.yaml.backup
+          sed -i '/packages\/llm_llamacpp/d' pubspec.yaml
+          melos bootstrap
+      
+      - name: Install coverage tool
+        run: dart pub global activate coverage
+      
+      - name: Run tests with coverage
+        run: |
+          cd packages/llm_core && dart test --coverage=coverage
+          cd ../llm_ollama && dart test --coverage=coverage --exclude-tags integration
+          cd ../llm_chatgpt && dart test --coverage=coverage
+      
+      - name: Upload coverage artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-non-flutter
+          path: |
+            packages/llm_core/coverage
+            packages/llm_ollama/coverage
+            packages/llm_chatgpt/coverage
+          retention-days: 1
+      
+      - name: Restore original pubspec.yaml
+        if: always()
+        run: |
+          [ -f pubspec.yaml.backup ] && mv pubspec.yaml.backup pubspec.yaml || true
+
+  coverage-llamacpp:
+    name: Generate Coverage Report (llm_llamacpp)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Flutter SDK
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.24.0'
+          channel: 'stable'
+      
+      - name: Install Melos
+        run: dart pub global activate melos
+      
+      - name: Install dependencies
+        run: melos bootstrap --scope="llm_llamacpp"
+      
+      - name: Install coverage tool
+        run: dart pub global activate coverage
+      
+      - name: Run tests with coverage
+        run: |
+          cd packages/llm_llamacpp && dart test --coverage=coverage || echo "Tests skipped (models may not be available)"
+        continue-on-error: true
+      
+      - name: Upload coverage artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-llamacpp
+          path: packages/llm_llamacpp/coverage
+          if-no-files-found: ignore
+          retention-days: 1
+
+  combine-coverage:
+    name: Combine Coverage Reports
+    runs-on: ubuntu-latest
+    needs: [coverage-non-flutter, coverage-llamacpp]
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Download coverage artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: coverage-artifacts
+      
+      - name: Setup Dart SDK
+        uses: dart-lang/setup-dart@v1
+        with:
+          sdk: stable
+      
+      - name: Install coverage tool
+        run: dart pub global activate coverage
+      
+      - name: Generate combined coverage report
+        run: |
+          mkdir -p coverage
+          # Collect coverage directories
+          COVERAGE_DIRS=""
+          if [ -d coverage-artifacts/coverage-non-flutter/packages/llm_core/coverage ]; then
+            COVERAGE_DIRS="$COVERAGE_DIRS coverage-artifacts/coverage-non-flutter/packages/llm_core/coverage"
+          fi
+          if [ -d coverage-artifacts/coverage-non-flutter/packages/llm_ollama/coverage ]; then
+            COVERAGE_DIRS="$COVERAGE_DIRS coverage-artifacts/coverage-non-flutter/packages/llm_ollama/coverage"
+          fi
+          if [ -d coverage-artifacts/coverage-non-flutter/packages/llm_chatgpt/coverage ]; then
+            COVERAGE_DIRS="$COVERAGE_DIRS coverage-artifacts/coverage-non-flutter/packages/llm_chatgpt/coverage"
+          fi
+          if [ -d coverage-artifacts/coverage-llamacpp/packages/llm_llamacpp/coverage ]; then
+            COVERAGE_DIRS="$COVERAGE_DIRS coverage-artifacts/coverage-llamacpp/packages/llm_llamacpp/coverage"
+          fi
+          
+          if [ -n "$COVERAGE_DIRS" ]; then
+            dart pub global run coverage:format_coverage \
+              --lcov \
+              --in=$(echo $COVERAGE_DIRS | tr ' ' ',') \
+              --out=coverage/lcov.info \
+              --packages=coverage-artifacts/coverage-non-flutter/packages/llm_core/.dart_tool/package_config.json || echo "Coverage generation completed with warnings"
+          else
+            echo "No coverage data found"
+            touch coverage/lcov.info
+          fi
+        continue-on-error: true
+      
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        if: always()
+        with:
+          files: ./coverage/lcov.info
+          flags: unittests
+          name: codecov-umbrella
+          fail_ci_if_error: false

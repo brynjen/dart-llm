@@ -130,17 +130,21 @@ class LlamaCppModel {
     // 3. Set up log callback to capture errors
     // Use a class to hold the message lists since closures can't capture variables in fromFunction
     final logData = _LogCaptureData();
-    
+
     // Create our callback
     // GGML_LOG_LEVEL_ERROR = 4, GGML_LOG_LEVEL_WARN = 3
-    final logCallbackPtr = ffi.Pointer.fromFunction<
-        ffi.Void Function(ffi.UnsignedInt, ffi.Pointer<ffi.Char>, ffi.Pointer<ffi.Void>)>(
-      _logCallback,
-    );
-    
+    final logCallbackPtr =
+        ffi.Pointer.fromFunction<
+          ffi.Void Function(
+            ffi.UnsignedInt,
+            ffi.Pointer<ffi.Char>,
+            ffi.Pointer<ffi.Void>,
+          )
+        >(_logCallback);
+
     // Store logData in global variable (needed because FFI callbacks can't capture closures)
     _currentLogCapture = logData;
-    
+
     // Set our callback
     bindings.llama_log_set(logCallbackPtr, ffi.Pointer.fromAddress(0));
 
@@ -158,7 +162,10 @@ class LlamaCppModel {
       );
 
       // Restore log callback to default (nullptr)
-      bindings.llama_log_set(ffi.Pointer.fromAddress(0), ffi.Pointer.fromAddress(0));
+      bindings.llama_log_set(
+        ffi.Pointer.fromAddress(0),
+        ffi.Pointer.fromAddress(0),
+      );
       _currentLogCapture = null;
 
       if (modelPtr.address == 0) {
@@ -166,19 +173,19 @@ class LlamaCppModel {
         final errorDetails = <String>[];
         errorDetails.add('Failed to load model from: $path');
         errorDetails.add('File size: $size bytes');
-        
+
         if (logData.errorMessages.isNotEmpty) {
           errorDetails.add('');
           errorDetails.add('llama.cpp errors:');
           errorDetails.addAll(logData.errorMessages);
         }
-        
+
         if (logData.warnMessages.isNotEmpty) {
           errorDetails.add('');
           errorDetails.add('llama.cpp warnings:');
           errorDetails.addAll(logData.warnMessages);
         }
-        
+
         throw Exception(errorDetails.join('\n'));
       }
 
@@ -206,10 +213,14 @@ _LogCaptureData? _currentLogCapture;
 
 /// Log callback function for capturing llama.cpp errors
 /// This must be a top-level function, not a closure
-void _logCallback(int level, ffi.Pointer<ffi.Char> text, ffi.Pointer<ffi.Void> userData) {
+void _logCallback(
+  int level,
+  ffi.Pointer<ffi.Char> text,
+  ffi.Pointer<ffi.Void> userData,
+) {
   final capture = _currentLogCapture;
   if (capture == null) return;
-  
+
   final message = text.cast<Utf8>().toDartString();
   if (level >= 4) {
     // GGML_LOG_LEVEL_ERROR

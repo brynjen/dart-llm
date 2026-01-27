@@ -1,0 +1,67 @@
+name: Generate API Documentation
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'packages/**/*.dart'
+      - 'packages/**/pubspec.yaml'
+  workflow_dispatch:
+
+jobs:
+  generate-docs:
+    name: Generate API Docs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Dart SDK
+        uses: dart-lang/setup-dart@v1
+        with:
+          sdk: stable
+      
+      - name: Install Melos
+        run: dart pub global activate melos
+      
+      - name: Install dartdoc
+        run: dart pub global activate dartdoc
+      
+      - name: Install dependencies (excluding llm_llamacpp which requires Flutter)
+        run: |
+          cp pubspec.yaml pubspec.yaml.backup
+          sed -i '/packages\/llm_llamacpp/d' pubspec.yaml
+          melos bootstrap
+      
+      - name: Generate docs for llm_core
+        run: |
+          cd packages/llm_core
+          dart pub get
+          dart pub global run dartdoc --output=doc/api
+      
+      - name: Generate docs for llm_ollama
+        run: |
+          cd packages/llm_ollama
+          dart pub get
+          dart pub global run dartdoc --output=doc/api
+      
+      - name: Generate docs for llm_chatgpt
+        run: |
+          cd packages/llm_chatgpt
+          dart pub get
+          dart pub global run dartdoc --output=doc/api
+      
+      - name: Upload documentation artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: api-documentation
+          path: |
+            packages/llm_core/doc/api
+            packages/llm_ollama/doc/api
+            packages/llm_chatgpt/doc/api
+          retention-days: 30
+      
+      - name: Restore original pubspec.yaml
+        if: always()
+        run: |
+          [ -f pubspec.yaml.backup ] && mv pubspec.yaml.backup pubspec.yaml || true

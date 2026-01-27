@@ -1,4 +1,3 @@
-import 'package:http/http.dart' as http;
 import 'package:llm_core/llm_core.dart';
 
 import 'package:llm_ollama/src/ollama_chat_repository.dart';
@@ -18,12 +17,9 @@ import 'package:llm_ollama/src/ollama_chat_repository.dart';
 ///   .httpClient(customClient)
 ///   .build();
 /// ```
-class OllamaChatRepositoryBuilder {
+class OllamaChatRepositoryBuilder
+    extends ChatRepositoryBuilderBase<OllamaChatRepositoryBuilder> {
   String? _baseUrl;
-  int? _maxToolAttempts;
-  RetryConfig? _retryConfig;
-  TimeoutConfig? _timeoutConfig;
-  http.Client? _httpClient;
 
   /// Set the base URL of the Ollama server.
   OllamaChatRepositoryBuilder baseUrl(String baseUrl) {
@@ -31,38 +27,14 @@ class OllamaChatRepositoryBuilder {
     return this;
   }
 
-  /// Set the maximum number of tool attempts.
-  OllamaChatRepositoryBuilder maxToolAttempts(int maxToolAttempts) {
-    _maxToolAttempts = maxToolAttempts;
-    return this;
-  }
-
-  /// Set the retry configuration.
-  OllamaChatRepositoryBuilder retryConfig(RetryConfig retryConfig) {
-    _retryConfig = retryConfig;
-    return this;
-  }
-
-  /// Set the timeout configuration.
-  OllamaChatRepositoryBuilder timeoutConfig(TimeoutConfig timeoutConfig) {
-    _timeoutConfig = timeoutConfig;
-    return this;
-  }
-
-  /// Set a custom HTTP client.
-  OllamaChatRepositoryBuilder httpClient(http.Client httpClient) {
-    _httpClient = httpClient;
-    return this;
-  }
-
-  /// Build the [OllamaChatRepository] instance.
+  @override
   OllamaChatRepository build() {
     return OllamaChatRepository(
       baseUrl: _baseUrl ?? 'http://localhost:11434',
-      maxToolAttempts: _maxToolAttempts ?? 25,
-      retryConfig: _retryConfig,
-      timeoutConfig: _timeoutConfig,
-      httpClient: _httpClient,
+      maxToolAttempts: maxToolAttemptsValue,
+      retryConfig: retryConfigValue,
+      timeoutConfig: timeoutConfigValue,
+      httpClient: httpClientValue,
     );
   }
 }

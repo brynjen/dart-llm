@@ -43,6 +43,12 @@ export 'src/llm_logger.dart';
 export 'src/retry_config.dart';
 export 'src/retry_util.dart';
 
+// Rate limiting
+export 'src/rate_limiter.dart';
+
+// Response caching
+export 'src/response_cache.dart';
+
 // Timeout configuration
 export 'src/timeout_config.dart';
 
@@ -54,3 +60,19 @@ export 'src/validation.dart';
 
 // Metrics
 export 'src/llm_metrics.dart';
+
+// HTTP client utilities
+export 'src/http_client_utils.dart';
+
+// Tool execution
+export 'src/tool_executor.dart';
+
+// Builder base
+export 'src/chat_repository_builder_base.dart';
+
+// Options merger
+export 'src/stream_chat_options_merger.dart';
+
+// Error handlers
+export 'src/error_handlers.dart';
+export 'src/backend_error_handler.dart';

@@ -3,6 +3,17 @@ import 'dart:isolate';
 import 'package:llm_core/llm_core.dart' show LLMEmbedding;
 import 'package:llm_llamacpp/src/generation_options.dart';
 
+/// A simple message representation that can be passed between isolates.
+///
+/// This is a lightweight alternative to LLMMessage that avoids any
+/// complex types that might not serialize well across isolate boundaries.
+class IsolateMessage {
+  const IsolateMessage({required this.role, required this.content});
+
+  final String role;
+  final String content;
+}
+
 /// Request message for inference operations in an isolate.
 class InferenceRequest {
   InferenceRequest({
@@ -17,11 +28,22 @@ class InferenceRequest {
     this.threads,
     this.loraPath,
     this.loraScale = 1.0,
+    this.messages,
   });
 
   final SendPort sendPort;
   final String modelPath;
+
+  /// Pre-formatted prompt string (legacy - deprecated).
+  /// When [messages] is provided, this is ignored and the native
+  /// llama_chat_apply_template() is used instead.
   final String prompt;
+
+  /// Raw chat messages for native template formatting.
+  /// When provided, uses the GGUF's built-in chat template via
+  /// llama_chat_apply_template() instead of manual Dart templates.
+  final List<IsolateMessage>? messages;
+
   final List<String> stopTokens;
   final int contextSize;
   final int batchSize;

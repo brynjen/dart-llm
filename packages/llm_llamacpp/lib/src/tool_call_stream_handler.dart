@@ -1,15 +1,10 @@
-import 'package:llm_core/llm_core.dart' show
-    LLMLogger,
-    LLMLogLevel,
-    LLMToolCall;
+import 'package:llm_core/llm_core.dart'
+    show LLMLogger, LLMLogLevel, LLMToolCall;
 import 'package:llm_llamacpp/src/tool_call_parser.dart';
 
 /// Result of processing a token in the stream handler.
 class StreamHandlerResult {
-  StreamHandlerResult({
-    required this.shouldYield,
-    this.content,
-  });
+  StreamHandlerResult({required this.shouldYield, this.content});
 
   /// Whether the content should be yielded to the user.
   final bool shouldYield;
@@ -24,13 +19,11 @@ class StreamHandlerResult {
 /// buffer tokens while detecting potential JSON tool calls, and parse
 /// tool calls from the accumulated content.
 class ToolCallStreamHandler {
-  ToolCallStreamHandler({
-    required this.logger,
-    required this.tools,
-  });
+  ToolCallStreamHandler({required this.logger, required this.tools});
 
   final LLMLogger logger;
-  final List tools; // List<LLMTool> but we don't import it to avoid circular deps
+  final List
+  tools; // List<LLMTool> but we don't import it to avoid circular deps
 
   String _accumulatedContent = '';
   final List<LLMToolCall> _collectedToolCalls = [];
@@ -41,7 +34,8 @@ class ToolCallStreamHandler {
   String get accumulatedContent => _accumulatedContent;
 
   /// The tool calls collected during streaming.
-  List<LLMToolCall> get collectedToolCalls => List.unmodifiable(_collectedToolCalls);
+  List<LLMToolCall> get collectedToolCalls =>
+      List.unmodifiable(_collectedToolCalls);
 
   /// Process a token from the stream.
   ///
@@ -115,7 +109,9 @@ class ToolCallStreamHandler {
     // Check for tool calls in the full response if none found during streaming
     if (hasTools && _collectedToolCalls.isEmpty) {
       logger.fine('Parsing tool calls from full response...');
-      final parsedToolCalls = ToolCallParser.parseToolCalls(_accumulatedContent);
+      final parsedToolCalls = ToolCallParser.parseToolCalls(
+        _accumulatedContent,
+      );
       logger.info('Found ${parsedToolCalls.length} tool calls');
       if (logger.isLoggable(LLMLogLevel.fine)) {
         for (final tc in parsedToolCalls) {

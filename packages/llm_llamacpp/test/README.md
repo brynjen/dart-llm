@@ -11,7 +11,7 @@ cd packages/llm_llamacpp
 LD_LIBRARY_PATH=linux/libs dart test test/all_tests.dart
 
 # Run specific test file
-LD_LIBRARY_PATH=linux/libs dart test test/model_loading_test.dart
+LD_LIBRARY_PATH=linux/libs dart test test/integration/model_loading_test.dart
 ```
 
 ## Test Configuration
@@ -44,14 +44,16 @@ dart test test/all_tests.dart
 
 ## Test Files
 
-### `model_loading_test.dart`
+All integration tests are located in `test/integration/`:
+
+### `integration/model_loading_test.dart`
 - Model loading and unloading
 - GPU offloading
 - Memory mapping options
 - Error handling for invalid models
 - Model metadata access
 
-### `text_generation_test.dart`
+### `integration/text_generation_test.dart`
 - Basic text generation
 - Streaming token output
 - System prompts
@@ -59,14 +61,14 @@ dart test test/all_tests.dart
 - Prompt templates (ChatML, Llama3, etc.)
 - Performance metrics
 
-### `vision_model_test.dart`
+### `integration/vision_model_test.dart`
 - Vision model loading
 - Text-only inference with vision models
 - Conversation maintenance
 - Special token handling
 - Compatibility documentation
 
-### `tool_use_test.dart`
+### `integration/tool_use_test.dart`
 - Tool definition and execution
 - JSON tool call parsing
 - XML-wrapped tool calls

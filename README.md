@@ -98,13 +98,13 @@ Add the package(s) you need to your `pubspec.yaml`:
 ```yaml
 dependencies:
   # For Ollama backend
-  llm_ollama: ^0.1.0
+  llm_ollama: ^0.1.5
 
   # For ChatGPT/OpenAI backend
-  llm_chatgpt: ^0.1.0
+  llm_chatgpt: ^0.1.5
 
   # For local llama.cpp inference
-  llm_llamacpp: ^0.1.0
+  llm_llamacpp: ^0.1.5
 ```
 
 ## Package Details
@@ -309,6 +309,14 @@ print('Total requests: ${stats['model.total_requests']}');
 print('Avg latency: ${stats['model.avg_latency_ms']}ms');
 ```
 
+## API Documentation
+
+API documentation is automatically generated for all packages. You can:
+
+- **View online**: Check the [pub.dev](https://pub.dev/publishers/brynjen/packages) pages for each package
+- **Generate locally**: Run `./scripts/generate-docs.sh` to generate documentation locally
+- **CI artifacts**: Documentation is generated in CI and available as artifacts
+
 ## Development
 
 This is a Dart monorepo using path dependencies for local development.
@@ -323,6 +331,9 @@ cd ../llm_llamacpp && dart pub get
 # Run tests
 cd packages/llm_ollama && dart test
 cd ../llm_chatgpt && dart test
+
+# Run tests with coverage
+cd packages/llm_core && dart test --coverage=coverage
 
 # Build llama.cpp native libraries
 # See .github/workflows/build-llamacpp.yaml

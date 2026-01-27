@@ -1,12 +1,10 @@
 import 'dart:async';
 import 'dart:convert';
-
 import 'package:http/http.dart' as http;
 import 'package:llm_core/llm_core.dart';
-
+import 'package:llm_chatgpt/src/chatgpt_chat_repository_builder.dart';
 import 'package:llm_chatgpt/src/dto/gpt_embedding_response.dart';
-import 'package:llm_chatgpt/src/dto/gpt_response.dart';
-import 'package:llm_chatgpt/src/dto/gpt_stream_decoder.dart';
+import 'package:llm_chatgpt/src/gpt_stream_converter.dart';
 
 /// Repository for chatting with OpenAI's ChatGPT.
 ///
@@ -35,7 +33,11 @@ class ChatGPTChatRepository extends LLMChatRepository {
     this.retryConfig,
     this.timeoutConfig,
     http.Client? httpClient,
-  }) : httpClient = httpClient ?? http.Client();
+  }) : httpClient = httpClient ?? http.Client(),
+       _httpHelper = HttpClientHelper(
+         httpClient: httpClient ?? http.Client(),
+         timeoutConfig: timeoutConfig,
+       );
 
   /// The base URL for the OpenAI API.
   final String baseUrl;
@@ -45,6 +47,9 @@ class ChatGPTChatRepository extends LLMChatRepository {
 
   /// The HTTP client to use for requests.
   final http.Client httpClient;
+
+  /// The HTTP client helper for making requests.
+  final HttpClientHelper _httpHelper;
 
   /// The maximum number of tool attempts to make for a single request.
   final int maxToolAttempts;
@@ -57,6 +62,11 @@ class ChatGPTChatRepository extends LLMChatRepository {
 
   Uri get uri => Uri.parse('$baseUrl/v1/chat/completions');
 
+  /// Create a builder for configuring a new repository instance.
+  static ChatGPTChatRepositoryBuilder builder() {
+    return ChatGPTChatRepositoryBuilder();
+  }
+
   @override
   Stream<LLMChunk> streamChat(
     String model, {
@@ -67,236 +77,87 @@ class ChatGPTChatRepository extends LLMChatRepository {
     bool think = false,
     StreamChatOptions? options,
   }) async* {
-    // Validate inputs
     Validation.validateModelName(model);
     Validation.validateMessages(messages);
 
-    // Merge options with individual parameters (options take precedence)
-    final effectiveTools = options?.tools.isNotEmpty == true
-        ? options!.tools
-        : tools;
-    final effectiveExtra = options?.extra ?? extra;
-    final effectiveToolAttempts = options?.toolAttempts ?? toolAttempts;
+    final merged = StreamChatOptionsMerger.merge(
+      options: options,
+      think: think,
+      tools: tools,
+      extra: extra,
+      toolAttempts: toolAttempts,
+    );
 
     final body = {
       'model': model,
       'messages': messages.map((msg) => msg.toJson()).toList(growable: false),
       'stream': true,
     };
-    if (effectiveTools.isNotEmpty) {
-      body['tools'] = effectiveTools
+    if (merged.tools.isNotEmpty) {
+      body['tools'] = merged.tools
           .map((tool) => tool.toJson)
           .toList(growable: false);
     }
 
     final response = await RetryUtil.executeWithRetry(
-      operation: () => _sendStreamingRequest('POST', uri, body: body),
+      operation: () => _httpHelper.sendStreamingRequest(
+        method: 'POST',
+        uri: uri,
+        headers: {
+          'content-type': 'application/json',
+          'accept': 'text/event-stream',
+          'authorization': 'Bearer $apiKey',
+        },
+        body: utf8.encode(json.encode(body)),
+        applyTimeoutToSend: true, // OpenAI applies timeout to send
+      ),
       config: retryConfig,
-      isRetryable: (error) {
-        if (error is LLMApiException && error.statusCode != null) {
-          return retryConfig?.shouldRetryForStatusCode(error.statusCode!) ??
-              false;
-        }
-        return error is TimeoutException ||
-            error.toString().toLowerCase().contains('connection') ||
-            error.toString().toLowerCase().contains('network');
-      },
+      isRetryable: (error) =>
+          ErrorHandlers.isRetryableError(error, retryConfig),
     );
     try {
       switch (response.statusCode) {
-        case 200: // HttpStatus.ok
-          yield* toLLMStream(
-            response,
-            model: model,
-            tools: effectiveTools,
-            messages: messages,
-            extra: effectiveExtra,
-            toolAttempts: effectiveToolAttempts ?? maxToolAttempts,
-          );
+        case 200:
+          final chunkStream = GPTStreamConverter.toLLMStream(response);
+          if (merged.tools.isNotEmpty) {
+            final executor = StreamToolExecutor(
+              tools: merged.tools,
+              extra: merged.extra,
+              maxToolAttempts: merged.toolAttempts ?? maxToolAttempts,
+              streamChatCallback:
+                  (
+                    String model,
+                    List<LLMMessage> messages,
+                    List<LLMTool> tools,
+                    dynamic extra,
+                    int toolAttempts,
+                  ) => streamChat(
+                    model,
+                    messages: messages,
+                    tools: tools,
+                    extra: extra,
+                    toolAttempts: toolAttempts,
+                  ),
+            );
+            yield* executor.executeTools(
+              chunkStream: chunkStream,
+              model: model,
+              initialMessages: messages,
+              toolAttempts: merged.toolAttempts ?? maxToolAttempts,
+            );
+          } else {
+            yield* chunkStream;
+          }
         default:
-          // Read the error response body
-          final errorBody = await response.stream
-              .transform(utf8.decoder)
-              .join();
-          throw LLMApiException(
-            'OpenAI API error',
+          final errorBody = await _httpHelper.readErrorBody(response);
+          _httpHelper.handleHttpError(
             statusCode: response.statusCode,
-            responseBody: errorBody,
+            errorBody: errorBody,
+            defaultMessage: 'OpenAI API error',
           );
       }
     } catch (e) {
       rethrow;
-    }
-  }
-
-  Future<http.StreamedResponse> _sendStreamingRequest(
-    String method,
-    Uri uri, {
-    Map<String, dynamic>? body,
-  }) async {
-    final request = http.StreamedRequest(method, uri);
-    request.headers['content-type'] = 'application/json';
-    request.headers['accept'] = 'text/event-stream';
-    request.headers['authorization'] = 'Bearer $apiKey';
-
-    if (body != null) {
-      final bodyBytes = utf8.encode(json.encode(body));
-      request.headers['content-length'] = bodyBytes.length.toString();
-      request.sink.add(bodyBytes);
-    }
-    await request.sink.close();
-
-    // Use configured timeout or default
-    final config = timeoutConfig ?? TimeoutConfig.defaultConfig;
-    final payloadSize = body != null ? json.encode(body).length : 0;
-    final readTimeout = config.getReadTimeoutForPayload(payloadSize);
-
-    return httpClient
-        .send(request)
-        .timeout(
-          readTimeout,
-          onTimeout: () {
-            throw TimeoutException(
-              'Request timed out after ${readTimeout.inSeconds} seconds',
-              readTimeout,
-            );
-          },
-        );
-  }
-
-  Future<http.Response> _sendNonStreamingRequest(
-    String method,
-    Uri uri, {
-    Map<String, dynamic>? body,
-  }) async {
-    final headers = {
-      'content-type': 'application/json',
-      'accept': 'application/json',
-      'authorization': 'Bearer $apiKey',
-    };
-
-    final config = timeoutConfig ?? TimeoutConfig.defaultConfig;
-    final payloadSize = body != null ? json.encode(body).length : 0;
-    final readTimeout = config.getReadTimeoutForPayload(payloadSize);
-
-    final response = method.toUpperCase() == 'POST'
-        ? await httpClient
-              .post(
-                uri,
-                headers: headers,
-                body: body != null ? json.encode(body) : null,
-              )
-              .timeout(readTimeout)
-        : await httpClient.get(uri, headers: headers).timeout(readTimeout);
-
-    return response;
-  }
-
-  /// Converts the HTTP stream to an LLM chunk stream.
-  Stream<LLMChunk> toLLMStream(
-    http.StreamedResponse response, {
-    required String model,
-    required List<LLMMessage> messages,
-    required List<LLMTool> tools,
-    dynamic extra,
-    Map<String, dynamic> options = const {},
-    int toolAttempts = 5,
-  }) async* {
-    final List<LLMMessage> workingMessages = List.from(messages);
-    final Map<String, GPTToolCall> toolsToCall = {};
-
-    await for (final output
-        in response.stream
-            .transform(utf8.decoder)
-            .transform(GPTStreamDecoder.decoder)) {
-      if (output != '[DONE]') {
-        try {
-          final chunk = GPTChunk.fromJson(json.decode(output));
-          for (final toolCall
-              in chunk.choices[0].delta.toolCalls ?? <GPTToolCall>[]) {
-            if (toolCall.id != null) {
-              toolsToCall[toolCall.id!] = toolCall;
-            } else if (toolsToCall.isNotEmpty) {
-              // Only access .last if there are keys
-              final lastId = toolsToCall.keys.last;
-              final updatedTool = toolsToCall[lastId]?.copyWith(
-                newFunction: toolCall.function,
-              );
-              if (updatedTool != null) {
-                toolsToCall[lastId] = updatedTool;
-              }
-            }
-          }
-          final finishReason = chunk.choices[0].finishReason;
-          final content = chunk.choices[0].delta.content;
-
-          if (content != null && finishReason == null) {
-            yield chunk;
-          }
-          if (finishReason != null) {
-            if (finishReason == 'tool_calls' && toolsToCall.isNotEmpty) {
-              // Only proceed if we have actual tool calls
-              final toolCallsList = toolsToCall.values
-                  .map(
-                    (toolCall) => {
-                      'id': toolCall.id,
-                      'type': 'function',
-                      'function': {
-                        'name': toolCall.function.name,
-                        'arguments': toolCall.function.arguments,
-                      },
-                    },
-                  )
-                  .toList();
-
-              // Only add the assistant message if we have valid tool calls
-              if (toolCallsList.isNotEmpty) {
-                workingMessages.add(
-                  LLMMessage(
-                    content: null,
-                    role: LLMRole.assistant,
-                    toolCalls: toolCallsList,
-                  ),
-                );
-
-                // Then add tool response messages
-                for (final toolCall in toolsToCall.values) {
-                  final function = toolCall.function;
-                  final tool = tools.firstWhere(
-                    (t) => t.name == toolCall.function.name,
-                    orElse: () => throw Exception(
-                      'Tool ${toolCall.function.name} not found',
-                    ),
-                  );
-                  final toolResponse =
-                      await tool.execute(
-                        json.decode(function.arguments),
-                        extra: extra,
-                      ) ??
-                      'Unable to use not-existing tool ${function.name}';
-                  workingMessages.add(
-                    LLMMessage(
-                      content: toolResponse,
-                      role: LLMRole.tool,
-                      toolCallId: toolCall.id,
-                    ),
-                  );
-                  toolAttempts--;
-                }
-                yield* streamChat(
-                  model,
-                  messages: workingMessages,
-                  tools: tools,
-                  toolAttempts: toolAttempts,
-                  extra: extra,
-                );
-              }
-            }
-          }
-        } catch (e) {
-          // Don't rethrow here to allow stream to continue
-        }
-      }
     }
   }
 
@@ -308,21 +169,19 @@ class ChatGPTChatRepository extends LLMChatRepository {
   }) async {
     final body = {'model': model, 'input': messages};
     final response = await RetryUtil.executeWithRetry(
-      operation: () => _sendNonStreamingRequest(
-        'POST',
-        Uri.parse('$baseUrl/v1/embeddings'),
-        body: body,
+      operation: () => _httpHelper.sendNonStreamingRequest(
+        method: 'POST',
+        uri: Uri.parse('$baseUrl/v1/embeddings'),
+        headers: {
+          'content-type': 'application/json',
+          'accept': 'application/json',
+          'authorization': 'Bearer $apiKey',
+        },
+        body: json.encode(body),
       ),
       config: retryConfig,
-      isRetryable: (error) {
-        if (error is LLMApiException && error.statusCode != null) {
-          return retryConfig?.shouldRetryForStatusCode(error.statusCode!) ??
-              false;
-        }
-        return error is TimeoutException ||
-            error.toString().toLowerCase().contains('connection') ||
-            error.toString().toLowerCase().contains('network');
-      },
+      isRetryable: (error) =>
+          ErrorHandlers.isRetryableError(error, retryConfig),
     );
     switch (response.statusCode) {
       case 200: // HttpStatus.ok
