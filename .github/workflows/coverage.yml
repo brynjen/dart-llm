@@ -61,7 +61,7 @@ jobs:
       - name: Setup Flutter SDK
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.27.0'
+          flutter-version: '3.35.0'
           channel: 'stable'
       
       - name: Install Melos
@@ -129,8 +129,7 @@ jobs:
             dart pub global run coverage:format_coverage \
               --lcov \
               --in=$(echo $COVERAGE_DIRS | tr ' ' ',') \
-              --out=coverage/lcov.info \
-              --packages=coverage-artifacts/coverage-non-flutter/packages/llm_core/.dart_tool/package_config.json || echo "Coverage generation completed with warnings"
+              --out=coverage/lcov.info || echo "Coverage generation completed with warnings"
           else
             echo "No coverage data found"
             touch coverage/lcov.info
