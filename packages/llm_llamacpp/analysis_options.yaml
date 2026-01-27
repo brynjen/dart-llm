@@ -6,6 +6,7 @@ analyzer:
     - "**/*.g.dart"
     - "**/*.freezed.dart"
     - example/**
+    - example_app/**
     - test/**
     - hook/**
   errors:

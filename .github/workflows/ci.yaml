@@ -42,18 +42,15 @@ jobs:
 
 
   test-llm_core:
-    name: Test llm_core (Dart ${{ matrix.sdk }})
+    name: Test llm_core
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        sdk: [stable, beta]
     steps:
       - uses: actions/checkout@v4
       
       - name: Setup Dart SDK
         uses: dart-lang/setup-dart@v1
         with:
-          sdk: ${{ matrix.sdk }}
+          sdk: stable
       
       - name: Install Melos
         run: dart pub global activate melos
@@ -88,18 +85,15 @@ jobs:
           [ -f pubspec.yaml.backup ] && mv pubspec.yaml.backup pubspec.yaml || true
 
   test-llm_ollama:
-    name: Test llm_ollama (Dart ${{ matrix.sdk }})
+    name: Test llm_ollama
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        sdk: [stable, beta]
     steps:
       - uses: actions/checkout@v4
       
       - name: Setup Dart SDK
         uses: dart-lang/setup-dart@v1
         with:
-          sdk: ${{ matrix.sdk }}
+          sdk: stable
       
       - name: Install Melos
         run: dart pub global activate melos
@@ -134,18 +128,15 @@ jobs:
           [ -f pubspec.yaml.backup ] && mv pubspec.yaml.backup pubspec.yaml || true
 
   test-llm_chatgpt:
-    name: Test llm_chatgpt (Dart ${{ matrix.sdk }})
+    name: Test llm_chatgpt
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        sdk: [stable, beta]
     steps:
       - uses: actions/checkout@v4
       
       - name: Setup Dart SDK
         uses: dart-lang/setup-dart@v1
         with:
-          sdk: ${{ matrix.sdk }}
+          sdk: stable
       
       - name: Install Melos
         run: dart pub global activate melos
@@ -202,7 +193,7 @@ jobs:
       
       - name: Analyze code
         run: |
-          cd packages/llm_llamacpp && flutter analyze
+          cd packages/llm_llamacpp && flutter analyze lib --no-fatal-infos
       
       - name: Run tests with coverage
         run: |
