@@ -113,7 +113,7 @@ class OllamaChatRepository extends LLMChatRepository {
           .map((tool) => tool.toJson)
           .toList(growable: false);
     }
-    _applyBackendOptions(body, merged.backendOptions);
+    _applyBackendOptions(body, merged.backendOptions, merged.responseFormat);
 
     final response = await _httpHelper.sendStreamingRequest(
       method: 'POST',
@@ -154,6 +154,7 @@ class OllamaChatRepository extends LLMChatRepository {
                       toolAttempts: toolAttempts,
                       autoExecuteTools: merged.autoExecuteTools,
                       backendOptions: merged.backendOptions,
+                      responseFormat: merged.responseFormat,
                     ),
                   ),
             );
@@ -250,8 +251,16 @@ class OllamaChatRepository extends LLMChatRepository {
   void _applyBackendOptions(
     Map<String, dynamic> body,
     Map<String, dynamic> backendOptions,
+    LLMResponseFormat? responseFormat,
   ) {
-    if (backendOptions['format'] != null) {
+    if (responseFormat != null) {
+      switch (responseFormat) {
+        case JsonFormat():
+          body['format'] = 'json';
+        case JsonSchemaFormat():
+          body['format'] = responseFormat.schema;
+      }
+    } else if (backendOptions['format'] != null) {
       body['format'] = backendOptions['format'];
     }
     if (backendOptions['options'] != null) {

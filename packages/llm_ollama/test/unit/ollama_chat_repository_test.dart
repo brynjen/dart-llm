@@ -161,6 +161,114 @@ void main() {
       },
     );
 
+    test('JsonFormat sets format to "json" string', () async {
+      final client = _QueueStreamClient([
+        _streamResponse({
+          'model': 'test-model',
+          'created_at': '2024-01-01T00:00:00.000Z',
+          'message': {'role': 'assistant', 'content': 'ok'},
+          'done': true,
+        }),
+      ]);
+      final repo = OllamaChatRepository(
+        baseUrl: 'http://localhost:11434',
+        httpClient: client,
+      );
+
+      await repo
+          .streamChat(
+            'test-model',
+            messages: [LLMMessage(role: LLMRole.user, content: 'hello')],
+            options: const StreamChatOptions(responseFormat: JsonFormat()),
+          )
+          .toList();
+
+      expect(client.requestBodies.single['format'], 'json');
+    });
+
+    test('JsonSchemaFormat sets format to schema object', () async {
+      final schema = {'type': 'object', 'properties': {}};
+      final client = _QueueStreamClient([
+        _streamResponse({
+          'model': 'test-model',
+          'created_at': '2024-01-01T00:00:00.000Z',
+          'message': {'role': 'assistant', 'content': 'ok'},
+          'done': true,
+        }),
+      ]);
+      final repo = OllamaChatRepository(
+        baseUrl: 'http://localhost:11434',
+        httpClient: client,
+      );
+
+      await repo
+          .streamChat(
+            'test-model',
+            messages: [LLMMessage(role: LLMRole.user, content: 'hello')],
+            options: StreamChatOptions(
+              responseFormat: JsonSchemaFormat(
+                name: 'Result',
+                schema: schema,
+              ),
+            ),
+          )
+          .toList();
+
+      expect(client.requestBodies.single['format'], schema);
+    });
+
+    test('responseFormat takes precedence over backendOptions format', () async {
+      final client = _QueueStreamClient([
+        _streamResponse({
+          'model': 'test-model',
+          'created_at': '2024-01-01T00:00:00.000Z',
+          'message': {'role': 'assistant', 'content': 'ok'},
+          'done': true,
+        }),
+      ]);
+      final repo = OllamaChatRepository(
+        baseUrl: 'http://localhost:11434',
+        httpClient: client,
+      );
+
+      await repo
+          .streamChat(
+            'test-model',
+            messages: [LLMMessage(role: LLMRole.user, content: 'hello')],
+            options: const StreamChatOptions(
+              responseFormat: JsonFormat(),
+              backendOptions: {'format': 'should-be-ignored'},
+            ),
+          )
+          .toList();
+
+      expect(client.requestBodies.single['format'], 'json');
+    });
+
+    test('null responseFormat does not emit format key', () async {
+      final client = _QueueStreamClient([
+        _streamResponse({
+          'model': 'test-model',
+          'created_at': '2024-01-01T00:00:00.000Z',
+          'message': {'role': 'assistant', 'content': 'ok'},
+          'done': true,
+        }),
+      ]);
+      final repo = OllamaChatRepository(
+        baseUrl: 'http://localhost:11434',
+        httpClient: client,
+      );
+
+      await repo
+          .streamChat(
+            'test-model',
+            messages: [LLMMessage(role: LLMRole.user, content: 'hello')],
+          )
+          .toList();
+
+      expect(client.requestBodies.single.containsKey('format'), isFalse);
+    });
+
     test('backendOptions are mapped to Ollama request body', () async {
       final client = _QueueStreamClient([
         _streamResponse({

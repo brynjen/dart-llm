@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-04-09
+
+### Added
+- Structured output support via `StreamChatOptions.responseFormat`:
+  - `JsonFormat()` → `format: "json"` (works on all Ollama models)
+  - `JsonSchemaFormat(name, schema)` → `format: {schema}` (schema object passed directly; requires a model with `structured_outputs` capability)
+  - `responseFormat` takes precedence over the legacy `backendOptions['format']` key
+  - `responseFormat` is propagated through tool-call loops so format constraints are preserved across all turns
+- `OllamaRepository.supportsStructuredOutput(String model)` — queries `/api/show` capabilities array for `"structured_outputs"`; mirrors the existing `supportsVision()` pattern
+- Bumped `llm_core` dependency to `^0.2.0`
+
 ## [0.1.9] - 2026-02-28
 
 ### Added

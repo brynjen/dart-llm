@@ -62,7 +62,14 @@ Stream<LLMChunk> _streamChatImpl(
     }
   }
 
-  final isolateMessages = messages
+  final merged = StreamChatOptionsMerger.merge(
+    options: options,
+    think: think,
+    tools: tools,
+    extra: extra,
+  );
+
+  final rawIsolateMessages = messages
       .map(
         (msg) => IsolateMessage(
           role: switch (msg.role) {
@@ -75,6 +82,11 @@ Stream<LLMChunk> _streamChatImpl(
         ),
       )
       .toList();
+
+  final isolateMessages = injectResponseFormat(
+    rawIsolateMessages,
+    merged.responseFormat,
+  );
 
   LlamaCppChatRepository._log.fine(
     'Sending ${isolateMessages.length} messages for native template formatting',
@@ -178,11 +190,15 @@ Stream<LLMChunk> _streamChatImpl(
               'Continuing conversation with tool results...',
             );
             final nextOptions =
-                options?.copyWith(toolAttempts: currentAttempts - 1) ??
+                options?.copyWith(
+                  toolAttempts: currentAttempts - 1,
+                  responseFormat: merged.responseFormat,
+                ) ??
                 StreamChatOptions(
                   tools: effectiveTools,
                   extra: effectiveExtra,
                   toolAttempts: currentAttempts - 1,
+                  responseFormat: merged.responseFormat,
                 );
             yield* repo.streamChatWithGenerationOptions(
               model,

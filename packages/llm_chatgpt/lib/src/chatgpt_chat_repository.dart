@@ -99,6 +99,8 @@ class ChatGPTChatRepository extends LLMChatRepository {
           .toList(growable: false);
     }
 
+    _applyResponseFormat(body, merged.responseFormat);
+
     final response = await RetryUtil.executeWithRetry(
       operation: () => _httpHelper.sendStreamingRequest(
         method: 'POST',
@@ -143,6 +145,7 @@ class ChatGPTChatRepository extends LLMChatRepository {
                       toolAttempts: toolAttempts,
                       autoExecuteTools: merged.autoExecuteTools,
                       backendOptions: merged.backendOptions,
+                      responseFormat: merged.responseFormat,
                     ),
                   ),
             );
@@ -165,6 +168,27 @@ class ChatGPTChatRepository extends LLMChatRepository {
       }
     } catch (e) {
       rethrow;
+    }
+  }
+
+  /// Applies structured output format to the request body.
+  static void _applyResponseFormat(
+    Map<String, dynamic> body,
+    LLMResponseFormat? format,
+  ) {
+    if (format == null) return;
+    switch (format) {
+      case JsonFormat():
+        body['response_format'] = {'type': 'json_object'};
+      case JsonSchemaFormat():
+        body['response_format'] = {
+          'type': 'json_schema',
+          'json_schema': {
+            'name': format.name,
+            'strict': format.strict,
+            'schema': format.schema,
+          },
+        };
     }
   }
 

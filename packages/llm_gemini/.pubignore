@@ -1,0 +1,25 @@
+# .pubignore - Files to exclude from pub.dev publishing
+
+# Development and test files
+test/
+.dart_tool/
+.packages
+
+# IDE and editor files
+.idea/
+.vscode/
+*.iml
+
+# Coverage and analysis
+coverage/
+.coverage/
+
+# Documentation build artifacts
+doc/api/
+
+# Temporary files
+*.log
+*.tmp
+*.bak
+*.swp
+*~

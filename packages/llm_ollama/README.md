@@ -25,7 +25,7 @@ Available on [pub.dev](https://pub.dev/packages/llm_ollama).
 
 ```yaml
 dependencies:
-  llm_ollama: ^0.1.5
+  llm_ollama: ^0.2.0
 ```
 
 ## Prerequisites
@@ -96,6 +96,43 @@ final stream = repo.streamChat('llama3.2-vision:11b', messages: [
     images: [base64Image],
   ),
 ]);
+```
+
+### Structured Output
+
+Use `StreamChatOptions.responseFormat` to request structured JSON output:
+
+```dart
+import 'package:llm_core/llm_core.dart';
+
+// Simple JSON mode — works on all models
+final stream = repo.streamChat(
+  'qwen3:0.6b',
+  messages: [LLMMessage(role: LLMRole.user, content: 'List three fruits as JSON.')],
+  options: const StreamChatOptions(responseFormat: JsonFormat()),
+);
+
+// JSON Schema mode — requires a model with structured_outputs capability
+// Check support first:
+final repo_mgmt = OllamaRepository();
+final supportsSchema = await repo_mgmt.supportsStructuredOutput('llama3.2');
+
+const schema = {
+  'type': 'object',
+  'properties': {
+    'name': {'type': 'string'},
+    'age': {'type': 'integer'},
+  },
+  'required': ['name', 'age'],
+};
+
+final stream = repo.streamChat(
+  'llama3.2',
+  messages: [LLMMessage(role: LLMRole.user, content: 'Return a person object.')],
+  options: const StreamChatOptions(
+    responseFormat: JsonSchemaFormat(name: 'Person', schema: schema),
+  ),
+);
 ```
 
 ### Embeddings

@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-04-09
+
+### Added
+- Structured output support via `StreamChatOptions.responseFormat`:
+  - `JsonFormat()` — injects a "respond with valid JSON only" instruction into the system message
+  - `JsonSchemaFormat(name, schema)` — injects the JSON Schema into the system message
+  - If no system message exists, one is prepended; otherwise the instruction is appended to the existing system message
+  - `responseFormat` is propagated through tool-call loops so format constraints are preserved across all turns
+- `injectResponseFormat(messages, format)` package-private helper function; unit-testable standalone
+- Bumped `llm_core` dependency to `^0.2.0`
+
 ## [0.1.9] - 2026-02-28
 
 ### Changed

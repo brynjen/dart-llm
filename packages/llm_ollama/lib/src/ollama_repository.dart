@@ -106,6 +106,31 @@ class OllamaRepository {
     return OllamaVersion.fromJson(json);
   }
 
+  /// Check if a model supports structured output (JSON Schema mode).
+  ///
+  /// Models with structured output support have "structured_outputs" in their
+  /// capabilities array. Simple `"json"` string mode works on all models.
+  ///
+  /// Note: When using [JsonSchemaFormat] with Ollama, prefer calling this
+  /// first and falling back to [JsonFormat] if unsupported.
+  Future<bool> supportsStructuredOutput(String model) async {
+    try {
+      final response = await _sendRequest(
+        'POST',
+        Uri.parse('$baseUrl/api/show'),
+        body: {'model': model},
+      );
+      final json = jsonDecode(response.body);
+      final capabilities = json['capabilities'] as List<dynamic>?;
+      if (capabilities != null) {
+        return capabilities.contains('structured_outputs');
+      }
+      return false;
+    } catch (e) {
+      return false;
+    }
+  }
+
   /// Check if a model supports vision by querying its model info.
   ///
   /// Vision models have "vision" in their capabilities array.

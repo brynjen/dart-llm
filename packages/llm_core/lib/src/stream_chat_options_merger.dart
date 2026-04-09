@@ -1,3 +1,4 @@
+import 'package:llm_core/src/llm_response_format.dart';
 import 'package:llm_core/src/stream_chat_options.dart';
 import 'package:llm_core/src/tool/llm_tool.dart';
 
@@ -25,6 +26,7 @@ class StreamChatOptionsMerger {
     int? toolAttempts,
     bool autoExecuteTools = true,
     Map<String, dynamic> backendOptions = const {},
+    LLMResponseFormat? responseFormat,
   }) {
     return MergedOptions(
       think: options?.think ?? think,
@@ -33,6 +35,7 @@ class StreamChatOptionsMerger {
       toolAttempts: options?.toolAttempts ?? toolAttempts,
       autoExecuteTools: options?.autoExecuteTools ?? autoExecuteTools,
       backendOptions: options?.backendOptions ?? backendOptions,
+      responseFormat: options?.responseFormat ?? responseFormat,
     );
   }
 }
@@ -46,6 +49,7 @@ class MergedOptions {
     required this.backendOptions,
     this.extra,
     this.toolAttempts,
+    this.responseFormat,
   });
 
   final bool think;
@@ -54,4 +58,5 @@ class MergedOptions {
   final int? toolAttempts;
   final bool autoExecuteTools;
   final Map<String, dynamic> backendOptions;
+  final LLMResponseFormat? responseFormat;
 }

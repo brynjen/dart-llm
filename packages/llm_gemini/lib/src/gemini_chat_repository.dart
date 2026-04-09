@@ -127,6 +127,17 @@ class GeminiChatRepository extends LLMChatRepository {
         generationConfig[key] = merged.backendOptions[key];
       }
     }
+    // Apply structured output format to generationConfig
+    if (merged.responseFormat != null) {
+      switch (merged.responseFormat!) {
+        case JsonFormat():
+          generationConfig['responseMimeType'] = 'application/json';
+        case JsonSchemaFormat(:final schema):
+          generationConfig['responseMimeType'] = 'application/json';
+          generationConfig['responseSchema'] = schema;
+      }
+    }
+
     if (generationConfig.isNotEmpty) {
       body['generationConfig'] = generationConfig;
     }
@@ -147,6 +158,7 @@ class GeminiChatRepository extends LLMChatRepository {
       'maxOutputTokens',
       'stopSequences',
       'responseMimeType',
+      'responseSchema',
       'thinking_budget',
     };
     for (final entry in merged.backendOptions.entries) {
@@ -200,6 +212,7 @@ class GeminiChatRepository extends LLMChatRepository {
                     toolAttempts: toolAttempts,
                     autoExecuteTools: merged.autoExecuteTools,
                     backendOptions: merged.backendOptions,
+                    responseFormat: merged.responseFormat,
                   ),
                 ),
           );

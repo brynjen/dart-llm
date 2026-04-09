@@ -43,3 +43,7 @@ melos:
     test:integration:
       exec: dart test --tags integration
       description: Run integration tests for all packages (requires API keys)
+
+    publish:dry-run:
+      exec: dart pub publish --dry-run
+      description: Dry-run pub publish for all packages to verify they are ready for pub.dev

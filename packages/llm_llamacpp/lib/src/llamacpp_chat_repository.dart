@@ -16,6 +16,7 @@ import 'package:llm_core/llm_core.dart'
         LLMTool,
         ModelLoadException,
         StreamChatOptions,
+        StreamChatOptionsMerger,
         Validation,
         VisionNotSupportedException;
 import 'package:llm_llamacpp/src/backend_initializer.dart';
@@ -29,6 +30,7 @@ import 'package:llm_llamacpp/src/llamacpp_model.dart';
 import 'package:llm_llamacpp/src/llamacpp_repository.dart';
 import 'package:llm_llamacpp/src/loader/loader.dart';
 
+import 'package:llm_llamacpp/src/response_format_injector.dart';
 import 'package:llm_llamacpp/src/tool_call_stream_handler.dart';
 import 'package:llm_llamacpp/src/tool_executor.dart';
 

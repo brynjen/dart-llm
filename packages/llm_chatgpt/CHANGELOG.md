@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-04-09
+
+### Added
+- Structured output support via `StreamChatOptions.responseFormat`:
+  - `JsonFormat()` → `response_format: {type: "json_object"}` (native OpenAI API)
+  - `JsonSchemaFormat(name, schema, strict)` → `response_format: {type: "json_schema", json_schema: {name, strict, schema}}` (native OpenAI API)
+  - `responseFormat` is propagated through tool-call loops so format constraints are preserved across all turns
+- Bumped `llm_core` dependency to `^0.2.0`
+
 ## [0.1.9] - 2026-02-28
 
 ### Changed

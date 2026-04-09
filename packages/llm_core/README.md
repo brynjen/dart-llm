@@ -6,7 +6,7 @@ Core abstractions for LLM (Large Language Model) interactions in Dart.
 
 Available on [pub.dev](https://pub.dev/packages/llm_core).
 
-This package provides the foundational interfaces and models used by LLM backend implementations such as `llm_ollama`, `llm_chatgpt`, and `llm_llamacpp`.
+This package provides the foundational interfaces and models used by LLM backend implementations such as `llm_ollama`, `llm_chatgpt`, `llm_claude`, `llm_gemini`, and `llm_llamacpp`.
 
 ## Important: interfaces only
 
@@ -16,6 +16,8 @@ To actually run chat/embeddings you must use a backend implementation, for examp
 
 - `llm_ollama` (talks to a local/remote Ollama server)
 - `llm_chatgpt` (talks to OpenAI / ChatGPT-compatible APIs)
+- `llm_claude` (talks to Anthropic Claude API)
+- `llm_gemini` (talks to Google Gemini API)
 - `llm_llamacpp` (runs local inference via llama.cpp)
 
 ## Installation
@@ -24,14 +26,14 @@ Most users should depend on a backend implementation (it re-exports `llm_core` t
 
 ```yaml
 dependencies:
-  llm_ollama: ^0.1.5
+  llm_ollama: ^0.2.0
 ```
 
 If you're implementing your own backend, depend on `llm_core` directly:
 
 ```yaml
 dependencies:
-  llm_core: ^0.1.5
+  llm_core: ^0.2.0
 ```
 
 ## Core Types
@@ -119,12 +121,53 @@ final options = StreamChatOptions(
   think: true,
   tools: [MyTool()],
   toolAttempts: 5,
-  timeout: Duration(minutes: 5),
-  retryConfig: RetryConfig(maxAttempts: 3),
+  responseFormat: JsonSchemaFormat(name: 'Answer', schema: mySchema),
 );
 
 final stream = repo.streamChat('model', messages: messages, options: options);
 ```
+
+### Structured Output
+
+`LLMResponseFormat` is a sealed class for controlling model output format. Each backend implements it according to its API capabilities:
+
+```dart
+// Simple JSON mode — model produces valid JSON
+const options = StreamChatOptions(responseFormat: JsonFormat());
+
+// JSON Schema mode — model output must conform to a schema
+const options = StreamChatOptions(
+  responseFormat: JsonSchemaFormat(
+    name: 'Person',
+    schema: {
+      'type': 'object',
+      'properties': {
+        'name': {'type': 'string'},
+        'age': {'type': 'integer'},
+      },
+      'required': ['name', 'age'],
+    },
+  ),
+);
+```
+
+Both are `const`-constructible and work with exhaustive `switch` pattern matching:
+
+```dart
+final instruction = switch (format) {
+  JsonFormat() => 'Respond with JSON.',
+  JsonSchemaFormat() => 'Respond with JSON matching: ${format.name}',
+};
+```
+
+Backend behaviour:
+| Backend | `JsonFormat` | `JsonSchemaFormat` |
+|---|---|---|
+| `llm_chatgpt` | `response_format: {type: "json_object"}` | `response_format: {type: "json_schema", ...}` |
+| `llm_gemini` | `generationConfig.responseMimeType` | + `generationConfig.responseSchema` |
+| `llm_ollama` | `format: "json"` | `format: {schema}` |
+| `llm_claude` | system-message injection | system-message injection with schema |
+| `llm_llamacpp` | system-message injection | system-message injection with schema |
 
 ### Retry Configuration
 

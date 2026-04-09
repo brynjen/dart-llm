@@ -55,6 +55,9 @@ export 'src/timeout_config.dart';
 // Stream chat options
 export 'src/stream_chat_options.dart';
 
+// Structured output
+export 'src/llm_response_format.dart';
+
 // Validation
 export 'src/validation.dart';
 

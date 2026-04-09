@@ -1,6 +1,6 @@
 name: llm_claude
 description: Anthropic Claude API backend for LLM interactions. Provides streaming chat and tool calling via the Anthropic Messages API.
-version: 0.1.0
+version: 0.2.0
 resolution: workspace
 homepage: https://github.com/brynjen/dart-llm
 repository: https://github.com/brynjen/dart-llm
@@ -11,12 +11,13 @@ topics:
   - claude
   - llm
   - ai
+  - chat
 
 environment:
   sdk: ^3.8.0
 
 dependencies:
-  llm_core: ^0.1.9
+  llm_core: ^0.2.0
   http: ^1.3.0
 
 dev_dependencies:

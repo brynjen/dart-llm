@@ -204,4 +204,109 @@ void main() {
       expect(msgs.every((m) => m['role'] != 'system'), isTrue);
     });
   });
+
+  group('ClaudeChatRepository responseFormat', () {
+    final messages = [LLMMessage(role: LLMRole.user, content: 'hi')];
+
+    test('JsonFormat injects JSON-only instruction into system field', () async {
+      late Map<String, dynamic> capturedBody;
+      final client = MockClient((request) async {
+        capturedBody = json.decode(request.body) as Map<String, dynamic>;
+        return http.Response(
+          _simpleResponse(),
+          200,
+          headers: {'content-type': 'text/event-stream'},
+        );
+      });
+
+      final repo = ClaudeChatRepository(apiKey: 'key', httpClient: client);
+      await repo
+          .streamChat(
+            'claude-opus-4-6',
+            messages: messages,
+            options: const StreamChatOptions(responseFormat: JsonFormat()),
+          )
+          .toList();
+
+      final system = capturedBody['system'] as String;
+      expect(system, contains('valid JSON'));
+    });
+
+    test('JsonSchemaFormat injects schema instruction with schema JSON', () async {
+      late Map<String, dynamic> capturedBody;
+      final client = MockClient((request) async {
+        capturedBody = json.decode(request.body) as Map<String, dynamic>;
+        return http.Response(
+          _simpleResponse(),
+          200,
+          headers: {'content-type': 'text/event-stream'},
+        );
+      });
+
+      final repo = ClaudeChatRepository(apiKey: 'key', httpClient: client);
+      await repo
+          .streamChat(
+            'claude-opus-4-6',
+            messages: messages,
+            options: const StreamChatOptions(
+              responseFormat: JsonSchemaFormat(
+                name: 'MyOutput',
+                schema: {'type': 'object'},
+              ),
+            ),
+          )
+          .toList();
+
+      final system = capturedBody['system'] as String;
+      expect(system, contains('Schema name: MyOutput'));
+      expect(system, contains('"type":"object"'));
+    });
+
+    test('JsonFormat appended after existing system message', () async {
+      late Map<String, dynamic> capturedBody;
+      final client = MockClient((request) async {
+        capturedBody = json.decode(request.body) as Map<String, dynamic>;
+        return http.Response(
+          _simpleResponse(),
+          200,
+          headers: {'content-type': 'text/event-stream'},
+        );
+      });
+
+      final repo = ClaudeChatRepository(apiKey: 'key', httpClient: client);
+      await repo
+          .streamChat(
+            'claude-opus-4-6',
+            messages: [
+              LLMMessage(role: LLMRole.system, content: 'Be concise.'),
+              ...messages,
+            ],
+            options: const StreamChatOptions(responseFormat: JsonFormat()),
+          )
+          .toList();
+
+      final system = capturedBody['system'] as String;
+      expect(system, startsWith('Be concise.'));
+      expect(system, contains('valid JSON'));
+    });
+
+    test('null responseFormat does not inject system field', () async {
+      late Map<String, dynamic> capturedBody;
+      final client = MockClient((request) async {
+        capturedBody = json.decode(request.body) as Map<String, dynamic>;
+        return http.Response(
+          _simpleResponse(),
+          200,
+          headers: {'content-type': 'text/event-stream'},
+        );
+      });
+
+      final repo = ClaudeChatRepository(apiKey: 'key', httpClient: client);
+      await repo
+          .streamChat('claude-opus-4-6', messages: messages)
+          .toList();
+
+      expect(capturedBody.containsKey('system'), isFalse);
+    });
+  });
 }

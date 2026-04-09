@@ -99,6 +99,14 @@ class ClaudeChatRepository extends LLMChatRepository {
       body['system'] = converted.system;
     }
 
+    // Inject structured output instruction into the system field
+    if (merged.responseFormat != null) {
+      final instruction = _buildSchemaInstruction(merged.responseFormat!);
+      final existing = body['system'] as String?;
+      body['system'] =
+          existing != null ? '$existing\n\n$instruction' : instruction;
+    }
+
     if (merged.tools.isNotEmpty) {
       body['tools'] = merged.tools
           .map((t) => _toolToClaudeFormat(t))
@@ -164,6 +172,7 @@ class ClaudeChatRepository extends LLMChatRepository {
                     toolAttempts: toolAttempts,
                     autoExecuteTools: merged.autoExecuteTools,
                     backendOptions: merged.backendOptions,
+                    responseFormat: merged.responseFormat,
                   ),
                 ),
           );
@@ -208,6 +217,22 @@ class ClaudeChatRepository extends LLMChatRepository {
       'Consider using a dedicated embedding model or service.',
     );
   }
+
+  /// Builds a system-message instruction for structured output.
+  ///
+  /// Claude has no native response_format API, so the constraint is injected
+  /// into the system field and appended after any user-defined system content.
+  static String _buildSchemaInstruction(LLMResponseFormat format) =>
+      switch (format) {
+        JsonFormat() =>
+          'Respond with valid JSON only. '
+          'Do not include any explanation or text outside the JSON.',
+        JsonSchemaFormat() =>
+          'Respond with valid JSON only, conforming exactly to the following '
+          'JSON Schema. Do not include any explanation or text outside the '
+          'JSON.\n\nSchema name: ${format.name}\nSchema:\n'
+          '${json.encode(format.schema)}',
+      };
 
   /// Converts an [LLMTool] to Claude's tool format.
   static Map<String, dynamic> _toolToClaudeFormat(LLMTool tool) {

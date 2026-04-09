@@ -17,7 +17,7 @@ Available on [pub.dev](https://pub.dev/packages/llm_chatgpt).
 
 ```yaml
 dependencies:
-  llm_chatgpt: ^0.1.5
+  llm_chatgpt: ^0.2.0
 ```
 
 ## Prerequisites
@@ -50,6 +50,40 @@ await for (final chunk in stream) {
 final stream = repo.streamChat('gpt-4o',
   messages: messages,
   tools: [MyTool()],
+);
+```
+
+### Structured Output
+
+Use `StreamChatOptions.responseFormat` to enforce JSON output natively via the OpenAI `response_format` API:
+
+```dart
+import 'package:llm_core/llm_core.dart';
+
+// Simple JSON mode
+final stream = repo.streamChat(
+  'gpt-4o',
+  messages: [LLMMessage(role: LLMRole.user, content: 'List three fruits as JSON.')],
+  options: const StreamChatOptions(responseFormat: JsonFormat()),
+);
+
+// JSON Schema mode (strict schema enforcement)
+const schema = {
+  'type': 'object',
+  'properties': {
+    'name': {'type': 'string'},
+    'age': {'type': 'integer'},
+  },
+  'required': ['name', 'age'],
+  'additionalProperties': false,
+};
+
+final stream = repo.streamChat(
+  'gpt-4o',
+  messages: [LLMMessage(role: LLMRole.user, content: 'Return a person object.')],
+  options: const StreamChatOptions(
+    responseFormat: JsonSchemaFormat(name: 'Person', schema: schema),
+  ),
 );
 ```
 

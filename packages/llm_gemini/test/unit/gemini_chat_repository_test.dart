@@ -236,5 +236,85 @@ void main() {
       expect(embeddings[0].embedding, [0.1, 0.2]);
       expect(embeddings[1].embedding, [0.3, 0.4]);
     });
+
+    test('JsonFormat sets generationConfig.responseMimeType to application/json',
+        () async {
+      late Map<String, dynamic> capturedBody;
+      final client = MockClient((request) async {
+        capturedBody = json.decode(request.body) as Map<String, dynamic>;
+        return http.Response(
+          _simpleResponse(),
+          200,
+          headers: {'content-type': 'text/event-stream'},
+        );
+      });
+
+      final repo = GeminiChatRepository(apiKey: 'key', httpClient: client);
+      await repo
+          .streamChat(
+            'gemini-2.0-flash',
+            messages: [LLMMessage(role: LLMRole.user, content: 'hi')],
+            options: const StreamChatOptions(responseFormat: JsonFormat()),
+          )
+          .toList();
+
+      final gc = capturedBody['generationConfig'] as Map<String, dynamic>;
+      expect(gc['responseMimeType'], 'application/json');
+      expect(gc.containsKey('responseSchema'), isFalse);
+    });
+
+    test(
+        'JsonSchemaFormat sets responseMimeType and responseSchema in generationConfig',
+        () async {
+      late Map<String, dynamic> capturedBody;
+      final client = MockClient((request) async {
+        capturedBody = json.decode(request.body) as Map<String, dynamic>;
+        return http.Response(
+          _simpleResponse(),
+          200,
+          headers: {'content-type': 'text/event-stream'},
+        );
+      });
+
+      final repo = GeminiChatRepository(apiKey: 'key', httpClient: client);
+      await repo
+          .streamChat(
+            'gemini-2.0-flash',
+            messages: [LLMMessage(role: LLMRole.user, content: 'hi')],
+            options: const StreamChatOptions(
+              responseFormat: JsonSchemaFormat(
+                name: 'Answer',
+                schema: {'type': 'OBJECT', 'properties': {}},
+              ),
+            ),
+          )
+          .toList();
+
+      final gc = capturedBody['generationConfig'] as Map<String, dynamic>;
+      expect(gc['responseMimeType'], 'application/json');
+      expect(gc['responseSchema'], {'type': 'OBJECT', 'properties': {}});
+    });
+
+    test('null responseFormat does not emit generationConfig', () async {
+      late Map<String, dynamic> capturedBody;
+      final client = MockClient((request) async {
+        capturedBody = json.decode(request.body) as Map<String, dynamic>;
+        return http.Response(
+          _simpleResponse(),
+          200,
+          headers: {'content-type': 'text/event-stream'},
+        );
+      });
+
+      final repo = GeminiChatRepository(apiKey: 'key', httpClient: client);
+      await repo
+          .streamChat(
+            'gemini-2.0-flash',
+            messages: [LLMMessage(role: LLMRole.user, content: 'hi')],
+          )
+          .toList();
+
+      expect(capturedBody.containsKey('generationConfig'), isFalse);
+    });
   });
 }

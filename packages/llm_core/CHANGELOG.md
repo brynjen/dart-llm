@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-04-09
+
+### Added
+- `LLMResponseFormat` sealed class hierarchy for structured output:
+  - `JsonFormat` — simple JSON mode; instructs the model to produce valid JSON without schema enforcement
+  - `JsonSchemaFormat({required name, required schema, strict = true})` — full JSON Schema mode; schema is forwarded to the backend verbatim
+  - Both are `const`-constructible and work with exhaustive `switch` pattern matching
+- `responseFormat` field on `StreamChatOptions` (nullable, defaults to `null`; fully backward compatible)
+- `StreamChatOptionsMerger` and `MergedOptions` now carry and propagate `responseFormat`
+
 ## [0.1.9] - 2026-02-28
 
 ### Changed

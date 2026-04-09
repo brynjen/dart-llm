@@ -1,3 +1,4 @@
+import 'package:llm_core/src/llm_response_format.dart';
 import 'package:llm_core/src/retry_config.dart';
 import 'package:llm_core/src/tool/llm_tool.dart';
 
@@ -26,6 +27,7 @@ class StreamChatOptions {
   /// [backendOptions] - Backend-specific chat options.
   /// [timeout] - Request timeout (overrides repository default).
   /// [retryConfig] - Retry configuration (overrides repository default).
+  /// [responseFormat] - Structured output format to request from the model.
   const StreamChatOptions({
     this.think = false,
     this.tools = const [],
@@ -35,6 +37,7 @@ class StreamChatOptions {
     this.backendOptions = const {},
     this.timeout,
     this.retryConfig,
+    this.responseFormat,
   });
 
   /// Whether to request thinking/reasoning output (if supported).
@@ -72,6 +75,14 @@ class StreamChatOptions {
   /// If null, uses the repository's default retry configuration.
   final RetryConfig? retryConfig;
 
+  /// Structured output format to request from the model.
+  ///
+  /// When set, instructs the model to produce JSON output. Use [JsonFormat]
+  /// for unconstrained JSON, or [JsonSchemaFormat] to enforce a specific schema.
+  ///
+  /// If null, no structured output is requested (default behaviour).
+  final LLMResponseFormat? responseFormat;
+
   /// Create a copy of these options with some fields changed.
   StreamChatOptions copyWith({
     bool? think,
@@ -82,6 +93,7 @@ class StreamChatOptions {
     Map<String, dynamic>? backendOptions,
     Duration? timeout,
     RetryConfig? retryConfig,
+    LLMResponseFormat? responseFormat,
   }) {
     return StreamChatOptions(
       think: think ?? this.think,
@@ -92,6 +104,7 @@ class StreamChatOptions {
       backendOptions: backendOptions ?? this.backendOptions,
       timeout: timeout ?? this.timeout,
       retryConfig: retryConfig ?? this.retryConfig,
+      responseFormat: responseFormat ?? this.responseFormat,
     );
   }
 }
