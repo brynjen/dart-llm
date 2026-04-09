@@ -102,5 +102,17 @@ build-android/deps/
 # Generated files
 **/flutter/ephemeral/.plugin_symlinks/
 
-# Explicitly don't ignore the llamacpp submodule (even though it's excluded from pub.dev via .pubignore)
+# The llamacpp directory is a native C++ dependency tracked in git but excluded from
+# the published Dart package via packages/llm_llamacpp/.pubignore.
+#
+# Several broad patterns above (Makefile, *.log, **/gradle-wrapper.jar) unintentionally
+# match tracked files inside the native library, triggering `dart pub publish --dry-run`
+# warnings. The negations below scope those patterns out of the llamacpp tree.
+#
+# Note: three files remain unavoidably gitignored by the native library's own internal
+# .gitignore files (build-xcframework.sh, *.log inside llamacpp/, xcshareddata/*.plist).
+# These cannot be un-ignored without modifying third-party code; they are correctly
+# excluded from the published package by .pubignore.
 !packages/llm_llamacpp/llamacpp
+!packages/llm_llamacpp/llamacpp/**/Makefile
+!packages/llm_llamacpp/llamacpp/**/gradle-wrapper.jar
