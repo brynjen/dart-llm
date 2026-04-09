@@ -14,7 +14,9 @@ dart-llm/
 │   ├── llm_core/          # Core abstractions (no dependencies on other packages)
 │   ├── llm_ollama/        # Ollama backend (depends on llm_core)
 │   ├── llm_chatgpt/       # OpenAI/ChatGPT backend (depends on llm_core)
-│   └── llm_llamacpp/      # llama.cpp local inference (depends on llm_core)
+│   ├── llm_llamacpp/      # llama.cpp local inference (depends on llm_core)
+│   ├── llm_claude/        # Anthropic Claude backend (depends on llm_core)
+│   └── llm_gemini/        # Google Gemini backend (depends on llm_core)
 ```
 
 ### Dependency Graph
@@ -24,7 +26,9 @@ llm_core (base)
     ↑
     ├── llm_ollama
     ├── llm_chatgpt
-    └── llm_llamacpp
+    ├── llm_llamacpp
+    ├── llm_claude
+    └── llm_gemini
 ```
 
 **Key Principle**: `llm_core` has no dependencies on backend packages, ensuring clean separation and allowing backends to be used independently.
@@ -88,6 +92,62 @@ abstract class LLMTool {
 - **Extra Context**: `extra` parameter allows passing user context to tools
 - **Backend Agnostic**: Tool interface works across all backends
 
+### Structured Output Architecture
+
+Structured output forces the model to produce valid JSON, optionally conforming to a user-supplied schema. The core type is a sealed class hierarchy:
+
+```dart
+sealed class LLMResponseFormat {
+  const LLMResponseFormat();
+}
+
+/// Simple JSON mode — model produces valid JSON, no schema enforced.
+final class JsonFormat extends LLMResponseFormat {
+  const JsonFormat();
+}
+
+/// Full JSON Schema mode — model output must conform to [schema].
+final class JsonSchemaFormat extends LLMResponseFormat {
+  const JsonSchemaFormat({
+    required this.name,
+    required this.schema,
+    this.strict = true,
+  });
+  final String name;
+  final Map<String, dynamic> schema;
+  final bool strict;
+}
+```
+
+**Usage**:
+```dart
+final options = StreamChatOptions(
+  responseFormat: JsonSchemaFormat(
+    name: 'person',
+    schema: {
+      'type': 'object',
+      'properties': {
+        'name': {'type': 'string'},
+        'age': {'type': 'integer'},
+      },
+      'required': ['name', 'age'],
+    },
+  ),
+);
+```
+
+**Per-Backend Implementation**:
+
+| Backend | Mechanism | Notes |
+|---|---|---|
+| `llm_chatgpt` | Native `response_format` field | `json_object` or `json_schema` with `strict` |
+| `llm_gemini` | Native `generationConfig.responseMimeType` + `responseSchema` | Schema uses UPPERCASE type names (`"STRING"`, `"OBJECT"`) |
+| `llm_ollama` | Native `format` field | `"json"` string or schema object; schema requires model support |
+| `llm_claude` | System message injection | No native API support; instruction appended to system prompt |
+| `llm_llamacpp` | System message injection | Instruction prepended/appended to system message |
+
+**Tool-Loop Propagation**: All backends forward `responseFormat` in the `StreamChatOptions` used for recursive tool-call rounds, ensuring the constraint is preserved across all iterations.
+
 ## Package Details
 
 ### llm_core
@@ -101,11 +161,12 @@ abstract class LLMTool {
 3. **LLMChunk**: Streaming response chunks
 4. **LLMResponse**: Complete response wrapper
 5. **LLMTool**: Tool definition interface
-6. **Exceptions**: Common exception types
-7. **Validation**: Input validation utilities
-8. **RetryConfig**: Retry logic configuration
-9. **TimeoutConfig**: Timeout configuration
-10. **StreamChatOptions**: Encapsulates all streaming options
+6. **LLMResponseFormat**: Structured output format (sealed class: `JsonFormat`, `JsonSchemaFormat`)
+7. **Exceptions**: Common exception types
+8. **Validation**: Input validation utilities
+9. **RetryConfig**: Retry logic configuration
+10. **TimeoutConfig**: Timeout configuration
+11. **StreamChatOptions**: Encapsulates all streaming options (including `responseFormat`)
 
 **Design Principles**:
 - **No Backend Dependencies**: Core doesn't know about specific backends
@@ -123,12 +184,14 @@ abstract class LLMTool {
 - Vision (image) support
 - Embeddings
 - Model management
+- Structured output (JSON mode and JSON Schema)
 
 **Implementation Details**:
 - Uses HTTP client for API communication
 - Supports Ollama-specific features (thinking tokens)
 - Handles SSE (Server-Sent Events) streaming
 - Implements retry logic with exponential backoff
+- `supportsStructuredOutput(model)` queries `/api/show` capabilities for schema support
 
 ### llm_chatgpt
 
@@ -139,6 +202,7 @@ abstract class LLMTool {
 - Tool/function calling
 - Embeddings
 - Azure OpenAI compatibility
+- Native structured output (`json_object` and `json_schema` modes)
 
 **Implementation Details**:
 - Uses HTTP client for API communication
@@ -157,12 +221,49 @@ abstract class LLMTool {
 - Tool calling via prompt convention
 - GPU acceleration support
 - Isolate-based inference
+- Structured output via system message injection
 
 **Implementation Details**:
 - Uses FFI to call native llama.cpp libraries
 - Supports multiple platforms (Linux, macOS, Windows, Android, iOS)
 - Handles model loading and context management
 - Implements prompt templates for different model families
+- `injectResponseFormat()` pure function prepends/appends to system message
+
+### llm_claude
+
+**Purpose**: Anthropic Claude backend implementation.
+
+**Features**:
+- Streaming chat
+- Tool/function calling
+- Thinking (extended reasoning) mode
+- Structured output via system message injection
+- Configurable base URL (custom endpoints)
+
+**Implementation Details**:
+- Uses HTTP client for Anthropic Messages API
+- Handles streaming SSE responses
+- Structured output achieved by appending schema instructions to the system prompt
+- No native embeddings API (throws `UnsupportedError`)
+- Implements retry logic with exponential backoff
+
+### llm_gemini
+
+**Purpose**: Google Gemini backend implementation.
+
+**Features**:
+- Streaming chat
+- Tool/function calling
+- Thinking (extended reasoning) mode
+- Native structured output (`responseMimeType` + `responseSchema`)
+- Embeddings
+
+**Implementation Details**:
+- Uses HTTP client for Gemini API
+- Handles streaming responses
+- `responseSchema` uses Gemini-specific UPPERCASE type names (`"STRING"`, `"OBJECT"`, etc.) — callers must use Gemini schema format, not standard JSON Schema
+- Implements retry logic with exponential backoff
 
 ## Design Patterns
 
@@ -194,6 +295,7 @@ final options = StreamChatOptions(
   toolAttempts: 5,
   timeout: Duration(minutes: 5),
   retryConfig: RetryConfig(maxAttempts: 3),
+  responseFormat: JsonSchemaFormat(name: 'result', schema: {...}),
 );
 ```
 
@@ -213,6 +315,10 @@ LLMChatRepository repo = OllamaChatRepository(...);
 LLMChatRepository repo = ChatGPTChatRepository(...);
 // or
 LLMChatRepository repo = LlamaCppChatRepository(...);
+// or
+LLMChatRepository repo = ClaudeChatRepository(...);
+// or
+LLMChatRepository repo = GeminiChatRepository(...);
 ```
 
 ## Extension Points
@@ -220,11 +326,10 @@ LLMChatRepository repo = LlamaCppChatRepository(...);
 ### Adding a New Backend
 
 1. **Create a new package** in `packages/`
-2. **Add dependency** on `llm_core`:
+2. **Add dependency** on `llm_core` (workspace resolution):
    ```yaml
    dependencies:
-     llm_core:
-       path: ../llm_core
+     llm_core: ^0.2.0
    ```
 3. **Implement LLMChatRepository**:
    ```dart
@@ -250,8 +355,10 @@ LLMChatRepository repo = LlamaCppChatRepository(...);
    Validation.validateModelName(model);
    Validation.validateMessages(messages);
    ```
-5. **Handle tool execution** if supported
-6. **Export** the repository in `lib/my_backend.dart`
+5. **Handle structured output** if the API supports it natively, otherwise inject via system message
+6. **Propagate responseFormat** in tool-loop `StreamChatOptions` construction
+7. **Handle tool execution** if supported
+8. **Export** the repository in `lib/my_backend.dart`
 
 ### Adding New Features to Core
 
@@ -394,11 +501,11 @@ final retryConfig = RetryConfig(
 
 ### Potential Extensions
 
-1. **Additional Backends**: Anthropic, Google, etc.
-2. **Caching Layer**: Response caching for cost reduction
-3. **Rate Limiting**: Built-in rate limiting
-4. **Observability**: Enhanced metrics and tracing
-5. **Batch Processing**: Batch API support
+1. **Caching Layer**: Response caching for cost reduction
+2. **Rate Limiting**: Built-in rate limiting
+3. **Observability**: Enhanced metrics and tracing
+4. **Batch Processing**: Batch API support
+5. **Additional Backends**: Other LLM providers as they mature
 
 ### Breaking Changes
 

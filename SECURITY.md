@@ -6,7 +6,8 @@ We currently support the following versions with security updates:
 
 | Version | Supported          |
 | ------- | ------------------ |
-| 0.1.x   | :white_check_mark: |
+| 0.2.x   | :white_check_mark: |
+| 0.1.x   | :x:                |
 
 ## Reporting a Vulnerability
 
@@ -87,6 +88,20 @@ When using local models via `llm_llamacpp`:
 - Be aware of rate limits and quotas
 - Monitor API usage for unexpected activity
 
+### Anthropic Claude (`llm_claude`)
+
+- API keys are sent over HTTPS
+- Review Anthropic's data usage and privacy policies
+- Be aware of rate limits and quotas
+- Monitor API usage for unexpected activity
+
+### Google Gemini (`llm_gemini`)
+
+- API keys are sent over HTTPS
+- Review Google's data usage and privacy policies
+- Be aware of rate limits and quotas
+- Monitor API usage for unexpected activity
+
 ### Ollama (`llm_ollama`)
 
 - Default installation may be accessible on local network
@@ -106,7 +121,7 @@ When using local models via `llm_llamacpp`:
 Security vulnerabilities in the following areas are considered valid:
 
 - Core package (`llm_core`) - interfaces and abstractions
-- Backend implementations (`llm_ollama`, `llm_chatgpt`, `llm_llamacpp`)
+- Backend implementations (`llm_ollama`, `llm_chatgpt`, `llm_llamacpp`, `llm_claude`, `llm_gemini`)
 - Authentication and credential handling
 - Network communication and API interactions
 - Input validation and sanitization

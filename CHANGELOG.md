@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-04-09
+
+### Added
+- **llm_claude** — New Anthropic Claude backend package: streaming chat, tool calling, thinking mode, and structured output via system message injection
+- **llm_gemini** — New Google Gemini backend package: streaming chat, tool calling, thinking mode, native structured output, and embeddings
+- **Structured output** (`LLMResponseFormat`) across all backends:
+  - `JsonFormat` — simple JSON mode
+  - `JsonSchemaFormat` — full JSON Schema enforcement (native where supported, system-message injection otherwise)
+  - `responseFormat` field added to `StreamChatOptions` (fully backward compatible)
+  - ChatGPT: native `response_format` API field (`json_object` / `json_schema`)
+  - Gemini: native `generationConfig.responseMimeType` + `responseSchema`
+  - Ollama: native `format` field; `supportsStructuredOutput(model)` capability check
+  - Claude & llama.cpp: system message injection
+
+### Changed
+- All packages bumped to `0.2.0`
+- `llm_core` dependency updated to `^0.2.0` across all backend packages
+
 ## [0.1.8] - 2026-02-26
 
 ### Tool Calling Stream Visibility (OpenAI-compliant)

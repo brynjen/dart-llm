@@ -170,6 +170,92 @@ jobs:
         run: |
           [ -f pubspec.yaml.backup ] && mv pubspec.yaml.backup pubspec.yaml || true
 
+  test-llm_claude:
+    name: Test llm_claude
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Dart SDK
+        uses: dart-lang/setup-dart@v1
+        with:
+          sdk: stable
+
+      - name: Install Melos
+        run: dart pub global activate melos
+
+      - name: Install dependencies (excluding llm_llamacpp which requires Flutter)
+        run: |
+          # Temporarily remove llm_llamacpp from workspace to avoid Flutter requirement
+          cp pubspec.yaml pubspec.yaml.backup
+          sed -i '/packages\/llm_llamacpp/d' pubspec.yaml
+          melos bootstrap --scope="llm_claude"
+
+      - name: Run tests with coverage
+        run: |
+          cd packages/llm_claude && dart test --coverage=coverage --exclude-tags integration
+
+      - name: Generate coverage report
+        run: |
+          cd packages/llm_claude
+          dart pub global activate coverage
+          dart pub global run coverage:format_coverage --lcov --in=coverage --out=coverage/lcov.info
+
+      - name: Upload coverage to artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: llm_claude-coverage
+          path: packages/llm_claude/coverage/lcov.info
+
+      - name: Restore original pubspec.yaml
+        if: always()
+        run: |
+          [ -f pubspec.yaml.backup ] && mv pubspec.yaml.backup pubspec.yaml || true
+
+  test-llm_gemini:
+    name: Test llm_gemini
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Dart SDK
+        uses: dart-lang/setup-dart@v1
+        with:
+          sdk: stable
+
+      - name: Install Melos
+        run: dart pub global activate melos
+
+      - name: Install dependencies (excluding llm_llamacpp which requires Flutter)
+        run: |
+          # Temporarily remove llm_llamacpp from workspace to avoid Flutter requirement
+          cp pubspec.yaml pubspec.yaml.backup
+          sed -i '/packages\/llm_llamacpp/d' pubspec.yaml
+          melos bootstrap --scope="llm_gemini"
+
+      - name: Run tests with coverage
+        run: |
+          cd packages/llm_gemini && dart test --coverage=coverage --exclude-tags integration
+
+      - name: Generate coverage report
+        run: |
+          cd packages/llm_gemini
+          dart pub global activate coverage
+          dart pub global run coverage:format_coverage --lcov --in=coverage --out=coverage/lcov.info
+
+      - name: Upload coverage to artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: llm_gemini-coverage
+          path: packages/llm_gemini/coverage/lcov.info
+
+      - name: Restore original pubspec.yaml
+        if: always()
+        run: |
+          [ -f pubspec.yaml.backup ] && mv pubspec.yaml.backup pubspec.yaml || true
+
   test-llm_llamacpp:
     name: Test llm_llamacpp
     runs-on: ubuntu-latest
@@ -245,10 +331,14 @@ jobs:
           cd packages/llm_core && dart pub outdated
           cd ../llm_ollama && dart pub outdated
           cd ../llm_chatgpt && dart pub outdated
-      
+          cd ../llm_claude && dart pub outdated
+          cd ../llm_gemini && dart pub outdated
+
       - name: Check for security issues
         run: |
           cd packages/llm_core && dart pub outdated --security || true
           cd ../llm_ollama && dart pub outdated --security || true
           cd ../llm_chatgpt && dart pub outdated --security || true
+          cd ../llm_claude && dart pub outdated --security || true
+          cd ../llm_gemini && dart pub outdated --security || true
 

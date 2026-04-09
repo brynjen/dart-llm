@@ -38,7 +38,7 @@ This project adheres to a code of conduct that all contributors are expected to 
 - **Dart SDK**: Version 3.8.0 or higher
 - **Flutter SDK**: Version 3.24.0 or higher (for `llm_llamacpp` package)
 - **Git**: For version control
-- **Melos**: For monorepo management (optional but recommended)
+- **Melos**: For monorepo management (recommended)
 
 ### Installing Melos
 
@@ -50,27 +50,18 @@ dart pub global activate melos
 
 ### Initial Setup
 
-1. **Install dependencies** for all packages:
+1. **Bootstrap all packages** (installs dependencies for every package):
    ```bash
-   # Using Melos (recommended)
    melos bootstrap
-   
-   # Or manually
-   cd packages/llm_core && dart pub get
-   cd ../llm_ollama && dart pub get
-   cd ../llm_chatgpt && dart pub get
-   cd ../llm_llamacpp && dart pub get
    ```
 
 2. **Verify setup**:
    ```bash
-   # Run all tests
-   melos test
-   
-   # Or manually
-   cd packages/llm_core && dart test
-   cd ../llm_ollama && dart test
-   cd ../llm_chatgpt && dart test
+   # Run all unit tests
+   melos run test:unit
+
+   # Run static analysis
+   melos run analyze
    ```
 
 ## Project Structure
@@ -83,11 +74,13 @@ dart-llm/
 │   ├── llm_core/          # Core abstractions and interfaces
 │   ├── llm_ollama/        # Ollama backend implementation
 │   ├── llm_chatgpt/       # OpenAI/ChatGPT backend implementation
-│   └── llm_llamacpp/      # llama.cpp local inference backend
+│   ├── llm_llamacpp/      # llama.cpp local inference backend
+│   ├── llm_claude/        # Anthropic Claude backend implementation
+│   └── llm_gemini/        # Google Gemini backend implementation
 ├── .github/
 │   └── workflows/         # CI/CD workflows
-├── melos.yaml            # Melos configuration
-└── README.md             # Main project documentation
+├── pubspec.yaml           # Root workspace + Melos scripts
+└── README.md              # Main project documentation
 ```
 
 ### Package Dependencies
@@ -96,6 +89,8 @@ dart-llm/
 - `llm_ollama`: Depends on `llm_core`
 - `llm_chatgpt`: Depends on `llm_core`
 - `llm_llamacpp`: Depends on `llm_core`
+- `llm_claude`: Depends on `llm_core`
+- `llm_gemini`: Depends on `llm_core`
 
 ## Making Changes
 
@@ -119,15 +114,15 @@ dart-llm/
 1. **Make your changes** in the appropriate package(s)
 2. **Run tests** to ensure nothing breaks:
    ```bash
-   melos test
+   melos run test:unit
    ```
 3. **Check code formatting**:
    ```bash
-   melos format:check
+   melos run format:check
    ```
 4. **Run static analysis**:
    ```bash
-   melos analyze
+   melos run analyze
    ```
 
 ## Testing
@@ -135,8 +130,11 @@ dart-llm/
 ### Running Tests
 
 ```bash
-# Run all tests
-melos test
+# Run all unit tests (excludes integration tests)
+melos run test:unit
+
+# Run all tests including integration (requires API keys)
+melos run test:integration
 
 # Run tests for a specific package
 cd packages/llm_core && dart test
@@ -151,6 +149,7 @@ cd packages/llm_core && dart test --coverage=coverage
 - **Integration tests**: Test interactions between components
 - **Test files**: Should be in the `test/` directory with `_test.dart` suffix
 - **Test organization**: Group related tests using `group()` function
+- **Integration tests**: Tag with `@Tags(['integration'])` so they can be excluded from CI
 
 Example test structure:
 
@@ -189,10 +188,10 @@ We use `dart format` for consistent code formatting:
 
 ```bash
 # Format all code
-melos format
+melos run format
 
 # Check formatting
-melos format:check
+melos run format:check
 ```
 
 ### Linting
@@ -200,7 +199,7 @@ melos format:check
 We use the `lints` package with recommended rules. Run:
 
 ```bash
-melos analyze
+melos run analyze
 ```
 
 ### Style Guidelines
@@ -234,23 +233,34 @@ melos analyze
 
 4. **Error Handling**: Use appropriate exception types from `llm_core`
 
+### Adding a New Backend
+
+When adding a new backend package:
+
+1. Create the package directory under `packages/`
+2. Add it to the `workspace:` list in the root `pubspec.yaml`
+3. Implement `LLMChatRepository` from `llm_core`
+4. Add the package to CI jobs in `.github/workflows/ci.yaml`
+5. Create `README.md`, `CHANGELOG.md`, `LICENSE`, and `.pubignore`
+6. Update `ARCHITECTURE.md`, the root `README.md`, and `CONTRIBUTING.md`
+
 ## Submitting Changes
 
 ### Before Submitting
 
 1. **Ensure all tests pass**:
    ```bash
-   melos test
+   melos run test:unit
    ```
 
 2. **Verify formatting**:
    ```bash
-   melos format:check
+   melos run format:check
    ```
 
 3. **Run static analysis**:
    ```bash
-   melos analyze
+   melos run analyze
    ```
 
 4. **Update documentation** if needed:
@@ -291,8 +301,8 @@ melos analyze
 Releases are managed by maintainers manually:
 
 ```bash
-# Version bumping (maintainers only)
-melos version
+# Verify all packages are ready for pub.dev
+melos run publish:dry-run
 
 # Publishing to pub.dev is done manually by maintainers
 # There is no automated publishing workflow
