@@ -28,7 +28,6 @@ linter:
     - always_put_required_named_parameters_first
     - avoid_empty_else
     - avoid_relative_lib_imports
-    - avoid_returning_null_for_future
     - avoid_slow_async_io
     - cancel_subscriptions
     - close_sinks
@@ -56,7 +55,6 @@ linter:
     - prefer_conditional_assignment
     - prefer_const_constructors_in_immutables
     - prefer_contains
-    - prefer_equal_for_default_values
     - prefer_final_in_for_each
     - prefer_for_elements_to_map_fromIterable
     - prefer_function_declarations_over_variables

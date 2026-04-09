@@ -25,6 +25,19 @@ export 'src/ollama_chat_repository.dart';
 export 'src/ollama_chat_repository_builder.dart';
 export 'src/ollama_repository.dart';
 
+// Pool — multi-instance orchestration
+export 'src/pool/ollama_pool.dart'
+    show
+        OllamaPool,
+        OllamaNoEligibleInstanceException,
+        OllamaQueueFullException;
+export 'src/pool/ollama_pool_builder.dart';
+export 'src/pool/ollama_instance_config.dart';
+export 'src/pool/ollama_model_config.dart';
+export 'src/pool/health_check_config.dart';
+export 'src/pool/pool_stats.dart';
+export 'src/pool/semaphore.dart' show OllamaQueueTimeoutException;
+
 // DTOs (for advanced usage)
 export 'src/dto/ollama_model.dart';
 export 'src/dto/ollama_response.dart';

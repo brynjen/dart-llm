@@ -11,7 +11,35 @@ workspace:
   - packages/llm_ollama
   - packages/llm_chatgpt
   - packages/llm_llamacpp
+  - packages/llm_claude
+  - packages/llm_gemini
 
 dev_dependencies:
   melos: ^7.0.0
   args: ^2.5.0
+
+melos:
+  scripts:
+    analyze:
+      exec: dart analyze
+      description: Analyze all packages for issues
+
+    format:
+      exec: dart format .
+      description: Format all packages
+
+    format:check:
+      exec: dart format --set-exit-if-changed .
+      description: Check formatting for all packages (exits non-zero if unformatted)
+
+    test:
+      exec: dart test
+      description: Run all tests for all packages
+
+    test:unit:
+      exec: dart test --exclude-tags integration
+      description: Run unit tests for all packages
+
+    test:integration:
+      exec: dart test --tags integration
+      description: Run integration tests for all packages (requires API keys)

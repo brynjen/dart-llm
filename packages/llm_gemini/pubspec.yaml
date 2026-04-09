@@ -1,0 +1,26 @@
+name: llm_gemini
+description: Google Gemini API backend for LLM interactions. Provides streaming chat, embeddings, and tool calling via the Gemini API.
+version: 0.1.0
+resolution: workspace
+homepage: https://github.com/brynjen/dart-llm
+repository: https://github.com/brynjen/dart-llm
+issue_tracker: https://github.com/brynjen/dart-llm/issues
+documentation: https://pub.dev/documentation/llm_gemini/latest/
+topics:
+  - google
+  - gemini
+  - llm
+  - ai
+  - embeddings
+
+environment:
+  sdk: ^3.8.0
+
+dependencies:
+  llm_core: ^0.1.9
+  http: ^1.3.0
+
+dev_dependencies:
+  lints: ^6.0.0
+  test: ^1.24.0
+  dotenv: ^4.2.0

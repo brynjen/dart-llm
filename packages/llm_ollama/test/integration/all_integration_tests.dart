@@ -51,6 +51,7 @@ import 'edge_cases_test.dart' as edge_cases;
 import 'model_info_test.dart' as model_info;
 import 'streaming_test.dart' as streaming;
 import 'stream_chunk_boundary_tool_loop_test.dart' as chunk_boundary;
+import 'ollama_pool_integration_test.dart' as ollama_pool;
 
 void main() {
   basic_chat.main();
@@ -65,4 +66,5 @@ void main() {
   model_info.main();
   streaming.main();
   chunk_boundary.main();
+  ollama_pool.main();
 }

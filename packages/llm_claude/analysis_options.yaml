@@ -46,4 +46,3 @@ linter:
     - prefer_spread_collections
     - require_trailing_commas
     - use_rethrow_when_possible
-

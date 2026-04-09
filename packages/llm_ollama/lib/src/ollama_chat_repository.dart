@@ -194,7 +194,22 @@ class OllamaChatRepository extends LLMChatRepository {
     required List<String> messages,
     Map<String, dynamic> options = const {},
   }) async {
-    final body = {'model': model, 'input': messages, 'options': options};
+    // keep_alive and keepAlive are top-level Ollama API fields, not model
+    // options. Extract them before building the body so callers (e.g.
+    // OllamaPool) can inject keep_alive via the options map.
+    final keepAlive = options['keep_alive'] ?? options['keepAlive'];
+    final filteredOptions = keepAlive == null
+        ? options
+        : (Map<String, dynamic>.from(options)
+            ..remove('keep_alive')
+            ..remove('keepAlive'));
+
+    final body = <String, dynamic>{
+      'model': model,
+      'input': messages,
+      if (filteredOptions.isNotEmpty) 'options': filteredOptions,
+      if (keepAlive != null) 'keep_alive': keepAlive,
+    };
     final response = await RetryUtil.executeWithRetry(
       operation: () => _httpHelper.sendNonStreamingRequest(
         method: 'POST',
