@@ -20,7 +20,7 @@ const String _githubOwner = 'brynjen';
 const String _githubRepo = 'dart-llm';
 
 /// Package version - should match pubspec.yaml
-const String _packageVersion = '0.1.0';
+const String _packageVersion = '0.2.0';
 
 /// Asset ID for the llama.cpp library
 const String _llamaAssetId = 'package:llm_llamacpp/llama.dart';
