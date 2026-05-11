@@ -50,6 +50,7 @@ class LlamaCppChatRepository extends LLMChatRepository {
     this.threads,
     this.nGpuLayers = 0,
     this.maxToolAttempts = 90,
+    this.stopTokens = const ['<|im_end|>', '<|endoftext|>', '</s>'],
     String? loraPath,
     double loraScale = 1.0,
   }) : _loraPath = loraPath,
@@ -64,6 +65,7 @@ class LlamaCppChatRepository extends LLMChatRepository {
     this.threads,
     this.nGpuLayers = 0,
     this.maxToolAttempts = 90,
+    this.stopTokens = const ['<|im_end|>', '<|endoftext|>', '</s>'],
     String? loraPath,
     double loraScale = 1.0,
   }) : _model = model,
@@ -80,6 +82,7 @@ class LlamaCppChatRepository extends LLMChatRepository {
     this.threads,
     this.nGpuLayers = 0,
     this.maxToolAttempts = 90,
+    this.stopTokens = const ['<|im_end|>', '<|endoftext|>', '</s>'],
     String? loraPath,
     double loraScale = 1.0,
   }) : _modelPath = modelPath,
@@ -101,6 +104,25 @@ class LlamaCppChatRepository extends LLMChatRepository {
 
   /// Maximum number of tool calling attempts.
   final int maxToolAttempts;
+
+  /// Text-level stop tokens checked against each generated token's text content.
+  ///
+  /// Generation stops when any of these strings is found in a token, complementing
+  /// the EOS token check done by [llama_vocab_is_eog]. Many ChatML-format models
+  /// (Qwen, Mistral, LLaMA-3, etc.) output `<|im_end|>` as a turn-end marker
+  /// instead of (or in addition to) the EOS token; without these stop tokens the
+  /// model keeps generating until [GenerationOptions.maxTokens] is exhausted,
+  /// producing truncated output.
+  ///
+  /// Defaults to common stop markers that cover most ChatML-compatible models.
+  /// Override for models that use a different chat template, e.g.:
+  /// ```dart
+  /// // Gemma
+  /// LlamaCppChatRepository(stopTokens: ['<end_of_turn>'])
+  /// // Phi-3
+  /// LlamaCppChatRepository(stopTokens: ['<|end|>'])
+  /// ```
+  final List<String> stopTokens;
 
   /// Whether this repository owns and should dispose the model.
   final bool _ownsModel;

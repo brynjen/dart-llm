@@ -83,7 +83,7 @@ Stream<LLMChunk> _streamChatImpl(
   final inferenceStream = PersistentInferenceIsolate.instance.runInference(
     modelPath: modelPath,
     prompt: '',
-    stopTokens: const [],
+    stopTokens: repo.stopTokens,
     contextSize: repo.contextSize,
     batchSize: repo.batchSize,
     threads: repo.threads,
