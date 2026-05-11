@@ -50,7 +50,14 @@ int _generateTokens(
     }
 
     if (pieceLen > 0) {
-      final piece = pieceBuffer.cast<Utf8>().toDartString(length: pieceLen);
+      // Use utf8.decode with allowMalformed:true instead of toDartString(length:).
+      // llama.cpp may split multibyte UTF-8 characters (e.g. CJK characters require
+      // 3 bytes) across token boundaries, producing an incomplete byte sequence per
+      // token. toDartString() calls utf8.decode with allowMalformed:false and throws
+      // FormatException on incomplete sequences. allowMalformed:true safely substitutes
+      // U+FFFD for incomplete sequences; subsequent tokens complete the character.
+      final bytes = pieceBuffer.cast<ffi.Uint8>().asTypedList(pieceLen);
+      final piece = utf8.decode(bytes, allowMalformed: true);
 
       bool shouldStop = false;
       for (final stopToken in stopTokens) {
