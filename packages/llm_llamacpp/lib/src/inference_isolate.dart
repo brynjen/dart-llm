@@ -5,6 +5,7 @@ import 'package:ffi/ffi.dart';
 import 'package:llm_llamacpp/src/backend_initializer.dart';
 import 'package:llm_llamacpp/src/bindings/llama_bindings.dart';
 import 'package:llm_llamacpp/src/isolate_messages.dart';
+import 'package:llm_llamacpp/src/streaming_utf8_decoder.dart';
 
 /// Runs inference in an isolate.
 ///
@@ -213,6 +214,8 @@ void runInference(InferenceRequest request) {
       const bufferSize = 256;
       var pieceBuffer = calloc<ffi.Char>(bufferSize);
       var generatedTokens = 0;
+      var stopped = false;
+      final tokenDecoder = StreamingUtf8Decoder();
       final newTokenPtr = calloc<ffi.Int32>(1);
 
       while (generatedTokens < request.options.maxTokens) {
@@ -255,7 +258,9 @@ void runInference(InferenceRequest request) {
         }
 
         if (pieceLen > 0) {
-          final piece = pieceBuffer.cast<Utf8>().toDartString(length: pieceLen);
+          final piece = tokenDecoder.add(
+            pieceBuffer.cast<ffi.Uint8>().asTypedList(pieceLen),
+          );
 
           // Check for stop tokens
           bool shouldStop = false;
@@ -266,9 +271,14 @@ void runInference(InferenceRequest request) {
             }
           }
 
-          if (shouldStop) break;
+          if (shouldStop) {
+            stopped = true;
+            break;
+          }
 
-          request.sendPort.send(InferenceToken(piece));
+          if (piece.isNotEmpty) {
+            request.sendPort.send(InferenceToken(piece));
+          }
         }
 
         // Decode the new token
@@ -279,6 +289,11 @@ void runInference(InferenceRequest request) {
         }
 
         generatedTokens++;
+      }
+
+      final trailingPiece = stopped ? '' : tokenDecoder.close();
+      if (trailingPiece.isNotEmpty) {
+        request.sendPort.send(InferenceToken(trailingPiece));
       }
 
       // Cleanup sampling

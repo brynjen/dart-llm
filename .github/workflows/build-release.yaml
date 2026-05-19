@@ -36,11 +36,52 @@ env:
 
 jobs:
   # ============================================
+  # ABI fingerprint (must match hook/build.dart#_computeAbiFingerprint)
+  # ============================================
+  abi-fingerprint:
+    runs-on: ubuntu-latest
+    outputs:
+      fingerprint: ${{ steps.compute.outputs.fingerprint }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Compute ABI fingerprint
+        id: compute
+        run: |
+          set -euo pipefail
+          # MUST stay in lockstep with `_abiFingerprintInputs` and
+          # `_computeAbiFingerprint` in packages/llm_llamacpp/hook/build.dart.
+          # Each input contributes: relative-path, NUL, file-bytes-without-CR,
+          # NUL. We then take the first 12 hex chars of SHA-256.
+          INPUTS=(
+            "lib/src/bindings/llama_bindings.dart"
+          )
+          ROOT="packages/llm_llamacpp"
+          fingerprint=$(python3 - "$ROOT" "${INPUTS[@]}" <<'PY'
+          import hashlib, sys
+          root = sys.argv[1]
+          paths = sys.argv[2:]
+          h = hashlib.sha256()
+          for rel in paths:
+              h.update(rel.encode("utf-8"))
+              h.update(b"\x00")
+              with open(f"{root}/{rel}", "rb") as f:
+                  h.update(f.read().replace(b"\r", b""))
+              h.update(b"\x00")
+          print(h.hexdigest()[:12])
+          PY
+          )
+          echo "fingerprint=$fingerprint" >> "$GITHUB_OUTPUT"
+          echo "ABI fingerprint: $fingerprint"
+
+  # ============================================
   # Linux x64 Build (with CUDA and Vulkan)
   # ============================================
   build-linux-x64:
     if: ${{ !inputs.skip_linux }}
     runs-on: ubuntu-24.04
+    needs: abi-fingerprint
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -115,8 +156,9 @@ jobs:
           find build-linux-x64 -name "*.so" -exec cp {} dist/ \; 2>/dev/null || true
           
           # Create zip
+          ABI_FP="${{ needs.abi-fingerprint.outputs.fingerprint }}"
           cd dist
-          zip -r ../llm_llamacpp-v${VERSION}-linux-x64.zip *.so
+          zip -r "../llm_llamacpp-v${VERSION}-abi${ABI_FP}-linux-x64.zip" *.so
           
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -130,6 +172,7 @@ jobs:
   build-macos-arm64:
     if: ${{ !inputs.skip_macos }}
     runs-on: macos-14  # M1/M2 runner
+    needs: abi-fingerprint
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -173,8 +216,9 @@ jobs:
           # Copy Metal shader if separate
           find build-macos-arm64 -name "*.metallib" -exec cp {} dist/ \; 2>/dev/null || true
           
+          ABI_FP="${{ needs.abi-fingerprint.outputs.fingerprint }}"
           cd dist
-          zip -r ../llm_llamacpp-v${VERSION}-macos-arm64.zip *
+          zip -r "../llm_llamacpp-v${VERSION}-abi${ABI_FP}-macos-arm64.zip" *
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -188,6 +232,7 @@ jobs:
   build-macos-x64:
     if: ${{ !inputs.skip_macos }}
     runs-on: macos-14  # Use free ARM runner, cross-compile to x64
+    needs: abi-fingerprint
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -230,8 +275,9 @@ jobs:
           mkdir -p dist
           find build-macos-x64 -name "*.dylib" -exec cp {} dist/ \;
           
+          ABI_FP="${{ needs.abi-fingerprint.outputs.fingerprint }}"
           cd dist
-          zip -r ../llm_llamacpp-v${VERSION}-macos-x64.zip *
+          zip -r "../llm_llamacpp-v${VERSION}-abi${ABI_FP}-macos-x64.zip" *
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -247,6 +293,7 @@ jobs:
   build-windows-x64:
     if: ${{ !inputs.skip_windows }}
     runs-on: windows-latest
+    needs: abi-fingerprint
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -304,7 +351,8 @@ jobs:
           Get-ChildItem -Path build-windows-x64 -Recurse -Filter "*.dll" | Copy-Item -Destination dist -Force
           
           # Create zip
-          Compress-Archive -Path dist\* -DestinationPath "llm_llamacpp-v$version-windows-x64.zip"
+          $abiFp = "${{ needs.abi-fingerprint.outputs.fingerprint }}"
+          Compress-Archive -Path dist\* -DestinationPath "llm_llamacpp-v$version-abi$abiFp-windows-x64.zip"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -313,11 +361,12 @@ jobs:
           path: llm_llamacpp-*.zip
 
   # ============================================
-  # Android arm64-v8a Build (CPU with KleidiAI)
+  # Android arm64-v8a Build (CPU with KleidiAI + Vulkan GPU)
   # ============================================
   build-android-arm64:
     if: ${{ !inputs.skip_android }}
     runs-on: ubuntu-latest
+    needs: abi-fingerprint
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -336,8 +385,17 @@ jobs:
 
       - name: Install dependencies
         run: |
+          # glslc / vulkan-headers are needed on the HOST so that
+          # llama.cpp can build the host-side `vulkan-shaders-gen` tool which
+          # compiles SPIR-V shaders that get baked into libggml-vulkan.so.
+          # The Android target still links against the NDK's libvulkan.so stub.
           sudo apt-get update
-          sudo apt-get install -y cmake ninja-build
+          sudo apt-get install -y \
+            cmake \
+            ninja-build \
+            glslc \
+            libvulkan-dev \
+            vulkan-tools
 
       - name: Build llama.cpp for Android arm64
         run: |
@@ -361,7 +419,9 @@ jobs:
             -DGGML_BACKEND_DL=ON \
             -DGGML_CPU_ALL_VARIANTS=ON \
             -DGGML_CPU_KLEIDIAI=ON \
-            -DGGML_OPENMP=ON
+            -DGGML_OPENMP=ON \
+            -DGGML_VULKAN=ON \
+            -DGGML_VULKAN_RUN_TESTS=OFF
           
           cmake --build . --config Release -j$(nproc)
 
@@ -375,8 +435,28 @@ jobs:
           # Copy all .so files
           find build-android-arm64 -name "*.so" -exec cp {} dist/ \;
           
+          # Copy OpenMP runtime required by GGML_OPENMP=ON.
+          OMP_LIB=$(find "$ANDROID_NDK_HOME/toolchains/llvm/prebuilt" -path "*/lib/linux/aarch64/libomp.so" -type f | head -1)
+          if [ -z "$OMP_LIB" ]; then
+            echo "ERROR: libomp.so not found in Android NDK for arm64-v8a"
+            exit 1
+          fi
+          cp "$OMP_LIB" dist/
+
+          for lib in libllama.so libggml.so libggml-base.so libomp.so libggml-vulkan.so; do
+            if [ ! -f "dist/$lib" ]; then
+              echo "ERROR: Missing required Android arm64 library: $lib"
+              exit 1
+            fi
+          done
+          if ! compgen -G "dist/libggml-cpu*.so" > /dev/null; then
+            echo "ERROR: Missing Android arm64 CPU backend libraries"
+            exit 1
+          fi
+
+          ABI_FP="${{ needs.abi-fingerprint.outputs.fingerprint }}"
           cd dist
-          zip -r ../llm_llamacpp-v${VERSION}-android-arm64-v8a.zip *.so
+          zip -r "../llm_llamacpp-v${VERSION}-abi${ABI_FP}-android-arm64-v8a.zip" *.so
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -390,6 +470,7 @@ jobs:
   build-android-arm:
     if: ${{ !inputs.skip_android }}
     runs-on: ubuntu-latest
+    needs: abi-fingerprint
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -430,7 +511,9 @@ jobs:
             -DLLAMA_CURL=OFF \
             -DGGML_NATIVE=OFF \
             -DGGML_LLAMAFILE=OFF \
-            -DGGML_BACKEND_DL=ON
+            -DGGML_BACKEND_DL=ON \
+            -DGGML_CPU_ALL_VARIANTS=OFF \
+            -DGGML_OPENMP=OFF
           
           cmake --build . --config Release -j$(nproc)
 
@@ -442,8 +525,20 @@ jobs:
           mkdir -p dist
           find build-android-arm -name "*.so" -exec cp {} dist/ \;
           
+          for lib in libllama.so libggml.so libggml-base.so; do
+            if [ ! -f "dist/$lib" ]; then
+              echo "ERROR: Missing required Android armeabi-v7a library: $lib"
+              exit 1
+            fi
+          done
+          if ! compgen -G "dist/libggml-cpu*.so" > /dev/null; then
+            echo "ERROR: Missing Android armeabi-v7a CPU backend libraries"
+            exit 1
+          fi
+
+          ABI_FP="${{ needs.abi-fingerprint.outputs.fingerprint }}"
           cd dist
-          zip -r ../llm_llamacpp-v${VERSION}-android-armeabi-v7a.zip *.so
+          zip -r "../llm_llamacpp-v${VERSION}-abi${ABI_FP}-android-armeabi-v7a.zip" *.so
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -457,6 +552,7 @@ jobs:
   build-android-x86_64:
     if: ${{ !inputs.skip_android }}
     runs-on: ubuntu-latest
+    needs: abi-fingerprint
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -498,7 +594,8 @@ jobs:
             -DGGML_NATIVE=OFF \
             -DGGML_LLAMAFILE=OFF \
             -DGGML_BACKEND_DL=ON \
-            -DGGML_CPU_ALL_VARIANTS=ON
+            -DGGML_CPU_ALL_VARIANTS=OFF \
+            -DGGML_OPENMP=OFF
           
           cmake --build . --config Release -j$(nproc)
 
@@ -510,8 +607,20 @@ jobs:
           mkdir -p dist
           find build-android-x86_64 -name "*.so" -exec cp {} dist/ \;
           
+          for lib in libllama.so libggml.so libggml-base.so; do
+            if [ ! -f "dist/$lib" ]; then
+              echo "ERROR: Missing required Android x86_64 library: $lib"
+              exit 1
+            fi
+          done
+          if ! compgen -G "dist/libggml-cpu*.so" > /dev/null; then
+            echo "ERROR: Missing Android x86_64 CPU backend libraries"
+            exit 1
+          fi
+
+          ABI_FP="${{ needs.abi-fingerprint.outputs.fingerprint }}"
           cd dist
-          zip -r ../llm_llamacpp-v${VERSION}-android-x86_64.zip *.so
+          zip -r "../llm_llamacpp-v${VERSION}-abi${ABI_FP}-android-x86_64.zip" *.so
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -525,6 +634,7 @@ jobs:
   build-ios:
     if: ${{ !inputs.skip_ios }}
     runs-on: macos-14
+    needs: abi-fingerprint
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -569,8 +679,9 @@ jobs:
           find build-ios-arm64 -name "*.a" -exec cp {} dist/ \;
           find build-ios-arm64 -name "*.metallib" -exec cp {} dist/ \; 2>/dev/null || true
           
+          ABI_FP="${{ needs.abi-fingerprint.outputs.fingerprint }}"
           cd dist
-          zip -r ../llm_llamacpp-v${VERSION}-ios-arm64.zip *
+          zip -r "../llm_llamacpp-v${VERSION}-abi${ABI_FP}-ios-arm64.zip" *
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4

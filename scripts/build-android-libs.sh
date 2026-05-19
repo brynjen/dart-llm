@@ -139,6 +139,44 @@ echo "Using llama.cpp from: $LLAMACPP_DIR"
 # Create build directory
 mkdir -p "$BUILD_DIR"
 
+openmp_required_for_abi() {
+    local ABI=$1
+    [ "$ABI" = "arm64-v8a" ]
+}
+
+omp_arch_for_abi() {
+    local ABI=$1
+    case "$ABI" in
+        arm64-v8a)
+            echo "aarch64"
+            ;;
+        armeabi-v7a)
+            echo "arm"
+            ;;
+        x86_64)
+            echo "x86_64"
+            ;;
+        x86)
+            echo "i386"
+            ;;
+        *)
+            echo ""
+            ;;
+    esac
+}
+
+find_libomp_for_abi() {
+    local ABI=$1
+    local OMP_ARCH
+    OMP_ARCH=$(omp_arch_for_abi "$ABI")
+
+    if [ -z "$OMP_ARCH" ]; then
+        return 1
+    fi
+
+    find "$NDK_PATH/toolchains/llvm/prebuilt" -path "*lib/linux/$OMP_ARCH/libomp.so" -type f 2>/dev/null | head -1
+}
+
 # ==========================================
 # Build function for a specific ABI
 # ==========================================
@@ -178,19 +216,20 @@ build_for_abi() {
         
         # === CPU Hardware Acceleration (from official Android example) ===
         -DGGML_BACKEND_DL=ON          # Dynamic backend loading
-        -DGGML_CPU_ALL_VARIANTS=ON    # All CPU optimizations (SME2, SVE2, AMX)
     )
 
     # ABI-specific optimizations
     if [ "$ABI" = "arm64-v8a" ]; then
-        echo "  Enabling arm64 optimizations: KleidiAI, OpenMP"
+        echo "  Enabling arm64 optimizations: CPU variants, KleidiAI, OpenMP"
         CMAKE_ARGS+=(
+            -DGGML_CPU_ALL_VARIANTS=ON # Runtime CPU feature variants
             -DGGML_CPU_KLEIDIAI=ON    # Arm's optimized inference library
             -DGGML_OPENMP=ON          # OpenMP for parallelization
         )
     else
-        echo "  x86_64 build (emulator): Basic CPU backend"
+        echo "  Non-arm64 build: generic CPU backend"
         CMAKE_ARGS+=(
+            -DGGML_CPU_ALL_VARIANTS=OFF
             -DGGML_CPU_KLEIDIAI=OFF
             -DGGML_OPENMP=OFF
         )
@@ -383,12 +422,12 @@ copy_libraries() {
         fi
     done
 
-    # Copy CPU backend variants (dynamically loaded at runtime for feature detection)
-    # With GGML_CPU_ALL_VARIANTS=ON, there are multiple variants like:
+    # Copy CPU backends (dynamically loaded at runtime for feature detection).
+    # With GGML_CPU_ALL_VARIANTS=ON for arm64, there are multiple variants like:
     # - libggml-cpu-android_armv8.0_1.so (baseline)
     # - libggml-cpu-android_armv8.2_1.so (dotprod)
     # - libggml-cpu-android_armv9.2_1.so (SME2)
-    # etc.
+    # Other Android ABIs build the generic libggml-cpu.so backend.
     local cpu_count=0
     for lib in $(find "$BUILD_DIR/$ABI" -name "libggml-cpu*.so" -type f 2>/dev/null); do
         local libname=$(basename "$lib")
@@ -399,28 +438,26 @@ copy_libraries() {
     done
     if [ $cpu_count -gt 0 ]; then
         echo "  ✓ Copied $cpu_count CPU backend variants"
-    fi
-    
-    # Copy libomp.so from NDK (required for OpenMP support in CPU backends)
-    # This is needed because the CPU backends are built with GGML_OPENMP=ON
-    if [ "$ABI" = "arm64-v8a" ]; then
-        local OMP_ARCH="aarch64"
-    elif [ "$ABI" = "x86_64" ]; then
-        local OMP_ARCH="x86_64"
     else
-        local OMP_ARCH=""
+        echo "  ✗ ERROR: No CPU backend libraries found!"
+        echo "    Expected at least one libggml-cpu*.so for dynamic backend loading."
+        return 1
     fi
     
-    if [ -n "$OMP_ARCH" ]; then
-        # Find libomp.so in NDK
-        local OMP_LIB=$(find "$NDK_PATH/toolchains/llvm/prebuilt" -path "*lib/linux/$OMP_ARCH/libomp.so" -type f 2>/dev/null | head -1)
+    # Copy libomp.so from NDK when GGML_OPENMP=ON for this ABI.
+    if openmp_required_for_abi "$ABI"; then
+        local OMP_ARCH
+        OMP_ARCH=$(omp_arch_for_abi "$ABI")
+        local OMP_LIB
+        OMP_LIB=$(find_libomp_for_abi "$ABI")
         if [ -n "$OMP_LIB" ] && [ -f "$OMP_LIB" ]; then
             cp "$OMP_LIB" "$JNILIBS_DIR/$ABI/"
             echo "  ✓ Copied libomp.so (OpenMP runtime)"
         else
-            echo "  ⚠ Warning: libomp.so not found in NDK for $OMP_ARCH"
-            echo "    CPU backends may fail to load at runtime."
+            echo "  ✗ ERROR: libomp.so not found in NDK for $OMP_ARCH"
+            echo "    OpenMP-enabled CPU backends require this runtime library."
             echo "    NDK path: $NDK_PATH"
+            return 1
         fi
     fi
 
@@ -450,6 +487,15 @@ copy_libraries() {
     fi
 
     echo "  ✓ All required libraries present"
+
+    if openmp_required_for_abi "$ABI" && [ ! -f "$JNILIBS_DIR/$ABI/libomp.so" ]; then
+        echo ""
+        echo "=========================================="
+        echo "ERROR: Missing OpenMP runtime for $ABI!"
+        echo "=========================================="
+        echo "Location: $JNILIBS_DIR/$ABI/libomp.so"
+        return 1
+    fi
     
     # Optional: Verify library dependencies using readelf
     # This checks that libllama.so actually declares dependencies on libggml.so
@@ -561,6 +607,15 @@ for ABI in arm64-v8a x86_64; do
                 missing+=("$lib")
             fi
         done
+
+        if openmp_required_for_abi "$ABI" && [ ! -f "$JNILIBS_DIR/$ABI/libomp.so" ]; then
+            missing+=("libomp.so")
+        fi
+
+        CPU_VARIANTS=$(find "$JNILIBS_DIR/$ABI" -name "libggml-cpu*.so" 2>/dev/null | wc -l)
+        if [ "$CPU_VARIANTS" -eq 0 ]; then
+            missing+=("libggml-cpu*.so")
+        fi
         
         if [ ${#missing[@]} -gt 0 ]; then
             echo ""
@@ -581,16 +636,6 @@ done
 
 if [ "$validation_failed" = true ]; then
     exit 1
-fi
-
-# Check for CPU backend variants
-CPU_VARIANTS=$(find "$JNILIBS_DIR/arm64-v8a" -name "libggml-cpu*.so" 2>/dev/null | wc -l)
-if [ "$CPU_VARIANTS" -eq 0 ]; then
-    echo ""
-    echo "=========================================="
-    echo "WARNING: No CPU backend variants found!"
-    echo "=========================================="
-    echo "CPU hardware acceleration may not work correctly."
 fi
 
 echo ""

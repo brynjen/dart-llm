@@ -1,8 +1,41 @@
 import 'dart:io';
 
+import 'package:dotenv/dotenv.dart';
+import 'package:path/path.dart' as p;
+
+const _packageDirName = 'llm_llamacpp';
+
+final DotEnv _integrationTestEnv = DotEnv(quiet: true);
+
+bool _integrationTestEnvLoaded = false;
+
+void _ensureIntegrationTestEnv() {
+  if (_integrationTestEnvLoaded) return;
+  _integrationTestEnvLoaded = true;
+  final candidates = [
+    p.join(Directory.current.path, '.env'),
+    p.join(Directory.current.path, 'packages', _packageDirName, '.env'),
+  ];
+  for (final filePath in candidates) {
+    if (File(filePath).existsSync()) {
+      _integrationTestEnv.load([filePath]);
+      break;
+    }
+  }
+}
+
+String? _env(String key) {
+  final fromPlatform = Platform.environment[key];
+  if (fromPlatform != null && fromPlatform.isNotEmpty) return fromPlatform;
+  _ensureIntegrationTestEnv();
+  if (_integrationTestEnv.isDefined(key)) return _integrationTestEnv[key];
+  return null;
+}
+
 /// Configuration for integration tests.
 ///
-/// Models can be specified via environment variables:
+/// Models can be specified via environment variables or a local `.env` file
+/// (copy `.env.example` to `.env` in this package):
 /// - LLAMA_TEST_MODEL: Path to a standard text model (GGUF)
 /// - LLAMA_TEST_VISION_MODEL: Path to a vision model (GGUF)
 /// - LLAMA_TEST_SMALL_MODEL: Path to a small/fast model for quick tests
@@ -29,7 +62,7 @@ class TestConfig {
   /// Path to a standard text model for testing
   String? get textModelPath {
     // Check environment variable first
-    final envPath = Platform.environment['LLAMA_TEST_MODEL'];
+    final envPath = _env('LLAMA_TEST_MODEL');
     if (envPath != null && File(envPath).existsSync()) {
       return envPath;
     }
@@ -53,7 +86,7 @@ class TestConfig {
 
   /// Path to a vision model for testing
   String? get visionModelPath {
-    final envPath = Platform.environment['LLAMA_TEST_VISION_MODEL'];
+    final envPath = _env('LLAMA_TEST_VISION_MODEL');
     if (envPath != null && File(envPath).existsSync()) {
       return envPath;
     }
@@ -76,7 +109,7 @@ class TestConfig {
 
   /// Path to a small model for quick tests
   String? get smallModelPath {
-    final envPath = Platform.environment['LLAMA_TEST_SMALL_MODEL'];
+    final envPath = _env('LLAMA_TEST_SMALL_MODEL');
     if (envPath != null && File(envPath).existsSync()) {
       return envPath;
     }
@@ -92,7 +125,7 @@ class TestConfig {
 
   /// Number of GPU layers to use
   int get gpuLayers {
-    final envLayers = Platform.environment['LLAMA_TEST_GPU_LAYERS'];
+    final envLayers = _env('LLAMA_TEST_GPU_LAYERS');
     if (envLayers != null) {
       return int.tryParse(envLayers) ?? 0;
     }
@@ -138,7 +171,8 @@ void skipIfNoModel(String? modelPath, String modelType) {
   if (modelPath == null || !File(modelPath).existsSync()) {
     throw TestSkippedException(
       'No $modelType model available. '
-      'Set LLAMA_TEST_MODEL environment variable or place model in test/models/',
+      'Set LLAMA_TEST_MODEL, use a local .env (see .env.example), '
+      'or place a model in test/models/',
     );
   }
 }

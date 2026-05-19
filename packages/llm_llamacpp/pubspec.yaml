@@ -28,11 +28,17 @@ dependencies:
   hooks: ^1.0.0
   code_assets: ^1.0.0
   logging: ^1.3.0
+  # Used by hook/build.dart to compute an ABI fingerprint of the FFI bindings,
+  # which keys both the local prebuilt cache and the GitHub Releases asset URL
+  # so that regenerating the bindings (because the upstream llama.cpp headers
+  # changed) automatically invalidates incompatible prebuilt bundles.
+  crypto: ^3.0.0
 
 dev_dependencies:
   lints: ^6.0.0
   test: ^1.24.0
   ffigen: ^20.1.1
+  dotenv: ^4.2.0
 
 flutter:
   plugin:

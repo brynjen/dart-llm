@@ -61,9 +61,9 @@ flutter run -d "iPhone 15 Pro"
 
 ## Features
 
-1. **Model Download** - Downloads Qwen3-0.6B (~400MB) from HuggingFace
-2. **Chat Interface** - Stream chat with the local model
-3. **Offline Inference** - Works completely offline after model download
+1. **Model Download** — Downloads LiquidAI LFM2.5-1.2B-Instruct Q4_K_M (~731 MB).
+2. **Text Chat** — Streaming chat with the local LFM2.5 text model.
+3. **Offline Inference** — Works completely offline after the model is downloaded.
 
 ## Troubleshooting
 

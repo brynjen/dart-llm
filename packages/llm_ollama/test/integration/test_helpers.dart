@@ -6,14 +6,54 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 
+import 'package:dotenv/dotenv.dart';
 import 'package:llm_ollama/llm_ollama.dart';
+import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
+
+const _packageDirName = 'llm_ollama';
+
+final DotEnv _integrationEnv = DotEnv(quiet: true);
+
+bool _integrationEnvLoaded = false;
+
+void _ensureIntegrationEnvLoaded() {
+  if (_integrationEnvLoaded) return;
+  _integrationEnvLoaded = true;
+  final candidates = [
+    p.join(Directory.current.path, '.env'),
+    p.join(Directory.current.path, 'packages', _packageDirName, '.env'),
+  ];
+  for (final filePath in candidates) {
+    if (File(filePath).existsSync()) {
+      _integrationEnv.load([filePath]);
+      break;
+    }
+  }
+}
 
 // ============================================================================
 // Test Configuration
 // ============================================================================
 
-const baseUrl = 'http://ollama.brynje.net';
+/// Default Ollama base URL for integration tests.
+///
+/// Override with `OLLAMA_BASE_URL` in the environment or in a local `.env`
+/// file (see `.env.example`).
+///
+/// Non-empty [Platform.environment] entries take precedence over `.env`.
+String get baseUrl {
+  final fromPlatform = Platform.environment['OLLAMA_BASE_URL'];
+  if (fromPlatform != null && fromPlatform.isNotEmpty) {
+    return fromPlatform;
+  }
+  _ensureIntegrationEnvLoaded();
+  if (_integrationEnv.isDefined('OLLAMA_BASE_URL')) {
+    return _integrationEnv['OLLAMA_BASE_URL']!;
+  }
+  return 'http://ollama.brynje.net';
+}
+
 const chatModel = 'glm-4.7-flash';
 const embeddingModel = 'nomic-embed-text';
 

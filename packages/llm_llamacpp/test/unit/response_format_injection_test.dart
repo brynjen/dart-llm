@@ -25,7 +25,10 @@ void main() {
 
     test('JsonFormat appends instruction to existing system message', () {
       final sysMsg = IsolateMessage(role: 'system', content: 'Be concise.');
-      final result = injectResponseFormat([sysMsg, userMsg], const JsonFormat());
+      final result = injectResponseFormat([
+        sysMsg,
+        userMsg,
+      ], const JsonFormat());
       expect(result.length, 2);
       expect(result[0].role, 'system');
       expect(result[0].content, startsWith('Be concise.'));
@@ -34,7 +37,10 @@ void main() {
 
     test('JsonSchemaFormat prepends system message when none exists', () {
       final schema = {'type': 'object', 'properties': {}};
-      const format = JsonSchemaFormat(name: 'MyOutput', schema: {'type': 'object', 'properties': {}});
+      const format = JsonSchemaFormat(
+        name: 'MyOutput',
+        schema: {'type': 'object', 'properties': {}},
+      );
       final result = injectResponseFormat([userMsg], format);
       expect(result.length, 2);
       expect(result[0].role, 'system');

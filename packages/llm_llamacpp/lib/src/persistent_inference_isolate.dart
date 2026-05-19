@@ -7,6 +7,7 @@ import 'package:llm_llamacpp/src/backend_initializer.dart';
 import 'package:llm_llamacpp/src/bindings/llama_bindings.dart';
 import 'package:llm_llamacpp/src/generation_options.dart';
 import 'package:llm_llamacpp/src/isolate_messages.dart';
+import 'package:llm_llamacpp/src/streaming_utf8_decoder.dart';
 
 part 'native_template_applier.dart';
 part 'inference_isolate_handler.dart';

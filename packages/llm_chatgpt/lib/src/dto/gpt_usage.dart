@@ -1,20 +1,13 @@
 /// Token usage details.
 class GPTUsageTokenDetails {
-  GPTUsageTokenDetails({required this.cachedTokens, required this.audioTokens});
+  GPTUsageTokenDetails({required this.cachedTokens});
 
   final int cachedTokens;
-  final int audioTokens;
 
   factory GPTUsageTokenDetails.fromJson(Map<String, dynamic> json) =>
-      GPTUsageTokenDetails(
-        cachedTokens: json['cached_tokens'],
-        audioTokens: json['audio_tokens'],
-      );
+      GPTUsageTokenDetails(cachedTokens: json['cached_tokens']);
 
-  Map<String, dynamic> toJson() => {
-    'cached_tokens': cachedTokens,
-    'audio_tokens': audioTokens,
-  };
+  Map<String, dynamic> toJson() => {'cached_tokens': cachedTokens};
 }
 
 /// Token usage statistics.

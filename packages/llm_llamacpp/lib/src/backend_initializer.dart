@@ -53,7 +53,65 @@ class BackendInitializer {
 
     bindings.llama_backend_init();
 
+    _logRegisteredBackends(lib);
+    _logSystemInfo(bindings);
+
     return (lib, bindings);
+  }
+
+  /// Prints `llama_print_system_info()` so we can see what feature flags the
+  /// loaded native library was compiled with. Useful when debugging FFI ABI
+  /// mismatches or wrong CPU variant selection.
+  static void _logSystemInfo(LlamaBindings bindings) {
+    try {
+      final infoPtr = bindings.llama_print_system_info();
+      if (infoPtr.address == 0) {
+        return;
+      }
+      final info = infoPtr.cast<Utf8>().toDartString();
+      // ignore: avoid_print
+      print('[llm_llamacpp] System info: $info');
+    } catch (e) {
+      // ignore: avoid_print
+      print('[llm_llamacpp] Could not read system info: $e');
+    }
+  }
+
+  /// Logs the list of backends ggml currently has registered. Useful to
+  /// confirm which backends (CPU / Vulkan / etc.) actually came online.
+  static void _logRegisteredBackends(ffi.DynamicLibrary lib) {
+    try {
+      final ggmlBackendRegCount = lib.lookupFunction<ffi.Size Function(),
+          int Function()>('ggml_backend_reg_count');
+      final ggmlBackendRegGet = lib.lookupFunction<
+          ffi.Pointer<ffi.Void> Function(ffi.Size),
+          ffi.Pointer<ffi.Void> Function(int)>('ggml_backend_reg_get');
+      final ggmlBackendRegName = lib.lookupFunction<
+          ffi.Pointer<ffi.Char> Function(ffi.Pointer<ffi.Void>),
+          ffi.Pointer<ffi.Char> Function(ffi.Pointer<ffi.Void>)>(
+        'ggml_backend_reg_name',
+      );
+
+      final count = ggmlBackendRegCount();
+      final names = <String>[];
+      for (var i = 0; i < count; i++) {
+        final reg = ggmlBackendRegGet(i);
+        if (reg.address == 0) continue;
+        final namePtr = ggmlBackendRegName(reg);
+        if (namePtr.address == 0) continue;
+        names.add(namePtr.cast<Utf8>().toDartString());
+      }
+      // ignore: avoid_print
+      print(
+        '[llm_llamacpp] Registered backends ($count): ${names.join(', ')}',
+      );
+    } catch (e) {
+      // Older ggml builds may not expose these helpers. Not fatal.
+      // ignore: avoid_print
+      print(
+        '[llm_llamacpp] Could not enumerate registered backends: $e',
+      );
+    }
   }
 
   /// Initializes the llama.cpp backend in an isolate (skips all backend loading).
@@ -271,8 +329,19 @@ class BackendInitializer {
       for (final entity in files) {
         if (entity is File) {
           final filename = entity.uri.pathSegments.last;
-          // Look for CPU backend files: libggml-cpu-*.so
-          if (filename.startsWith('libggml-cpu-') && filename.endsWith('.so')) {
+          // Load CPU backend variants and any GPU/accelerator backends shipped
+          // alongside (e.g. libggml-vulkan.so). All match `libggml-<name>.so`
+          // except libggml.so / libggml-base.so themselves which are loaded
+          // earlier as core dependencies.
+          final isCpuBackend =
+              filename.startsWith('libggml-cpu-') && filename.endsWith('.so');
+          final isOtherBackend =
+              filename.startsWith('libggml-') &&
+              filename.endsWith('.so') &&
+              filename != 'libggml.so' &&
+              filename != 'libggml-base.so' &&
+              !filename.startsWith('libggml-cpu-');
+          if (isCpuBackend || isOtherBackend) {
             final fullPath = entity.path;
             // ignore: avoid_print
             print('[llm_llamacpp] Loading backend: $filename');
@@ -285,6 +354,9 @@ class BackendInitializer {
                 print('[llm_llamacpp] Successfully loaded: $filename');
                 loadedCount++;
               } else {
+                // GPU backends may legitimately fail at runtime (e.g. Vulkan
+                // driver missing or unsupported on this device). That's not
+                // fatal; the CPU backend will continue to work.
                 // ignore: avoid_print
                 print(
                   '[llm_llamacpp] Failed to load: $filename (returned null)',

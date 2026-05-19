@@ -6,8 +6,31 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 
+import 'package:dotenv/dotenv.dart';
 import 'package:llm_gemini/llm_gemini.dart';
+import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
+
+const _packageDirName = 'llm_gemini';
+
+final DotEnv _integrationEnv = DotEnv(quiet: true);
+
+bool _integrationEnvLoaded = false;
+
+void _ensureIntegrationEnvLoaded() {
+  if (_integrationEnvLoaded) return;
+  _integrationEnvLoaded = true;
+  final candidates = [
+    p.join(Directory.current.path, '.env'),
+    p.join(Directory.current.path, 'packages', _packageDirName, '.env'),
+  ];
+  for (final filePath in candidates) {
+    if (File(filePath).existsSync()) {
+      _integrationEnv.load([filePath]);
+      break;
+    }
+  }
+}
 
 // ============================================================================
 // Test Configuration
@@ -19,8 +42,20 @@ const chatModel = 'gemini-2.0-flash';
 /// Default embedding model for testing.
 const embeddingModel = 'text-embedding-004';
 
-/// Gets the API key from environment variables.
-String? getApiKey() => Platform.environment['GEMINI_API_KEY'];
+/// Gets the API key from environment variables or a local `.env` file.
+///
+/// Non-empty [Platform.environment] entries take precedence over `.env`.
+String? getApiKey() {
+  final fromPlatform = Platform.environment['GEMINI_API_KEY'];
+  if (fromPlatform != null && fromPlatform.isNotEmpty) {
+    return fromPlatform;
+  }
+  _ensureIntegrationEnvLoaded();
+  if (_integrationEnv.isDefined('GEMINI_API_KEY')) {
+    return _integrationEnv['GEMINI_API_KEY'];
+  }
+  return null;
+}
 
 /// Checks if API key is available for testing.
 bool hasApiKey() {
@@ -42,7 +77,8 @@ GeminiChatRepository createRepository({
   final apiKey = customApiKey ?? getApiKey();
   if (apiKey == null || apiKey.isEmpty) {
     throw StateError(
-      'API key is required. Set GEMINI_API_KEY environment variable.',
+      'API key is required. Copy .env.example to .env in this package '
+      'or set GEMINI_API_KEY in the environment.',
     );
   }
 

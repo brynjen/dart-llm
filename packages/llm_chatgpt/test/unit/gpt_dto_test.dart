@@ -279,7 +279,7 @@ void main() {
         'prompt_tokens': 10,
         'completion_tokens': 5,
         'total_tokens': 15,
-        'prompt_tokens_details': {'cached_tokens': 2, 'audio_tokens': 0},
+        'prompt_tokens_details': {'cached_tokens': 2},
       };
 
       final usage = GPTUsage.fromJson(json);
@@ -307,13 +307,12 @@ void main() {
 
   group('GPTUsageTokenDetails', () {
     test('fromJson and toJson', () {
-      final json = {'cached_tokens': 2, 'audio_tokens': 0};
+      final json = {'cached_tokens': 2};
 
       final details = GPTUsageTokenDetails.fromJson(json);
       final reconstructed = details.toJson();
 
       expect(details.cachedTokens, 2);
-      expect(details.audioTokens, 0);
       expect(reconstructed['cached_tokens'], 2);
     });
   });

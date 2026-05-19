@@ -6,8 +6,31 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 
+import 'package:dotenv/dotenv.dart';
 import 'package:llm_chatgpt/llm_chatgpt.dart';
+import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
+
+const _packageDirName = 'llm_chatgpt';
+
+final DotEnv _integrationEnv = DotEnv(quiet: true);
+
+bool _integrationEnvLoaded = false;
+
+void _ensureIntegrationEnvLoaded() {
+  if (_integrationEnvLoaded) return;
+  _integrationEnvLoaded = true;
+  final candidates = [
+    p.join(Directory.current.path, '.env'),
+    p.join(Directory.current.path, 'packages', _packageDirName, '.env'),
+  ];
+  for (final filePath in candidates) {
+    if (File(filePath).existsSync()) {
+      _integrationEnv.load([filePath]);
+      break;
+    }
+  }
+}
 
 // ============================================================================
 // Test Configuration
@@ -19,11 +42,23 @@ const chatModel = 'gpt-4o-mini';
 /// Default embedding model for testing.
 const embeddingModel = 'text-embedding-3-small';
 
-/// Gets the API key from environment variables.
+/// Gets the API key from environment variables or a local `.env` file.
 /// Checks OPENAI_API_KEY and CHATGPT_ACCESS_TOKEN.
+///
+/// Non-empty [Platform.environment] entries take precedence over `.env`.
 String? getApiKey() {
-  return Platform.environment['OPENAI_API_KEY'] ??
-      Platform.environment['CHATGPT_ACCESS_TOKEN'];
+  final openai = Platform.environment['OPENAI_API_KEY'];
+  if (openai != null && openai.isNotEmpty) return openai;
+  final token = Platform.environment['CHATGPT_ACCESS_TOKEN'];
+  if (token != null && token.isNotEmpty) return token;
+  _ensureIntegrationEnvLoaded();
+  if (_integrationEnv.isDefined('OPENAI_API_KEY')) {
+    return _integrationEnv['OPENAI_API_KEY'];
+  }
+  if (_integrationEnv.isDefined('CHATGPT_ACCESS_TOKEN')) {
+    return _integrationEnv['CHATGPT_ACCESS_TOKEN'];
+  }
+  return null;
 }
 
 /// Checks if API key is available for testing.
@@ -37,7 +72,8 @@ bool hasApiKey() {
 // ============================================================================
 
 /// Creates a test repository with default configuration.
-/// Requires API key to be set via OPENAI_API_KEY or CHATGPT_ACCESS_TOKEN.
+/// Requires API key from the environment, a local `.env`, or explicit
+/// [customApiKey] (`OPENAI_API_KEY` or `CHATGPT_ACCESS_TOKEN`).
 ChatGPTChatRepository createRepository({
   String? customApiKey,
   String? customBaseUrl,
@@ -47,7 +83,8 @@ ChatGPTChatRepository createRepository({
   final apiKey = customApiKey ?? getApiKey();
   if (apiKey == null || apiKey.isEmpty) {
     throw StateError(
-      'API key is required. Set OPENAI_API_KEY or CHATGPT_ACCESS_TOKEN environment variable.',
+      'API key is required. Copy .env.example to .env in this package '
+      'or set OPENAI_API_KEY or CHATGPT_ACCESS_TOKEN in the environment.',
     );
   }
 

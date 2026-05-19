@@ -16,21 +16,24 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   final LlamaCppRepository _repository = LlamaCppRepository();
 
-  String? _modelPath;
-  bool _isDownloading = false;
-  bool _isLoading = false;
-  double _downloadProgress = 0;
-  String _statusMessage = '';
-  String? _errorMessage;
+  late final _ModelTrack _textTrack;
 
-  // Qwen3-0.6B: Small, efficient model
-  static const _defaultRepoId = 'Qwen/Qwen3-0.6B-GGUF';
-  static const _defaultFileName = 'Qwen3-0.6B-Q8_0.gguf';
+  bool _isLoading = false;
+  String? _errorMessage;
 
   @override
   void initState() {
     super.initState();
-    _checkExistingModel();
+    _textTrack = _ModelTrack(
+      title: 'Text Chat',
+      subtitle: 'LFM2.5-1.2B-Instruct (Q4_K_M)',
+      sizeHint: '~731 MB \u2022 Edge-focused inference',
+      repoId: 'LiquidAI/LFM2.5-1.2B-Instruct-GGUF',
+      files: const ['LFM2.5-1.2B-Instruct-Q4_K_M.gguf'],
+      onStateChanged: () => setState(() {}),
+    );
+
+    _checkExistingModels();
   }
 
   @override
@@ -48,125 +51,78 @@ class _HomeScreenState extends State<HomeScreen> {
     return modelsDir.path;
   }
 
-  Future<void> _checkExistingModel() async {
+  Future<void> _checkExistingModels() async {
     setState(() {
       _isLoading = true;
-      _statusMessage = 'Checking for existing models...';
     });
-
     try {
       final dir = await _modelsDirectory;
-      final modelFile = File('$dir/$_defaultFileName');
-
-      if (await modelFile.exists()) {
+      _textTrack.refreshLocalState(dir);
+    } catch (e) {
+      _errorMessage = 'Error checking models: $e';
+    } finally {
+      if (mounted) {
         setState(() {
-          _modelPath = modelFile.path;
-          _statusMessage = 'Model found: $_defaultFileName';
-        });
-      } else {
-        setState(() {
-          _statusMessage = 'No model found. Download one to get started.';
+          _isLoading = false;
         });
       }
-    } catch (e) {
-      setState(() {
-        _errorMessage = 'Error checking models: $e';
-      });
-    } finally {
-      setState(() {
-        _isLoading = false;
-      });
     }
   }
 
-  Future<void> _downloadModel() async {
-    setState(() {
-      _isDownloading = true;
-      _downloadProgress = 0;
-      _statusMessage = 'Starting download...';
-      _errorMessage = null;
-    });
+  Future<void> _download(_ModelTrack track) async {
+    final dir = await _modelsDirectory;
+    track.errorMessage = null;
+    track.refreshLocalState(dir);
 
-    try {
-      final outputDir = await _modelsDirectory;
-      // ignore: avoid_print
-      print('[HomeScreen] Starting download:');
-      // ignore: avoid_print
-      print('[HomeScreen]   Repo: $_defaultRepoId');
-      // ignore: avoid_print
-      print('[HomeScreen]   File: $_defaultFileName');
-      // ignore: avoid_print
-      print('[HomeScreen]   Output: $outputDir');
+    for (final file in track.files) {
+      final localPath = '$dir/$file';
+      if (File(localPath).existsSync()) {
+        continue;
+      }
 
-      await for (final status in _repository.getModelStream(
-        _defaultRepoId,
-        outputDir: outputDir,
-        preferredFile: _defaultFileName,
-      )) {
-        // ignore: avoid_print
-        print('[HomeScreen] Status: ${status.stage.name} - ${status.message}');
-        if (status.progress != null) {
-          // ignore: avoid_print
-          print(
-            '[HomeScreen]   Progress: ${(status.progress! * 100).toStringAsFixed(1)}%',
-          );
-        }
-        if (status.error != null) {
-          // ignore: avoid_print
-          print('[HomeScreen]   Error: ${status.error}');
-        }
+      track.isDownloading = true;
+      track.statusMessage = 'Downloading $file...';
+      track.progress = 0;
+      track.onStateChanged();
 
-        setState(() {
-          _statusMessage = status.message;
+      try {
+        await for (final status in _repository.getModelStream(
+          track.repoId,
+          outputDir: dir,
+          preferredFile: file,
+        )) {
+          track.statusMessage = status.message;
           if (status.progress != null) {
-            _downloadProgress = status.progress!;
-          }
-          if (status.isComplete && status.modelPath != null) {
-            _modelPath = status.modelPath;
-            // ignore: avoid_print
-            print('[HomeScreen]   Model path: ${status.modelPath}');
+            track.progress = status.progress!;
           }
           if (status.stage == ModelAcquisitionStage.failed) {
-            _errorMessage = status.error ?? status.message;
+            track.errorMessage = status.error ?? status.message;
           }
-        });
+          track.onStateChanged();
+        }
+      } catch (e) {
+        track.errorMessage = 'Download failed: $e';
+        track.onStateChanged();
+        break;
       }
-
-      setState(() {
-        _statusMessage = 'Download complete!';
-      });
-      // ignore: avoid_print
-      print('[HomeScreen] Download completed successfully');
-    } catch (e, stackTrace) {
-      // ignore: avoid_print
-      print('[HomeScreen] Download exception: $e');
-      // ignore: avoid_print
-      print('[HomeScreen] Stack trace: $stackTrace');
-      setState(() {
-        _errorMessage = 'Download failed: $e';
-        _statusMessage = '';
-      });
-    } finally {
-      setState(() {
-        _isDownloading = false;
-      });
     }
+
+    track.isDownloading = false;
+    track.refreshLocalState(dir);
+    track.onStateChanged();
   }
 
-  void _openChat() {
-    if (_modelPath == null) return;
-
+  void _openTextChat() {
+    final modelPath = _textTrack.primaryFilePath;
+    if (modelPath == null) return;
     Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (context) => ChatScreen(modelPath: _modelPath!),
-      ),
+      MaterialPageRoute(builder: (context) => ChatScreen(modelPath: modelPath)),
     );
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-
     return Scaffold(
       body: Container(
         decoration: BoxDecoration(
@@ -186,7 +142,6 @@ class _HomeScreenState extends State<HomeScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Header
                 Row(
                   children: [
                     Container(
@@ -225,254 +180,28 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                   ],
                 ),
-
-                const SizedBox(height: 32),
-
-                // Model Card
+                const SizedBox(height: 24),
                 Expanded(
-                  child: Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(24),
-                    decoration: BoxDecoration(
-                      color: theme.colorScheme.surfaceContainerHighest
-                          .withValues(alpha: 0.5),
-                      borderRadius: BorderRadius.circular(24),
-                      border: Border.all(
-                        color: theme.colorScheme.outline.withValues(alpha: 0.2),
-                      ),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Model',
-                          style: theme.textTheme.titleLarge?.copyWith(
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          'Qwen3-0.6B (Q8_0)',
-                          style: theme.textTheme.bodyLarge?.copyWith(
-                            color: theme.colorScheme.primary,
-                          ),
-                        ),
-                        Text(
-                          '~800 MB • Efficient inference',
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color: theme.colorScheme.onSurface.withValues(
-                              alpha: 0.6,
-                            ),
-                          ),
-                        ),
-
-                        const SizedBox(height: 16),
-
-                        // Status area - expandable and scrollable
-                        Expanded(
-                          child: SingleChildScrollView(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                if (_isLoading)
-                                  const Center(
-                                    child: CircularProgressIndicator(),
-                                  )
-                                else if (_errorMessage != null)
-                                  Container(
-                                    padding: const EdgeInsets.all(16),
-                                    decoration: BoxDecoration(
-                                      color: theme.colorScheme.errorContainer,
-                                      borderRadius: BorderRadius.circular(12),
-                                    ),
-                                    child: Row(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Icon(
-                                          Icons.error_outline,
-                                          color: theme.colorScheme.error,
-                                        ),
-                                        const SizedBox(width: 12),
-                                        Expanded(
-                                          child: Text(
-                                            _errorMessage!,
-                                            style: TextStyle(
-                                              color: theme
-                                                  .colorScheme
-                                                  .onErrorContainer,
-                                            ),
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  )
-                                else if (_isDownloading) ...[
-                                  // Download Progress
-                                  Text(
-                                    _statusMessage,
-                                    style: theme.textTheme.bodyMedium,
-                                  ),
-                                  const SizedBox(height: 16),
-                                  ClipRRect(
-                                    borderRadius: BorderRadius.circular(8),
-                                    child: LinearProgressIndicator(
-                                      value: _downloadProgress,
-                                      minHeight: 8,
-                                      backgroundColor: theme
-                                          .colorScheme
-                                          .surfaceContainerHighest,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 8),
-                                  Text(
-                                    '${(_downloadProgress * 100).toStringAsFixed(1)}%',
-                                    style: theme.textTheme.bodySmall?.copyWith(
-                                      color: theme.colorScheme.primary,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                ] else if (_modelPath != null) ...[
-                                  // Model Ready
-                                  Container(
-                                    padding: const EdgeInsets.all(16),
-                                    decoration: BoxDecoration(
-                                      color: theme.colorScheme.primaryContainer
-                                          .withValues(alpha: 0.3),
-                                      borderRadius: BorderRadius.circular(12),
-                                    ),
-                                    child: Row(
-                                      children: [
-                                        Icon(
-                                          Icons.check_circle,
-                                          color: theme.colorScheme.primary,
-                                        ),
-                                        const SizedBox(width: 12),
-                                        Expanded(
-                                          child: Column(
-                                            crossAxisAlignment:
-                                                CrossAxisAlignment.start,
-                                            children: [
-                                              Text(
-                                                'Model Ready',
-                                                style: theme
-                                                    .textTheme
-                                                    .titleSmall
-                                                    ?.copyWith(
-                                                      fontWeight:
-                                                          FontWeight.w600,
-                                                    ),
-                                              ),
-                                              Text(
-                                                _modelPath!.split('/').last,
-                                                style: theme.textTheme.bodySmall
-                                                    ?.copyWith(
-                                                      color: theme
-                                                          .colorScheme
-                                                          .onSurface
-                                                          .withValues(
-                                                            alpha: 0.7,
-                                                          ),
-                                                    ),
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ] else ...[
-                                  // No Model
-                                  Container(
-                                    padding: const EdgeInsets.all(16),
-                                    decoration: BoxDecoration(
-                                      color: theme
-                                          .colorScheme
-                                          .surfaceContainerHighest,
-                                      borderRadius: BorderRadius.circular(12),
-                                    ),
-                                    child: Row(
-                                      children: [
-                                        Icon(
-                                          Icons.download_rounded,
-                                          color: theme.colorScheme.onSurface
-                                              .withValues(alpha: 0.5),
-                                        ),
-                                        const SizedBox(width: 12),
-                                        Expanded(
-                                          child: Text(
-                                            _statusMessage.isEmpty
-                                                ? 'Download a model to get started'
-                                                : _statusMessage,
-                                            style: theme.textTheme.bodyMedium
-                                                ?.copyWith(
-                                                  color: theme
-                                                      .colorScheme
-                                                      .onSurface
-                                                      .withValues(alpha: 0.7),
-                                                ),
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ],
-                              ],
-                            ),
-                          ),
-                        ),
-
-                        const SizedBox(height: 16),
-
-                        // Actions
-                        Row(
+                  child: _isLoading
+                      ? const Center(child: CircularProgressIndicator())
+                      : _errorMessage != null
+                      ? _ErrorBox(message: _errorMessage!)
+                      : ListView(
                           children: [
-                            if (_modelPath == null && !_isDownloading)
-                              Expanded(
-                                child: FilledButton.icon(
-                                  onPressed: _downloadModel,
-                                  icon: const Icon(Icons.download),
-                                  label: const Text('Download Model'),
-                                  style: FilledButton.styleFrom(
-                                    padding: const EdgeInsets.symmetric(
-                                      vertical: 16,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            if (_modelPath != null) ...[
-                              Expanded(
-                                child: FilledButton.icon(
-                                  onPressed: _openChat,
-                                  icon: const Icon(Icons.chat),
-                                  label: const Text('Start Chat'),
-                                  style: FilledButton.styleFrom(
-                                    padding: const EdgeInsets.symmetric(
-                                      vertical: 16,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              IconButton.outlined(
-                                onPressed: _downloadModel,
-                                icon: const Icon(Icons.refresh),
-                                tooltip: 'Re-download model',
-                              ),
-                            ],
+                            _TrackCard(
+                              track: _textTrack,
+                              onDownload: () => _download(_textTrack),
+                              onOpen: _openTextChat,
+                              openLabel: 'Start Text Chat',
+                              openIcon: Icons.chat,
+                            ),
                           ],
                         ),
-                      ],
-                    ),
-                  ),
                 ),
-
-                const SizedBox(height: 16),
-
-                // Platform info
+                const SizedBox(height: 8),
                 Center(
                   child: Text(
-                    'Running on ${Platform.operatingSystem} • ${Platform.version.split(' ').first}',
+                    'Running on ${Platform.operatingSystem} \u2022 ${Platform.version.split(' ').first}',
                     style: theme.textTheme.bodySmall?.copyWith(
                       color: theme.colorScheme.onSurface.withValues(alpha: 0.5),
                     ),
@@ -482,6 +211,206 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// Tracks one downloadable bundle (1+ GGUF files in the same HF repo).
+class _ModelTrack {
+  _ModelTrack({
+    required this.title,
+    required this.subtitle,
+    required this.sizeHint,
+    required this.repoId,
+    required this.files,
+    required this.onStateChanged,
+  });
+
+  final String title;
+  final String subtitle;
+  final String sizeHint;
+  final String repoId;
+  final List<String> files;
+  final VoidCallback onStateChanged;
+
+  String? localDirectory;
+  bool isDownloading = false;
+  double progress = 0;
+  String statusMessage = '';
+  String? errorMessage;
+  Set<String> presentFiles = const {};
+
+  bool get isReady =>
+      localDirectory != null && presentFiles.length == files.length;
+
+  String? get primaryFilePath {
+    final dir = localDirectory;
+    if (dir == null || files.isEmpty) return null;
+    final p = '$dir/${files.first}';
+    return File(p).existsSync() ? p : null;
+  }
+
+  void refreshLocalState(String modelsDir) {
+    localDirectory = modelsDir;
+    presentFiles = {
+      for (final f in files)
+        if (File('$modelsDir/$f').existsSync()) f,
+    };
+    if (presentFiles.isEmpty) {
+      statusMessage = 'No files downloaded yet.';
+    } else if (presentFiles.length == files.length) {
+      statusMessage = 'All ${files.length} file(s) ready.';
+    } else {
+      statusMessage =
+          '${presentFiles.length}/${files.length} files downloaded. '
+          'Tap to fetch the rest.';
+    }
+  }
+}
+
+class _TrackCard extends StatelessWidget {
+  const _TrackCard({
+    required this.track,
+    required this.onDownload,
+    required this.onOpen,
+    required this.openLabel,
+    required this.openIcon,
+  });
+
+  final _ModelTrack track;
+  final VoidCallback onDownload;
+  final VoidCallback onOpen;
+  final String openLabel;
+  final IconData openIcon;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: theme.colorScheme.outline.withValues(alpha: 0.2),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            track.title,
+            style: theme.textTheme.titleLarge?.copyWith(
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            track.subtitle,
+            style: theme.textTheme.bodyLarge?.copyWith(
+              color: theme.colorScheme.primary,
+            ),
+          ),
+          Text(
+            track.sizeHint,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+            ),
+          ),
+          const SizedBox(height: 12),
+          if (track.errorMessage != null)
+            _ErrorBox(message: track.errorMessage!)
+          else if (track.isDownloading) ...[
+            Text(track.statusMessage, style: theme.textTheme.bodyMedium),
+            const SizedBox(height: 8),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: LinearProgressIndicator(
+                value: track.progress,
+                minHeight: 8,
+                backgroundColor: theme.colorScheme.surfaceContainerHighest,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              '${(track.progress * 100).toStringAsFixed(1)}%',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.primary,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ] else
+            Text(
+              track.statusMessage,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: theme.colorScheme.onSurface.withValues(alpha: 0.7),
+              ),
+            ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              if (!track.isReady)
+                Expanded(
+                  child: FilledButton.icon(
+                    onPressed: track.isDownloading ? null : onDownload,
+                    icon: const Icon(Icons.download),
+                    label: Text(
+                      track.presentFiles.isEmpty
+                          ? 'Download'
+                          : 'Resume Download',
+                    ),
+                  ),
+                ),
+              if (track.isReady) ...[
+                Expanded(
+                  child: FilledButton.icon(
+                    onPressed: onOpen,
+                    icon: Icon(openIcon),
+                    label: Text(openLabel),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                IconButton.outlined(
+                  onPressed: track.isDownloading ? null : onDownload,
+                  icon: const Icon(Icons.refresh),
+                  tooltip: 'Re-download',
+                ),
+              ],
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ErrorBox extends StatelessWidget {
+  const _ErrorBox({required this.message});
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.errorContainer,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.error_outline, color: theme.colorScheme.error),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              message,
+              style: TextStyle(color: theme.colorScheme.onErrorContainer),
+            ),
+          ),
+        ],
       ),
     );
   }

@@ -22,9 +22,19 @@ class _ChatScreenState extends State<ChatScreen> {
   LlamaCppChatRepository? _chatRepo;
   bool _isLoading = true;
   bool _isGenerating = false;
-  bool _toolsEnabled = true;
+  // Default tools OFF: the tools-on system prompt asks the model for JSON,
+  // and the current ToolCallStreamHandler buffers everything between `{` and
+  // a balanced `}`. For long prose answers that contain a stray `{` (or for
+  // models that never emit balanced JSON) this prevents any streaming chunk
+  // from reaching the UI. Toggle the build/build_outlined icon to enable.
+  bool _toolsEnabled = false;
+  bool _gpuEnabled = false;
   String? _errorMessage;
   String _currentResponse = '';
+
+  // Number of layers to offload to GPU when GPU is enabled. 99 effectively
+  // means "all layers"; llama.cpp will silently clamp to the model's depth.
+  static const int _gpuLayersWhenEnabled = 99;
 
   // Available tools
   final List<LLMTool> _tools = [CalculatorTool()];
@@ -50,16 +60,24 @@ class _ChatScreenState extends State<ChatScreen> {
     });
 
     try {
+      // Dispose any previous repo so the persistent inference isolate is told
+      // to drop the old context. The repo itself is cheap; the model is only
+      // loaded on the next streamChat call.
+      _chatRepo?.dispose();
+      final nGpuLayers = _gpuEnabled ? _gpuLayersWhenEnabled : 0;
       print(
-        '[ChatScreen] Creating LlamaCppChatRepository with lazy loading...',
+        '[ChatScreen] Creating LlamaCppChatRepository '
+        '(nGpuLayers=$nGpuLayers, gpuEnabled=$_gpuEnabled)...',
       );
       // Use withModelPath for Android compatibility - the model will be loaded
       // in the inference isolate, not the main isolate. This avoids FFI issues
       // that occur when llama.cpp is called from multiple Dart isolates.
+      // If GPU offload fails at runtime (e.g. Vulkan driver missing on this
+      // device), llama.cpp will fall back to CPU automatically.
       _chatRepo = LlamaCppChatRepository.withModelPath(
         widget.modelPath,
         contextSize: 2048,
-        nGpuLayers: 0, // CPU-only with hardware acceleration (KleidiAI, SME2)
+        nGpuLayers: nGpuLayers,
       );
       print('[ChatScreen] Repository ready (model will load on first chat)');
 
@@ -67,12 +85,18 @@ class _ChatScreenState extends State<ChatScreen> {
         _isLoading = false;
       });
 
-      // Add welcome message
+      final toolsHint = _toolsEnabled
+          ? 'Tools enabled (calculator). Try: "What is 15 multiplied by 7?"'
+          : 'Tools disabled. Toggle the wrench icon to enable JSON tool calls.';
       _messages.add(
         _ChatMessage(
           role: _MessageRole.system,
-          content:
-              'Model loaded! Tools are enabled. Try: "What is 15 multiplied by 7?"',
+          content: _gpuEnabled
+              ? 'Model loaded with GPU offload requested ($_gpuLayersWhenEnabled layers). '
+                    'On Android arm64-v8a this uses the Vulkan backend if libggml-vulkan.so '
+                    'is bundled and the device driver supports it; otherwise it silently '
+                    'falls back to CPU.\n$toolsHint'
+              : 'Model loaded (CPU only). $toolsHint',
         ),
       );
     } catch (e, stackTrace) {
@@ -83,6 +107,15 @@ class _ChatScreenState extends State<ChatScreen> {
         _errorMessage = 'Failed to load model: $e';
       });
     }
+  }
+
+  Future<void> _toggleGpu() async {
+    if (_isGenerating || _isLoading) return;
+    setState(() {
+      _gpuEnabled = !_gpuEnabled;
+      _messages.clear();
+    });
+    await _initializeModel();
   }
 
   void _scrollToBottom() {
@@ -170,7 +203,9 @@ After receiving the tool result, provide a natural language response to the user
         _currentResponse = '';
         _isGenerating = false;
       });
-    } catch (e) {
+    } catch (e, stackTrace) {
+      print('[ChatScreen] ERROR during chat: $e');
+      print('[ChatScreen] Stack trace: $stackTrace');
       setState(() {
         _isGenerating = false;
         _messages.add(
@@ -191,6 +226,18 @@ After receiving the tool result, provide a natural language response to the user
         backgroundColor: Colors.transparent,
         elevation: 0,
         actions: [
+          // GPU toggle (CPU vs GPU offload). On Android arm64-v8a with a
+          // Vulkan-capable driver this routes inference through libggml-vulkan.so.
+          IconButton(
+            icon: Icon(
+              _gpuEnabled ? Icons.bolt : Icons.bolt_outlined,
+              color: _gpuEnabled ? theme.colorScheme.primary : null,
+            ),
+            onPressed: (_isLoading || _isGenerating) ? null : _toggleGpu,
+            tooltip: _gpuEnabled
+                ? 'Disable GPU (use CPU)'
+                : 'Enable GPU offload (Vulkan on Android arm64)',
+          ),
           // Tools toggle
           IconButton(
             icon: Icon(

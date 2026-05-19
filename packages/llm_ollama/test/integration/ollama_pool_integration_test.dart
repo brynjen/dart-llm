@@ -22,14 +22,14 @@ import 'test_helpers.dart';
 // ---------------------------------------------------------------------------
 
 OllamaInstanceConfig _instance({
-  String url = baseUrl,
+  String? url,
   int maxConcurrent = 3,
   List<String> exclusiveModels = const [],
   List<String> preferredModels = const [],
   bool preferEmbedding = false,
   EmbeddingIsolation embeddingIsolation = EmbeddingIsolation.none,
 }) => OllamaInstanceConfig(
-  baseUrl: url,
+  baseUrl: url ?? baseUrl,
   maxConcurrent: maxConcurrent,
   exclusiveModels: exclusiveModels,
   preferredModels: preferredModels,

@@ -21,11 +21,11 @@ List<IsolateMessage> injectResponseFormat(
   final instruction = switch (format) {
     JsonFormat() =>
       'Respond with valid JSON only. '
-      'Do not include any explanation or text outside the JSON.',
+          'Do not include any explanation or text outside the JSON.',
     JsonSchemaFormat() =>
       'Respond with valid JSON only, conforming exactly to the following '
-      'JSON Schema. Do not include any explanation or text outside the '
-      'JSON.\n\nSchema:\n${json.encode(format.schema)}',
+          'JSON Schema. Do not include any explanation or text outside the '
+          'JSON.\n\nSchema:\n${json.encode(format.schema)}',
   };
 
   final systemIndex = messages.indexWhere((m) => m.role == 'system');

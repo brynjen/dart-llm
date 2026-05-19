@@ -16,8 +16,12 @@ coverage/
 **/coverage/
 *.lcov
 
-# dotenv environment variables file
-.env*
+# Local environment files (templates like .env.example are committed)
+.env
+.env.local
+.env.development
+.env.production
+.env.*.local
 
 # Avoid committing generated Javascript files:
 *.dart.js

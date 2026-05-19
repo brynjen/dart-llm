@@ -4,10 +4,6 @@
 // GGML Tensor Library
 //
 // This documentation is still a work in progress.
-// If you wish some specific topics to be covered, feel free to drop a comment:
-//
-//   https://github.com/ggerganov/whisper.cpp/issues/40
-//
 // ## Overview
 //
 // This library implements:
