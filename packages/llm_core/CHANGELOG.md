@@ -7,15 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.2.0] - 2026-04-09
+## [0.2.0] - 2026-08-12
+
+### Fixed
+- `LLMFinishReason.fromProvider` now recognizes `stop_sequence`, `model_context_window_exceeded`, `refusal`, and Gemini's `RECITATION` / `PROHIBITED_CONTENT` / `BLOCKLIST` / `SPII` / `IMAGE_SAFETY`, which previously all collapsed to `unknown`.
 
 ### Added
+- `LLMFinishReason.refusal` for provider safety declines, which arrive as successful responses with empty or partial content.
+- Typed message content parts, typed tool calls, provider capabilities, response usage, finish reasons, thinking output, and provider metadata.
+- `LLMChatOptions` for generation, reasoning, tool behavior, structured output, timeout, retry, cache, metrics, and backend-specific options.
+- Shared repository feature helpers for cache and metrics handling.
 - `LLMResponseFormat` sealed class hierarchy for structured output:
   - `JsonFormat` — simple JSON mode; instructs the model to produce valid JSON without schema enforcement
   - `JsonSchemaFormat({required name, required schema, strict = true})` — full JSON Schema mode; schema is forwarded to the backend verbatim
   - Both are `const`-constructible and work with exhaustive `switch` pattern matching
 - `responseFormat` field on `StreamChatOptions` (nullable, defaults to `null`; fully backward compatible)
 - `StreamChatOptionsMerger` and `MergedOptions` now carry and propagate `responseFormat`
+
+### Changed
+- **Breaking:** Core chat APIs now accept `LLMChatOptions?`; `StreamChatOptions` remains as a compatibility alias.
+- Cache keys now use stable JSON-shaped request data instead of object stringification.
 
 ## [0.1.9] - 2026-02-28
 

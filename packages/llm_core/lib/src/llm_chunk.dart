@@ -1,4 +1,5 @@
 import 'package:llm_core/src/llm_message.dart';
+import 'package:llm_core/src/llm_response.dart';
 import 'package:llm_core/src/tool/llm_tool_call.dart';
 
 /// Represents a streaming chunk from an LLM response.
@@ -12,6 +13,9 @@ class LLMChunk {
     this.done,
     this.promptEvalCount,
     this.evalCount,
+    this.usage,
+    this.finishReason,
+    this.providerMetadata = const {},
     this.status,
   });
 
@@ -32,6 +36,15 @@ class LLMChunk {
 
   /// Number of tokens generated (only set on final chunk).
   final int? evalCount;
+
+  /// First-class token usage metadata, usually present on the final chunk.
+  final LLMUsage? usage;
+
+  /// First-class finish reason metadata, usually present on the final chunk.
+  final LLMFinishReason? finishReason;
+
+  /// Provider-specific metadata that should be preserved but not standardized.
+  final Map<String, dynamic> providerMetadata;
 
   /// Status is used in application to inform user about what is happening.
   final String? status;

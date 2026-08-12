@@ -77,7 +77,8 @@ class Validation {
       case LLMRole.user:
         // User messages should have content or images
         if ((message.content == null || message.content!.isEmpty) &&
-            (message.images == null || message.images!.isEmpty)) {
+            (message.images == null || message.images!.isEmpty) &&
+            message.contentParts.isEmpty) {
           throw LLMApiException(
             '${prefix}User message must have content or images',
             statusCode: 400,

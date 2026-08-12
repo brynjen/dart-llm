@@ -10,9 +10,10 @@ class GPTResponse extends LLMResponse {
     required this.created,
     required super.model,
     required this.choices,
-    required this.usage,
+    required GPTUsage usage,
     required this.systemFingerprint,
-  }) : super(
+  }) : openAIUsage = usage,
+       super(
          createdAt: created,
          role: choices[0].message.role,
          content: choices[0].message.content,
@@ -20,6 +21,16 @@ class GPTResponse extends LLMResponse {
          doneReason: choices[0].finishReason,
          promptEvalCount: usage.promptTokens,
          evalCount: usage.completionTokens,
+         usage: LLMUsage(
+           promptTokens: usage.promptTokens,
+           completionTokens: usage.completionTokens,
+           totalTokens: usage.totalTokens,
+         ),
+         providerMetadata: {
+           'id': id,
+           if (systemFingerprint != null)
+             'system_fingerprint': systemFingerprint,
+         },
          toolCalls: choices[0].message.toolCalls?.toLLMToolCalls,
        );
 
@@ -27,7 +38,7 @@ class GPTResponse extends LLMResponse {
   final String object = 'chat.completion';
   final DateTime created;
   final List<GPTChoice> choices;
-  final GPTUsage usage;
+  final GPTUsage openAIUsage;
   final String? systemFingerprint;
 
   factory GPTResponse.fromJson(Map<String, dynamic> json) {
@@ -49,7 +60,7 @@ class GPTResponse extends LLMResponse {
     'created': created.millisecondsSinceEpoch / 1000,
     'model': model,
     'choices': choices.map((choice) => choice.toJson()).toList(growable: false),
-    'usage': usage.toJson(),
+    'usage': openAIUsage.toJson(),
     'system_fingerprint': systemFingerprint,
   };
 }

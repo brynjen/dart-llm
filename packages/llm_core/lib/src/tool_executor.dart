@@ -165,6 +165,7 @@ class StreamToolExecutor {
               role: LLMRole.tool,
               toolCallId: effectiveToolCallId,
             ),
+            status: toolCall.name,
             done: false,
           );
 
@@ -173,6 +174,7 @@ class StreamToolExecutor {
               content: toolResponseStr,
               role: LLMRole.tool,
               toolCallId: effectiveToolCallId,
+              status: toolCall.name,
             ),
           );
 

@@ -35,6 +35,9 @@ jobs:
           cd packages/llm_core && dart test --coverage=coverage
           cd ../llm_ollama && dart test --coverage=coverage --exclude-tags integration
           cd ../llm_chatgpt && dart test --coverage=coverage --exclude-tags integration
+          cd ../llm_vllm && dart test --coverage=coverage --exclude-tags integration
+          cd ../llm_claude && dart test --coverage=coverage --exclude-tags integration
+          cd ../llm_gemini && dart test --coverage=coverage --exclude-tags integration
       
       - name: Upload coverage artifacts
         uses: actions/upload-artifact@v4
@@ -45,6 +48,9 @@ jobs:
             packages/llm_core/coverage
             packages/llm_ollama/coverage
             packages/llm_chatgpt/coverage
+            packages/llm_vllm/coverage
+            packages/llm_claude/coverage
+            packages/llm_gemini/coverage
           retention-days: 1
       
       - name: Restore original pubspec.yaml
@@ -120,6 +126,15 @@ jobs:
           fi
           if [ -d coverage-artifacts/coverage-non-flutter/packages/llm_chatgpt/coverage ]; then
             COVERAGE_DIRS="$COVERAGE_DIRS coverage-artifacts/coverage-non-flutter/packages/llm_chatgpt/coverage"
+          fi
+          if [ -d coverage-artifacts/coverage-non-flutter/packages/llm_vllm/coverage ]; then
+            COVERAGE_DIRS="$COVERAGE_DIRS coverage-artifacts/coverage-non-flutter/packages/llm_vllm/coverage"
+          fi
+          if [ -d coverage-artifacts/coverage-non-flutter/packages/llm_claude/coverage ]; then
+            COVERAGE_DIRS="$COVERAGE_DIRS coverage-artifacts/coverage-non-flutter/packages/llm_claude/coverage"
+          fi
+          if [ -d coverage-artifacts/coverage-non-flutter/packages/llm_gemini/coverage ]; then
+            COVERAGE_DIRS="$COVERAGE_DIRS coverage-artifacts/coverage-non-flutter/packages/llm_gemini/coverage"
           fi
           if [ -d coverage-artifacts/coverage-llamacpp/packages/llm_llamacpp/coverage ]; then
             COVERAGE_DIRS="$COVERAGE_DIRS coverage-artifacts/coverage-llamacpp/packages/llm_llamacpp/coverage"

@@ -99,6 +99,44 @@ void main() {
       );
 
       test(
+        'manual tool-call exposure when auto execution is disabled',
+        () async {
+          if (!hasApiKey()) {
+            markTestSkipped('API key not available');
+            return;
+          }
+
+          final chunks = await collectStreamWithTimeout(
+            repo.streamChat(
+              chatModel,
+              messages: [
+                LLMMessage(
+                  role: LLMRole.user,
+                  content: 'Use the calculator tool to calculate 8 * 9.',
+                ),
+              ],
+              options: LLMChatOptions(
+                tools: [CalculatorTool()],
+                autoExecuteTools: false,
+              ),
+            ),
+            const Duration(minutes: 3),
+          );
+
+          final toolCalls = chunks
+              .expand((chunk) => chunk.message?.toolCalls ?? const [])
+              .toList();
+          expect(toolCalls, isNotEmpty);
+          expect(
+            chunks.where((chunk) => chunk.message?.role == LLMRole.tool),
+            isEmpty,
+          );
+        },
+        tags: ['integration'],
+        timeout: const Timeout(Duration(minutes: 5)),
+      );
+
+      test(
         'tool with optional parameters',
         () async {
           if (!hasApiKey()) {

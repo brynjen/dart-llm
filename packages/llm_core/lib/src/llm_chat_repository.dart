@@ -1,4 +1,5 @@
 import 'package:llm_core/src/llm_chunk.dart';
+import 'package:llm_core/src/llm_capabilities.dart';
 import 'package:llm_core/src/llm_embedding.dart';
 import 'package:llm_core/src/exceptions.dart';
 import 'package:llm_core/src/llm_message.dart';
@@ -84,8 +85,16 @@ abstract class LLMChatRepository {
     /// The tools this message should use.
     List<LLMTool> tools = const [],
     dynamic extra,
-    StreamChatOptions? options,
+    LLMChatOptions? options,
   });
+
+  /// Reports repository/model capabilities.
+  ///
+  /// Providers may override this with model-aware logic. The default reflects
+  /// the core repository surface rather than provider guarantees.
+  LLMCapabilities capabilitiesForModel(String model) {
+    return const LLMCapabilities();
+  }
 
   /// Generates a complete (non-streaming) chat response from the LLM.
   ///
@@ -144,7 +153,7 @@ abstract class LLMChatRepository {
     bool think = false,
     List<LLMTool> tools = const [],
     dynamic extra,
-    StreamChatOptions? options,
+    LLMChatOptions? options,
   }) async {
     // Validate inputs
     Validation.validateModelName(model);
@@ -157,6 +166,9 @@ abstract class LLMChatRepository {
     int? promptEvalCount;
     int? evalCount;
     String? doneReason;
+    LLMUsage? usage;
+    LLMFinishReason? finishReason;
+    var providerMetadata = const <String, dynamic>{};
     String? responseModel;
     DateTime? createdAt;
     var sawToolLoop = false;
@@ -177,15 +189,26 @@ abstract class LLMChatRepository {
       if (chunk.message != null) {
         if (chunk.message!.role == LLMRole.tool) {
           sawToolLoop = true;
+          sawFinalAssistantAnswer = false;
         }
 
         if (chunk.message!.role == LLMRole.assistant &&
             chunk.message!.content != null) {
           content = (content ?? '') + (chunk.message!.content ?? '');
+          if (sawToolLoop &&
+              (chunk.message!.toolCalls == null ||
+                  chunk.message!.toolCalls!.isEmpty)) {
+            sawFinalAssistantAnswer = true;
+          }
         }
         if (chunk.message!.role == LLMRole.assistant &&
             chunk.message!.thinking != null) {
           thinking = (thinking ?? '') + (chunk.message!.thinking ?? '');
+          if (sawToolLoop &&
+              (chunk.message!.toolCalls == null ||
+                  chunk.message!.toolCalls!.isEmpty)) {
+            sawFinalAssistantAnswer = true;
+          }
         }
         // Only capture tool calls from the final response (when done is true)
         if ((chunk.done ?? false) && chunk.message!.toolCalls != null) {
@@ -204,7 +227,12 @@ abstract class LLMChatRepository {
         sawDoneChunk = true;
         promptEvalCount = chunk.promptEvalCount;
         evalCount = chunk.evalCount;
-        doneReason = 'stop'; // Default, backends may override
+        usage = chunk.usage ?? usage;
+        finishReason = chunk.finishReason ?? finishReason;
+        providerMetadata = chunk.providerMetadata.isNotEmpty
+            ? chunk.providerMetadata
+            : providerMetadata;
+        doneReason = chunk.finishReason?.providerName ?? doneReason ?? 'stop';
       }
     }
 
@@ -225,10 +253,14 @@ abstract class LLMChatRepository {
       createdAt: createdAt ?? DateTime.now(),
       role: 'assistant',
       content: content,
+      thinking: thinking,
       done: true,
       doneReason: doneReason ?? 'stop',
-      promptEvalCount: promptEvalCount ?? 0,
-      evalCount: evalCount ?? 0,
+      promptEvalCount: promptEvalCount ?? usage?.promptTokens ?? 0,
+      evalCount: evalCount ?? usage?.completionTokens ?? 0,
+      usage: usage,
+      finishReason: finishReason,
+      providerMetadata: providerMetadata,
       toolCalls: finalToolCalls,
     );
   }

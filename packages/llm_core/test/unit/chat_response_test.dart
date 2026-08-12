@@ -97,8 +97,27 @@ void main() {
 
     test('handles thinking content', () async {
       final mock = MockLLMChatRepository();
-      // Mock doesn't support thinking yet, but test structure
-      mock.setResponse('Response');
+      mock.setStreamChunks([
+        LLMChunk(
+          model: 'test-model',
+          createdAt: DateTime.now(),
+          message: LLMChunkMessage(
+            content: null,
+            thinking: 'I should answer briefly. ',
+            role: LLMRole.assistant,
+          ),
+          done: false,
+        ),
+        LLMChunk(
+          model: 'test-model',
+          createdAt: DateTime.now(),
+          message: LLMChunkMessage(
+            content: 'Response',
+            role: LLMRole.assistant,
+          ),
+          done: true,
+        ),
+      ]);
 
       final response = await mock.chatResponse(
         'test-model',
@@ -107,6 +126,41 @@ void main() {
       );
 
       expect(response.content, 'Response');
+      expect(response.thinking, 'I should answer briefly. ');
+    });
+
+    test('preserves final chunk usage and provider metadata', () async {
+      final mock = MockLLMChatRepository();
+      mock.setStreamChunks([
+        LLMChunk(
+          model: 'test-model',
+          createdAt: DateTime.now(),
+          message: LLMChunkMessage(content: 'Done', role: LLMRole.assistant),
+          done: false,
+        ),
+        LLMChunk(
+          model: 'test-model',
+          createdAt: DateTime.now(),
+          message: LLMChunkMessage(content: null, role: LLMRole.assistant),
+          done: true,
+          usage: const LLMUsage(promptTokens: 7, completionTokens: 3),
+          finishReason: LLMFinishReason.length,
+          providerMetadata: const {'request_id': 'req_123'},
+        ),
+      ]);
+
+      final response = await mock.chatResponse(
+        'test-model',
+        messages: [LLMMessage(role: LLMRole.user, content: 'Hello')],
+      );
+
+      expect(response.content, 'Done');
+      expect(response.promptEvalCount, 7);
+      expect(response.evalCount, 3);
+      expect(response.usage.totalTokens, 10);
+      expect(response.finishReason, LLMFinishReason.length);
+      expect(response.doneReason, 'length');
+      expect(response.providerMetadata, {'request_id': 'req_123'});
     });
 
     test('excludes tool-result chunk content from response.content', () async {
@@ -187,5 +241,45 @@ void main() {
         );
       },
     );
+
+    test('accepts streamed assistant content after a tool loop', () async {
+      final mock = MockLLMChatRepository();
+      mock.setStreamChunks([
+        LLMChunk(
+          model: 'test-model',
+          createdAt: DateTime.now(),
+          message: LLMChunkMessage(
+            content: 'Result: 4',
+            role: LLMRole.tool,
+            toolCallId: 'call_1',
+          ),
+          done: false,
+        ),
+        LLMChunk(
+          model: 'test-model',
+          createdAt: DateTime.now(),
+          message: LLMChunkMessage(
+            content: 'The answer is 4.',
+            role: LLMRole.assistant,
+          ),
+          done: false,
+        ),
+        LLMChunk(
+          model: 'test-model',
+          createdAt: DateTime.now(),
+          message: LLMChunkMessage(content: null, role: null),
+          done: true,
+          promptEvalCount: 5,
+          evalCount: 4,
+        ),
+      ]);
+
+      final response = await mock.chatResponse(
+        'test-model',
+        messages: [LLMMessage(role: LLMRole.user, content: '2+2')],
+      );
+
+      expect(response.content, 'The answer is 4.');
+    });
   });
 }

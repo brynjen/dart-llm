@@ -2,7 +2,7 @@
 
 # Dart LLM
 
-A Dart monorepo for interacting with Large Language Models (LLMs). Supports multiple backends including Ollama, ChatGPT/OpenAI, Anthropic Claude, Google Gemini, and local inference via llama.cpp.
+A Dart monorepo for interacting with Large Language Models (LLMs). Supports multiple backends including Ollama, vLLM, ChatGPT/OpenAI, Anthropic Claude, Google Gemini, and local inference via llama.cpp.
 
 ## Packages
 
@@ -10,6 +10,7 @@ A Dart monorepo for interacting with Large Language Models (LLMs). Supports mult
 |---------|-------------|---------|
 | [llm_core](packages/llm_core/) | Core abstractions and interfaces | [![pub.dev](https://img.shields.io/pub/v/llm_core)](https://pub.dev/packages/llm_core) |
 | [llm_ollama](packages/llm_ollama/) | Ollama backend | [![pub.dev](https://img.shields.io/pub/v/llm_ollama)](https://pub.dev/packages/llm_ollama) |
+| [llm_vllm](packages/llm_vllm/) | vLLM OpenAI-compatible backend | [![pub.dev](https://img.shields.io/pub/v/llm_vllm)](https://pub.dev/packages/llm_vllm) |
 | [llm_chatgpt](packages/llm_chatgpt/) | OpenAI/ChatGPT backend | [![pub.dev](https://img.shields.io/pub/v/llm_chatgpt)](https://pub.dev/packages/llm_chatgpt) |
 | [llm_llamacpp](packages/llm_llamacpp/) | Local inference via llama.cpp | [![pub.dev](https://img.shields.io/pub/v/llm_llamacpp)](https://pub.dev/packages/llm_llamacpp) |
 | [llm_claude](packages/llm_claude/) | Anthropic Claude backend | [![pub.dev](https://img.shields.io/pub/v/llm_claude)](https://pub.dev/packages/llm_claude) |
@@ -20,7 +21,7 @@ A Dart monorepo for interacting with Large Language Models (LLMs). Supports mult
 * 🚀 **Streaming chat responses** - Real-time streaming of chat responses
 * 🔧 **Tool/function calling** - Support for function calling and tool use
 * 🖼️ **Image support** - Send images in chat messages (vision models)
-* 🤖 **Multiple backends** - Ollama, ChatGPT, Claude, Gemini, and local llama.cpp
+* 🤖 **Multiple backends** - Ollama, vLLM, ChatGPT, Claude, Gemini, and local llama.cpp
 * 💭 **Thinking support** - Support for extended reasoning / thinking tokens
 * 📋 **Structured output** - Force JSON responses conforming to a schema
 * 📦 **Easy to use** - Simple and intuitive API
@@ -57,8 +58,26 @@ import 'package:llm_chatgpt/llm_chatgpt.dart';
 Future<void> main() async {
   final repo = ChatGPTChatRepository(apiKey: 'your-api-key');
   
-  final stream = repo.streamChat('gpt-4o', messages: [
+  final stream = repo.streamChat('gpt-5.4-nano', messages: [
     LLMMessage(role: LLMRole.user, content: 'Hello, ChatGPT!'),
+  ]);
+  
+  await for (final chunk in stream) {
+    print(chunk.message?.content ?? '');
+  }
+}
+```
+
+### Using vLLM
+
+```dart
+import 'package:llm_vllm/llm_vllm.dart';
+
+Future<void> main() async {
+  final repo = VLLMChatRepository(baseUrl: 'http://localhost:8000');
+  
+  final stream = repo.streamChat('Qwen/Qwen3-0.6B', messages: [
+    LLMMessage(role: LLMRole.user, content: 'Hello, vLLM!'),
   ]);
   
   await for (final chunk in stream) {
@@ -75,7 +94,7 @@ import 'package:llm_claude/llm_claude.dart';
 Future<void> main() async {
   final repo = ClaudeChatRepository(apiKey: 'your-api-key');
   
-  final stream = repo.streamChat('claude-opus-4-5', messages: [
+  final stream = repo.streamChat('claude-haiku-4-5-20251001', messages: [
     LLMMessage(role: LLMRole.user, content: 'Hello, Claude!'),
   ]);
   
@@ -93,7 +112,7 @@ import 'package:llm_gemini/llm_gemini.dart';
 Future<void> main() async {
   final repo = GeminiChatRepository(apiKey: 'your-api-key');
   
-  final stream = repo.streamChat('gemini-2.0-flash', messages: [
+  final stream = repo.streamChat('gemini-3.5-flash-lite', messages: [
     LLMMessage(role: LLMRole.user, content: 'Hello, Gemini!'),
   ]);
   
@@ -139,6 +158,9 @@ dependencies:
   # For Ollama backend
   llm_ollama: ^0.2.0
 
+  # For vLLM OpenAI-compatible servers
+  llm_vllm: ^0.2.0
+
   # For ChatGPT/OpenAI backend
   llm_chatgpt: ^0.2.0
 
@@ -159,11 +181,13 @@ dependencies:
 Core abstractions shared by all backends:
 
 - `LLMChatRepository` - Interface for chat repositories
-- `LLMMessage`, `LLMRole` - Message and role types
+- `LLMMessage`, `LLMMessageContent`, `LLMRole` - Typed message content and role types
 - `LLMChunk`, `LLMChunkMessage` - Streaming chunk types
 - `LLMTool`, `LLMToolParam`, `LLMToolCall` - Tool/function calling types
 - `LLMEmbedding` - Embedding types
+- `LLMResponse`, `LLMUsage`, `LLMFinishReason` - Response metadata, usage, and finish details
 - `LLMResponseFormat` - Structured output: `JsonFormat`, `JsonSchemaFormat`
+- `LLMChatOptions` - Per-request generation, reasoning, tool, structured output, timeout, retry, cache, metrics, and provider-specific options
 - Exceptions: `ThinkingNotSupportedException`, `ToolsNotSupportedException`, `VisionNotSupportedException`, `LLMApiException`
 
 ### llm_ollama
@@ -176,6 +200,18 @@ Ollama backend features:
 - Embeddings
 - Model management (list, pull, show, version)
 - Structured output (JSON mode and JSON Schema via native `format` field)
+
+### llm_vllm
+
+vLLM backend features:
+
+- Streaming chat through OpenAI-compatible `/v1/chat/completions`
+- Optional bearer auth for servers started with `--api-key`
+- Tool/function calling
+- Vision payloads through OpenAI-compatible message content
+- Embeddings through `/v1/embeddings`
+- Model listing through `/v1/models`
+- Structured output via OpenAI-compatible `response_format`
 
 ### llm_chatgpt
 
@@ -192,20 +228,21 @@ OpenAI/ChatGPT backend features:
 Anthropic Claude backend features:
 
 - Streaming chat
-- Tool/function calling
-- Thinking (extended reasoning) mode
-- Structured output via system message injection
+- Tool/function calling, including `tool_choice`
+- Model-aware thinking: adaptive reasoning on current models, token budget on older ones
+- Native structured output via `output_config.format`
 - Configurable base URL (custom endpoints)
 
 ### llm_gemini
 
 Google Gemini backend features:
 
-- Streaming chat
+- Streaming chat via the Interactions API (`POST /v1beta/interactions`)
 - Tool/function calling
-- Thinking (extended reasoning) mode
-- Native structured output (`responseMimeType` + `responseSchema`)
+- Thinking with thought summaries surfaced separately from content
+- Native structured output (`response_format`)
 - Embeddings
+- API key sent as the `x-goog-api-key` header, never in the URL
 
 ### llm_llamacpp
 
@@ -273,7 +310,7 @@ import 'package:llm_core/llm_core.dart';
 // Simple JSON mode
 final stream = repo.streamChat('model',
   messages: messages,
-  options: StreamChatOptions(
+  options: LLMChatOptions(
     responseFormat: JsonFormat(),
   ),
 );
@@ -281,7 +318,7 @@ final stream = repo.streamChat('model',
 // JSON Schema mode — enforce a specific structure
 final stream = repo.streamChat('model',
   messages: messages,
-  options: StreamChatOptions(
+  options: LLMChatOptions(
     responseFormat: JsonSchemaFormat(
       name: 'person',
       schema: {
@@ -301,14 +338,14 @@ Backends implement this natively where supported, and fall back to system-messag
 
 ## Advanced Configuration
 
-### Using StreamChatOptions
+### Using LLMChatOptions
 
-For complex configurations, use `StreamChatOptions` to encapsulate all options:
+For complex configurations, use `LLMChatOptions` to encapsulate all options:
 
 ```dart
 import 'package:llm_core/llm_core.dart';
 
-final options = StreamChatOptions(
+final options = LLMChatOptions(
   think: true,
   tools: [CalculatorTool()],
   toolAttempts: 5,
@@ -379,6 +416,15 @@ final ollamaRepo = OllamaChatRepository.builder()
 final chatgptRepo = ChatGPTChatRepository.builder()
   .apiKey('your-api-key')
   .baseUrl('https://api.openai.com')
+  .maxToolAttempts(10)
+  .retryConfig(RetryConfig(maxAttempts: 3))
+  .timeoutConfig(TimeoutConfig(readTimeout: Duration(minutes: 5)))
+  .build();
+
+// vLLM with full configuration
+final vllmRepo = VLLMChatRepository.builder()
+  .baseUrl('http://localhost:8000')
+  .apiKey('optional-api-key')
   .maxToolAttempts(10)
   .retryConfig(RetryConfig(maxAttempts: 3))
   .timeoutConfig(TimeoutConfig(readTimeout: Duration(minutes: 5)))

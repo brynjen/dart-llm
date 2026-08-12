@@ -206,10 +206,7 @@ void main() {
             'test-model',
             messages: [LLMMessage(role: LLMRole.user, content: 'hello')],
             options: StreamChatOptions(
-              responseFormat: JsonSchemaFormat(
-                name: 'Result',
-                schema: schema,
-              ),
+              responseFormat: JsonSchemaFormat(name: 'Result', schema: schema),
             ),
           )
           .toList();
@@ -217,33 +214,36 @@ void main() {
       expect(client.requestBodies.single['format'], schema);
     });
 
-    test('responseFormat takes precedence over backendOptions format', () async {
-      final client = _QueueStreamClient([
-        _streamResponse({
-          'model': 'test-model',
-          'created_at': '2024-01-01T00:00:00.000Z',
-          'message': {'role': 'assistant', 'content': 'ok'},
-          'done': true,
-        }),
-      ]);
-      final repo = OllamaChatRepository(
-        baseUrl: 'http://localhost:11434',
-        httpClient: client,
-      );
+    test(
+      'responseFormat takes precedence over backendOptions format',
+      () async {
+        final client = _QueueStreamClient([
+          _streamResponse({
+            'model': 'test-model',
+            'created_at': '2024-01-01T00:00:00.000Z',
+            'message': {'role': 'assistant', 'content': 'ok'},
+            'done': true,
+          }),
+        ]);
+        final repo = OllamaChatRepository(
+          baseUrl: 'http://localhost:11434',
+          httpClient: client,
+        );
 
-      await repo
-          .streamChat(
-            'test-model',
-            messages: [LLMMessage(role: LLMRole.user, content: 'hello')],
-            options: const StreamChatOptions(
-              responseFormat: JsonFormat(),
-              backendOptions: {'format': 'should-be-ignored'},
-            ),
-          )
-          .toList();
+        await repo
+            .streamChat(
+              'test-model',
+              messages: [LLMMessage(role: LLMRole.user, content: 'hello')],
+              options: const StreamChatOptions(
+                responseFormat: JsonFormat(),
+                backendOptions: {'format': 'should-be-ignored'},
+              ),
+            )
+            .toList();
 
-      expect(client.requestBodies.single['format'], 'json');
-    });
+        expect(client.requestBodies.single['format'], 'json');
+      },
+    );
 
     test('null responseFormat does not emit format key', () async {
       final client = _QueueStreamClient([

@@ -36,29 +36,27 @@ void _ensureIntegrationEnvLoaded() {
 // Test Configuration
 // ============================================================================
 
-/// Default model for testing (cost-effective option).
-const chatModel = 'gpt-4o-mini';
+/// Default model for testing (cost-effective current-generation option).
+String get chatModel => _envValue('OPENAI_CHAT_MODEL') ?? 'gpt-5.4-nano';
 
 /// Default embedding model for testing.
-const embeddingModel = 'text-embedding-3-small';
+String get embeddingModel =>
+    _envValue('OPENAI_EMBEDDING_MODEL') ?? 'text-embedding-3-small';
+
+String? _envValue(String name) {
+  final fromPlatform = Platform.environment[name];
+  if (fromPlatform != null && fromPlatform.isNotEmpty) return fromPlatform;
+  _ensureIntegrationEnvLoaded();
+  if (_integrationEnv.isDefined(name)) return _integrationEnv[name];
+  return null;
+}
 
 /// Gets the API key from environment variables or a local `.env` file.
 /// Checks OPENAI_API_KEY and CHATGPT_ACCESS_TOKEN.
 ///
 /// Non-empty [Platform.environment] entries take precedence over `.env`.
 String? getApiKey() {
-  final openai = Platform.environment['OPENAI_API_KEY'];
-  if (openai != null && openai.isNotEmpty) return openai;
-  final token = Platform.environment['CHATGPT_ACCESS_TOKEN'];
-  if (token != null && token.isNotEmpty) return token;
-  _ensureIntegrationEnvLoaded();
-  if (_integrationEnv.isDefined('OPENAI_API_KEY')) {
-    return _integrationEnv['OPENAI_API_KEY'];
-  }
-  if (_integrationEnv.isDefined('CHATGPT_ACCESS_TOKEN')) {
-    return _integrationEnv['CHATGPT_ACCESS_TOKEN'];
-  }
-  return null;
+  return _envValue('OPENAI_API_KEY') ?? _envValue('CHATGPT_ACCESS_TOKEN');
 }
 
 /// Checks if API key is available for testing.
@@ -171,7 +169,7 @@ void verifyResponseStructure(LLMResponse response) {
   );
   expect(
     response.role,
-    equals('assistant'),
+    equals(LLMRole.assistant),
     reason: 'Response role should be assistant',
   );
   expect(

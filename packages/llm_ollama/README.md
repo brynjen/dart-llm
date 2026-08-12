@@ -100,7 +100,7 @@ final stream = repo.streamChat('llama3.2-vision:11b', messages: [
 
 ### Structured Output
 
-Use `StreamChatOptions.responseFormat` to request structured JSON output:
+Use `LLMChatOptions.responseFormat` to request structured JSON output:
 
 ```dart
 import 'package:llm_core/llm_core.dart';
@@ -109,7 +109,7 @@ import 'package:llm_core/llm_core.dart';
 final stream = repo.streamChat(
   'qwen3:0.6b',
   messages: [LLMMessage(role: LLMRole.user, content: 'List three fruits as JSON.')],
-  options: const StreamChatOptions(responseFormat: JsonFormat()),
+  options: const LLMChatOptions(responseFormat: JsonFormat()),
 );
 
 // JSON Schema mode — requires a model with structured_outputs capability
@@ -129,7 +129,7 @@ const schema = {
 final stream = repo.streamChat(
   'llama3.2',
   messages: [LLMMessage(role: LLMRole.user, content: 'Return a person object.')],
-  options: const StreamChatOptions(
+  options: const LLMChatOptions(
     responseFormat: JsonSchemaFormat(name: 'Person', schema: schema),
   ),
 );
@@ -157,14 +157,14 @@ print(response.content);
 print('Tokens: ${response.evalCount}');
 ```
 
-### Using StreamChatOptions
+### Using LLMChatOptions
 
 Encapsulate all options in a single object:
 
 ```dart
 import 'package:llm_core/llm_core.dart';
 
-final options = StreamChatOptions(
+final options = LLMChatOptions(
   think: true,
   tools: [MyTool()],
   toolAttempts: 5,
@@ -186,7 +186,7 @@ final stream = repo.streamChat(
   'qwen3:0.6b',
   messages: messages,
   tools: [MyTool()],
-  options: const StreamChatOptions(
+  options: const LLMChatOptions(
     autoExecuteTools: false, // Manual tool loop
   ),
 );
@@ -205,7 +205,7 @@ You can also pass Ollama chat fields supported by `ollama-python`:
 final stream = repo.streamChat(
   'qwen3:0.6b',
   messages: messages,
-  options: const StreamChatOptions(
+  options: const LLMChatOptions(
     backendOptions: {
       'format': 'json',
       'options': {'temperature': 0},

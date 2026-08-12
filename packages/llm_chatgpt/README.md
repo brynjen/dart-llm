@@ -35,7 +35,7 @@ import 'package:llm_chatgpt/llm_chatgpt.dart';
 
 final repo = ChatGPTChatRepository(apiKey: 'your-api-key');
 
-final stream = repo.streamChat('gpt-4o', messages: [
+final stream = repo.streamChat('gpt-5.4-nano', messages: [
   LLMMessage(role: LLMRole.user, content: 'Hello!'),
 ]);
 
@@ -47,7 +47,7 @@ await for (final chunk in stream) {
 ### Tool Calling
 
 ```dart
-final stream = repo.streamChat('gpt-4o',
+final stream = repo.streamChat('gpt-5.4-nano',
   messages: messages,
   tools: [MyTool()],
 );
@@ -55,16 +55,16 @@ final stream = repo.streamChat('gpt-4o',
 
 ### Structured Output
 
-Use `StreamChatOptions.responseFormat` to enforce JSON output natively via the OpenAI `response_format` API:
+Use `LLMChatOptions.responseFormat` to enforce JSON output natively via the OpenAI `response_format` API:
 
 ```dart
 import 'package:llm_core/llm_core.dart';
 
 // Simple JSON mode
 final stream = repo.streamChat(
-  'gpt-4o',
+  'gpt-5.4-nano',
   messages: [LLMMessage(role: LLMRole.user, content: 'List three fruits as JSON.')],
-  options: const StreamChatOptions(responseFormat: JsonFormat()),
+  options: const LLMChatOptions(responseFormat: JsonFormat()),
 );
 
 // JSON Schema mode (strict schema enforcement)
@@ -79,9 +79,9 @@ const schema = {
 };
 
 final stream = repo.streamChat(
-  'gpt-4o',
+  'gpt-5.4-nano',
   messages: [LLMMessage(role: LLMRole.user, content: 'Return a person object.')],
-  options: const StreamChatOptions(
+  options: const LLMChatOptions(
     responseFormat: JsonSchemaFormat(name: 'Person', schema: schema),
   ),
 );
@@ -101,7 +101,7 @@ final embeddings = await repo.embed(
 Get a complete response without streaming:
 
 ```dart
-final response = await repo.chatResponse('gpt-4o', messages: [
+final response = await repo.chatResponse('gpt-5.4-nano', messages: [
   LLMMessage(role: LLMRole.user, content: 'Hello!'),
 ]);
 
@@ -109,21 +109,21 @@ print(response.content);
 print('Tokens: ${response.evalCount}');
 ```
 
-### Using StreamChatOptions
+### Using LLMChatOptions
 
 Encapsulate all options in a single object:
 
 ```dart
 import 'package:llm_core/llm_core.dart';
 
-final options = StreamChatOptions(
+final options = LLMChatOptions(
   tools: [MyTool()],
   toolAttempts: 5,
   timeout: Duration(minutes: 5),
   retryConfig: RetryConfig(maxAttempts: 3),
 );
 
-final stream = repo.streamChat('gpt-4o', messages: messages, options: options);
+final stream = repo.streamChat('gpt-5.4-nano', messages: messages, options: options);
 ```
 
 ### Using with Azure OpenAI
@@ -210,10 +210,8 @@ final repo = ChatGPTChatRepository(
 
 See [OpenAI Models](https://platform.openai.com/docs/models) for available models:
 
-- `gpt-4o` - Most capable model
-- `gpt-4o-mini` - Smaller, faster, cheaper
-- `gpt-4-turbo` - Previous generation
-- `gpt-3.5-turbo` - Fast and cost-effective
-- `text-embedding-3-small` - Embeddings
+- `gpt-5.4-nano` - Low-cost current-generation chat model used by live tests
+- `gpt-5.4-mini` - Larger current-generation small model
+- `gpt-5.4` - More capable current-generation model
+- `text-embedding-3-small` - Low-cost embeddings used by live tests
 - `text-embedding-3-large` - Higher quality embeddings
-

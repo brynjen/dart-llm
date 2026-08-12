@@ -47,6 +47,15 @@ final messages = [
   LLMMessage(role: LLMRole.user, content: 'Hello!'),
   LLMMessage(role: LLMRole.assistant, content: 'Hi there!'),
 ];
+
+// Typed content parts are available for richer messages.
+final multimodal = LLMMessage(
+  role: LLMRole.user,
+  contentParts: [
+    LLMTextContent('Describe this image.'),
+    LLMImageContent('https://example.com/image.png'),
+  ],
+);
 ```
 
 ### Repository Interface
@@ -59,7 +68,7 @@ abstract class LLMChatRepository {
     bool think = false,
     List<LLMTool> tools = const [],
     dynamic extra,
-    StreamChatOptions? options, // Optional: encapsulates all options
+    LLMChatOptions? options, // Optional: encapsulates all options
   });
 
   Future<LLMResponse> chatResponse(
@@ -68,7 +77,7 @@ abstract class LLMChatRepository {
     bool think = false,
     List<LLMTool> tools = const [],
     dynamic extra,
-    StreamChatOptions? options,
+    LLMChatOptions? options,
   });
 
   Future<List<LLMEmbedding>> embed({
@@ -112,16 +121,19 @@ class MyTool extends LLMTool {
 }
 ```
 
-### StreamChatOptions
+### LLMChatOptions
 
 Encapsulates all optional parameters for `streamChat()` to reduce parameter proliferation:
 
 ```dart
-final options = StreamChatOptions(
+final options = LLMChatOptions(
   think: true,
   tools: [MyTool()],
   toolAttempts: 5,
   responseFormat: JsonSchemaFormat(name: 'Answer', schema: mySchema),
+  timeout: Duration(minutes: 5),
+  retryConfig: RetryConfig(maxAttempts: 3),
+  recordMetrics: true,
 );
 
 final stream = repo.streamChat('model', messages: messages, options: options);
@@ -133,10 +145,10 @@ final stream = repo.streamChat('model', messages: messages, options: options);
 
 ```dart
 // Simple JSON mode — model produces valid JSON
-const options = StreamChatOptions(responseFormat: JsonFormat());
+const options = LLMChatOptions(responseFormat: JsonFormat());
 
 // JSON Schema mode — model output must conform to a schema
-const options = StreamChatOptions(
+const options = LLMChatOptions(
   responseFormat: JsonSchemaFormat(
     name: 'Person',
     schema: {
@@ -243,7 +255,7 @@ Input validation utilities:
 
 ```dart
 // Validate model name
-Validation.validateModelName('gpt-4o');
+Validation.validateModelName('gpt-5.4-nano');
 
 // Validate messages
 Validation.validateMessages([
@@ -282,4 +294,3 @@ await for (final chunk in stream) {
   print(chunk.message?.content ?? '');
 }
 ```
-

@@ -2,43 +2,81 @@ import 'package:llm_core/src/llm_response_format.dart';
 import 'package:llm_core/src/retry_config.dart';
 import 'package:llm_core/src/tool/llm_tool.dart';
 
-/// Options for streaming chat requests.
+const Object _unset = Object();
+
+/// Options for chat requests.
 ///
-/// This class encapsulates all optional parameters for [LLMChatRepository.streamChat]
-/// to reduce parameter proliferation and improve maintainability.
-///
-/// Example:
-/// ```dart
-/// final options = StreamChatOptions(
-///   think: true,
-///   tools: [CalculatorTool()],
-///   toolAttempts: 5,
-/// );
-/// final stream = repo.streamChat('model', messages: messages, options: options);
-/// ```
-class StreamChatOptions {
-  /// Creates streaming chat options.
-  ///
-  /// [think] - Whether to request thinking/reasoning output (if supported).
-  /// [tools] - Optional list of tools the model can use.
-  /// [extra] - Additional context to pass to tool executions.
-  /// [toolAttempts] - Maximum number of tool calling attempts.
-  /// [autoExecuteTools] - Whether tool calls should be executed automatically.
-  /// [backendOptions] - Backend-specific chat options.
-  /// [timeout] - Request timeout (overrides repository default).
-  /// [retryConfig] - Retry configuration (overrides repository default).
-  /// [responseFormat] - Structured output format to request from the model.
-  const StreamChatOptions({
-    this.think = false,
-    this.tools = const [],
+/// This is the 0.3-facing options type. It keeps provider-specific escape
+/// hatches, but models the shared behavior that every backend should honor:
+/// generation, reasoning, tools, structured output, timeout, retry, cache, and
+/// metrics preferences.
+class LLMChatOptions {
+  /// Creates chat options.
+  const LLMChatOptions({
+    bool think = false,
+    List<LLMTool>? tools,
+    dynamic extra,
+    int? toolAttempts,
+    bool autoExecuteTools = true,
+    Map<String, dynamic>? backendOptions,
+    Duration? timeout,
+    RetryConfig? retryConfig,
+    LLMResponseFormat? responseFormat,
+    double? temperature,
+    double? topP,
+    int? topK,
+    int? maxOutputTokens,
+    List<String>? stopSequences,
+    int? reasoningBudget,
+    bool useCache = false,
+    Duration? cacheTtl,
+    bool recordMetrics = true,
+  }) : this._(
+         think: think,
+         tools: tools ?? const [],
+         extra: extra,
+         toolAttempts: toolAttempts,
+         autoExecuteTools: autoExecuteTools,
+         backendOptions: backendOptions ?? const {},
+         timeout: timeout,
+         retryConfig: retryConfig,
+         responseFormat: responseFormat,
+         temperature: temperature,
+         topP: topP,
+         topK: topK,
+         maxOutputTokens: maxOutputTokens,
+         stopSequences: stopSequences,
+         reasoningBudget: reasoningBudget,
+         useCache: useCache,
+         cacheTtl: cacheTtl,
+         recordMetrics: recordMetrics,
+         toolsProvided: tools != null,
+         backendOptionsProvided: backendOptions != null,
+       );
+
+  const LLMChatOptions._({
+    required this.think,
+    required this.tools,
+    required this.autoExecuteTools,
+    required this.backendOptions,
+    required this.useCache,
+    required this.recordMetrics,
+    required bool toolsProvided,
+    required bool backendOptionsProvided,
     this.extra,
     this.toolAttempts,
-    this.autoExecuteTools = true,
-    this.backendOptions = const {},
     this.timeout,
     this.retryConfig,
     this.responseFormat,
-  });
+    this.temperature,
+    this.topP,
+    this.topK,
+    this.maxOutputTokens,
+    this.stopSequences,
+    this.reasoningBudget,
+    this.cacheTtl,
+  }) : _toolsProvided = toolsProvided,
+       _backendOptionsProvided = backendOptionsProvided;
 
   /// Whether to request thinking/reasoning output (if supported).
   final bool think;
@@ -46,65 +84,154 @@ class StreamChatOptions {
   /// Optional list of tools the model can use.
   final List<LLMTool> tools;
 
+  /// Whether [tools] was explicitly supplied.
+  ///
+  /// This lets callers intentionally clear inline tools with
+  /// `LLMChatOptions(tools: [])`.
+  bool get overridesTools => _toolsProvided;
+  final bool _toolsProvided;
+
   /// Additional context to pass to tool executions.
   final dynamic extra;
 
   /// Maximum number of tool calling attempts.
-  ///
-  /// If null, uses the repository's default [maxToolAttempts].
   final int? toolAttempts;
 
   /// Whether tool calls should be executed automatically by the repository.
-  ///
-  /// Defaults to `true` for backward compatibility.
   final bool autoExecuteTools;
 
   /// Backend-specific chat options.
-  ///
-  /// This is useful for provider-specific request fields that are not yet
-  /// modeled as first-class parameters in the core interface.
   final Map<String, dynamic> backendOptions;
 
+  /// Whether [backendOptions] was explicitly supplied.
+  bool get overridesBackendOptions => _backendOptionsProvided;
+  final bool _backendOptionsProvided;
+
   /// Request timeout (overrides repository default).
-  ///
-  /// If null, uses the repository's default timeout configuration.
   final Duration? timeout;
 
   /// Retry configuration (overrides repository default).
-  ///
-  /// If null, uses the repository's default retry configuration.
   final RetryConfig? retryConfig;
 
   /// Structured output format to request from the model.
-  ///
-  /// When set, instructs the model to produce JSON output. Use [JsonFormat]
-  /// for unconstrained JSON, or [JsonSchemaFormat] to enforce a specific schema.
-  ///
-  /// If null, no structured output is requested (default behaviour).
   final LLMResponseFormat? responseFormat;
 
+  /// Sampling temperature.
+  final double? temperature;
+
+  /// Nucleus sampling value.
+  final double? topP;
+
+  /// Top-K sampling value where supported.
+  final int? topK;
+
+  /// Maximum output tokens where supported.
+  final int? maxOutputTokens;
+
+  /// Stop sequences where supported.
+  final List<String>? stopSequences;
+
+  /// Thinking/reasoning token budget where supported.
+  final int? reasoningBudget;
+
+  /// Whether non-streaming [LLMChatRepository.chatResponse] calls may use cache.
+  final bool useCache;
+
+  /// Optional cache TTL for cache writes.
+  final Duration? cacheTtl;
+
+  /// Whether metrics should be recorded for this request when configured.
+  final bool recordMetrics;
+
   /// Create a copy of these options with some fields changed.
-  StreamChatOptions copyWith({
+  ///
+  /// Nullable fields use sentinel parameters so passing `null` explicitly clears
+  /// the value instead of preserving it.
+  LLMChatOptions copyWith({
     bool? think,
     List<LLMTool>? tools,
-    dynamic extra,
-    int? toolAttempts,
+    Object? extra = _unset,
+    Object? toolAttempts = _unset,
     bool? autoExecuteTools,
     Map<String, dynamic>? backendOptions,
-    Duration? timeout,
-    RetryConfig? retryConfig,
-    LLMResponseFormat? responseFormat,
+    Object? timeout = _unset,
+    Object? retryConfig = _unset,
+    Object? responseFormat = _unset,
+    Object? temperature = _unset,
+    Object? topP = _unset,
+    Object? topK = _unset,
+    Object? maxOutputTokens = _unset,
+    Object? stopSequences = _unset,
+    Object? reasoningBudget = _unset,
+    bool? useCache,
+    Object? cacheTtl = _unset,
+    bool? recordMetrics,
   }) {
-    return StreamChatOptions(
+    return LLMChatOptions._(
       think: think ?? this.think,
       tools: tools ?? this.tools,
-      extra: extra ?? this.extra,
-      toolAttempts: toolAttempts ?? this.toolAttempts,
+      extra: identical(extra, _unset) ? this.extra : extra,
+      toolAttempts: identical(toolAttempts, _unset)
+          ? this.toolAttempts
+          : toolAttempts as int?,
       autoExecuteTools: autoExecuteTools ?? this.autoExecuteTools,
       backendOptions: backendOptions ?? this.backendOptions,
-      timeout: timeout ?? this.timeout,
-      retryConfig: retryConfig ?? this.retryConfig,
-      responseFormat: responseFormat ?? this.responseFormat,
+      timeout: identical(timeout, _unset) ? this.timeout : timeout as Duration?,
+      retryConfig: identical(retryConfig, _unset)
+          ? this.retryConfig
+          : retryConfig as RetryConfig?,
+      responseFormat: identical(responseFormat, _unset)
+          ? this.responseFormat
+          : responseFormat as LLMResponseFormat?,
+      temperature: identical(temperature, _unset)
+          ? this.temperature
+          : temperature as double?,
+      topP: identical(topP, _unset) ? this.topP : topP as double?,
+      topK: identical(topK, _unset) ? this.topK : topK as int?,
+      maxOutputTokens: identical(maxOutputTokens, _unset)
+          ? this.maxOutputTokens
+          : maxOutputTokens as int?,
+      stopSequences: identical(stopSequences, _unset)
+          ? this.stopSequences
+          : stopSequences as List<String>?,
+      reasoningBudget: identical(reasoningBudget, _unset)
+          ? this.reasoningBudget
+          : reasoningBudget as int?,
+      useCache: useCache ?? this.useCache,
+      cacheTtl: identical(cacheTtl, _unset)
+          ? this.cacheTtl
+          : cacheTtl as Duration?,
+      recordMetrics: recordMetrics ?? this.recordMetrics,
+      toolsProvided: tools != null || _toolsProvided,
+      backendOptionsProvided: backendOptions != null || _backendOptionsProvided,
     );
   }
+}
+
+/// Backward-compatible name for [LLMChatOptions].
+///
+/// Existing code can keep using `StreamChatOptions` while migrating to the
+/// clearer 0.3 name.
+class StreamChatOptions extends LLMChatOptions {
+  /// Creates chat options.
+  const StreamChatOptions({
+    super.think,
+    super.tools,
+    super.extra,
+    super.toolAttempts,
+    super.autoExecuteTools,
+    super.backendOptions,
+    super.timeout,
+    super.retryConfig,
+    super.responseFormat,
+    super.temperature,
+    super.topP,
+    super.topK,
+    super.maxOutputTokens,
+    super.stopSequences,
+    super.reasoningBudget,
+    super.useCache,
+    super.cacheTtl,
+    super.recordMetrics,
+  });
 }

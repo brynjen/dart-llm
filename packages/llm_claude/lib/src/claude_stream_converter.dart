@@ -29,6 +29,9 @@ class ClaudeStreamConverter {
     int promptTokens = 0;
     int outputTokens = 0;
     ClaudeUsage? usage;
+    int? cacheCreationTokens;
+    int? cacheReadTokens;
+    final thinkingSignatures = <int, String>{};
     String? stopReason;
     String? resolvedModel = model;
 
@@ -60,6 +63,20 @@ class ClaudeStreamConverter {
         }
 
         switch (eventType) {
+          // A mid-stream `error` event was previously unhandled, so the stream
+          // ended as a *success* with truncated output and no exception. Any
+          // error the API reports must surface as a thrown exception.
+          case 'error':
+            final err = data['error'] as Map<String, dynamic>? ?? const {};
+            throw LLMApiException(
+              err['message'] as String? ?? 'Claude stream error',
+              responseBody: dataStr,
+            );
+
+          // Keep-alive; carries no payload.
+          case 'ping':
+            break;
+
           case 'message_start':
             final msg = data['message'] as Map<String, dynamic>?;
             if (msg != null) {
@@ -67,6 +84,10 @@ class ClaudeStreamConverter {
               final u = msg['usage'] as Map<String, dynamic>?;
               if (u != null) {
                 promptTokens = (u['input_tokens'] as num?)?.toInt() ?? 0;
+                cacheCreationTokens = (u['cache_creation_input_tokens'] as num?)
+                    ?.toInt();
+                cacheReadTokens = (u['cache_read_input_tokens'] as num?)
+                    ?.toInt();
               }
             }
 
@@ -110,6 +131,13 @@ class ClaudeStreamConverter {
                   thinking: thinking,
                 ),
               );
+            } else if (deltaType == 'signature_delta') {
+              // The cryptographic signature on a thinking block. It must be
+              // echoed back verbatim when continuing a conversation on the
+              // same model, so it is surfaced rather than dropped.
+              final signature = delta['signature'] as String? ?? '';
+              thinkingSignatures[idx] =
+                  (thinkingSignatures[idx] ?? '') + signature;
             } else if (deltaType == 'input_json_delta') {
               final partial = delta['partial_json'] as String? ?? '';
               if (toolBlocks.containsKey(idx)) {
@@ -169,6 +197,24 @@ class ClaudeStreamConverter {
               createdAt: DateTime.now(),
               promptEvalCount: usage?.inputTokens ?? promptTokens,
               evalCount: usage?.outputTokens ?? outputTokens,
+              usage: LLMUsage(
+                promptTokens: usage?.inputTokens ?? promptTokens,
+                completionTokens: usage?.outputTokens ?? outputTokens,
+              ),
+              finishReason: LLMFinishReason.fromProvider(stopReason),
+              providerMetadata: {
+                if (stopReason != null) 'stop_reason': stopReason,
+                if (cacheCreationTokens != null)
+                  'cache_creation_input_tokens': cacheCreationTokens,
+                if (cacheReadTokens != null)
+                  'cache_read_input_tokens': cacheReadTokens,
+                if (thinkingSignatures.isNotEmpty)
+                  'thinking_signatures': Map<String, String>.fromEntries(
+                    thinkingSignatures.entries.map(
+                      (e) => MapEntry('${e.key}', e.value),
+                    ),
+                  ),
+              },
               message: LLMChunkMessage(content: null, role: LLMRole.assistant),
             );
         }

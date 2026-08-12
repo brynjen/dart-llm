@@ -3,41 +3,92 @@ import 'package:test/test.dart';
 
 void main() {
   group('GeminiUsage', () {
-    test('fromJson with all fields', () {
+    test('fromJson maps Interactions field names', () {
       final usage = GeminiUsage.fromJson({
-        'promptTokenCount': 10,
-        'candidatesTokenCount': 20,
+        'total_tokens': 130,
+        'total_input_tokens': 80,
+        'total_output_tokens': 40,
+        'total_cached_tokens': 5,
+        'total_thought_tokens': 10,
+        'total_tool_use_tokens': 2,
       });
 
-      expect(usage.promptTokenCount, 10);
-      expect(usage.candidatesTokenCount, 20);
+      expect(usage.totalTokens, 130);
+      expect(usage.inputTokens, 80);
+      expect(usage.outputTokens, 40);
+      expect(usage.cachedTokens, 5);
+      expect(usage.thoughtTokens, 10);
+      expect(usage.toolUseTokens, 2);
     });
 
     test('fromJson with missing fields defaults to 0', () {
       final usage = GeminiUsage.fromJson({});
 
-      expect(usage.promptTokenCount, 0);
-      expect(usage.candidatesTokenCount, 0);
+      expect(usage.totalTokens, 0);
+      expect(usage.inputTokens, 0);
+      expect(usage.outputTokens, 0);
+      expect(usage.cachedTokens, 0);
+      expect(usage.thoughtTokens, 0);
+      expect(usage.toolUseTokens, 0);
     });
 
-    test('fromJson with null values defaults to 0', () {
+    test('fromJson ignores legacy generateContent field names', () {
       final usage = GeminiUsage.fromJson({
-        'promptTokenCount': null,
-        'candidatesTokenCount': null,
+        'promptTokenCount': 10,
+        'candidatesTokenCount': 20,
       });
 
-      expect(usage.promptTokenCount, 0);
-      expect(usage.candidatesTokenCount, 0);
+      expect(usage.inputTokens, 0);
+      expect(usage.outputTokens, 0);
     });
 
     test('fromJson handles numeric types', () {
       final usage = GeminiUsage.fromJson({
-        'promptTokenCount': 100.0,
-        'candidatesTokenCount': 200.0,
+        'total_input_tokens': 100.0,
+        'total_output_tokens': 200.0,
       });
 
-      expect(usage.promptTokenCount, 100);
-      expect(usage.candidatesTokenCount, 200);
+      expect(usage.inputTokens, 100);
+      expect(usage.outputTokens, 200);
+    });
+
+    test('toLLMUsage maps input/output onto prompt/completion tokens', () {
+      final usage = const GeminiUsage(
+        totalTokens: 130,
+        inputTokens: 80,
+        outputTokens: 40,
+      ).toLLMUsage();
+
+      expect(usage.promptTokens, 80);
+      expect(usage.completionTokens, 40);
+      expect(usage.totalTokens, 130);
+    });
+
+    test('toLLMUsage falls back to the sum when total is absent', () {
+      final usage = const GeminiUsage(
+        inputTokens: 8,
+        outputTokens: 2,
+      ).toLLMUsage();
+
+      expect(usage.totalTokens, 10);
+    });
+
+    test('toProviderMetadata surfaces counters without a core slot', () {
+      final metadata = const GeminiUsage(
+        totalTokens: 130,
+        inputTokens: 80,
+        outputTokens: 40,
+        cachedTokens: 5,
+        thoughtTokens: 10,
+        toolUseTokens: 2,
+      ).toProviderMetadata();
+
+      expect(metadata, {
+        'total_tokens': 130,
+        'total_cached_tokens': 5,
+        'total_thought_tokens': 10,
+        'total_tool_use_tokens': 2,
+      });
     });
   });
 
@@ -45,14 +96,14 @@ void main() {
     test('creates with all fields', () {
       final now = DateTime.now();
       final chunk = GeminiChunk(
-        model: 'gemini-2.0-flash',
+        model: 'gemini-3.5-flash-lite',
         done: true,
         createdAt: now,
         promptEvalCount: 10,
         evalCount: 20,
       );
 
-      expect(chunk.model, 'gemini-2.0-flash');
+      expect(chunk.model, 'gemini-3.5-flash-lite');
       expect(chunk.done, isTrue);
       expect(chunk.createdAt, now);
       expect(chunk.promptEvalCount, 10);
@@ -70,7 +121,7 @@ void main() {
     });
 
     test('is an LLMChunk', () {
-      final chunk = GeminiChunk(model: 'gemini-2.0-flash');
+      final chunk = GeminiChunk(model: 'gemini-3.5-flash-lite');
       expect(chunk, isA<LLMChunk>());
     });
   });
@@ -107,9 +158,9 @@ void main() {
         },
       });
 
-      final embedding = response.toLLMEmbedding('text-embedding-004');
+      final embedding = response.toLLMEmbedding('gemini-embedding-001');
 
-      expect(embedding.model, 'text-embedding-004');
+      expect(embedding.model, 'gemini-embedding-001');
       expect(embedding.embedding, [0.1, 0.2, 0.3]);
       expect(embedding.promptEvalCount, 0);
     });
@@ -151,10 +202,10 @@ void main() {
         ],
       });
 
-      final embeddings = response.toLLMEmbeddings('text-embedding-004');
+      final embeddings = response.toLLMEmbeddings('gemini-embedding-001');
 
       expect(embeddings.length, 2);
-      expect(embeddings[0].model, 'text-embedding-004');
+      expect(embeddings[0].model, 'gemini-embedding-001');
       expect(embeddings[0].embedding, [0.1, 0.2]);
       expect(embeddings[1].embedding, [0.3, 0.4]);
     });

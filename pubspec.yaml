@@ -9,6 +9,7 @@ environment:
 workspace:
   - packages/llm_core
   - packages/llm_ollama
+  - packages/llm_vllm
   - packages/llm_chatgpt
   - packages/llm_llamacpp
   - packages/llm_claude

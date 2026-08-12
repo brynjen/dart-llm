@@ -1,0 +1,7 @@
+# Tag configuration for this package's tests.
+#
+# Tests tagged 'integration' call a live API and are excluded in CI.
+# - CI:                dart test --exclude-tags integration
+# - Integration only:  dart test --tags integration
+tags:
+  integration:

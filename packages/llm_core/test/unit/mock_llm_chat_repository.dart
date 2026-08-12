@@ -67,7 +67,7 @@ class MockLLMChatRepository extends LLMChatRepository {
     bool think = false,
     List<LLMTool> tools = const [],
     dynamic extra,
-    StreamChatOptions? options,
+    LLMChatOptions? options,
   }) async* {
     if (_delay > Duration.zero) {
       await Future.delayed(_delay);

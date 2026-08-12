@@ -73,6 +73,7 @@ dart-llm/
 ├── packages/
 │   ├── llm_core/          # Core abstractions and interfaces
 │   ├── llm_ollama/        # Ollama backend implementation
+│   ├── llm_vllm/          # vLLM OpenAI-compatible backend implementation
 │   ├── llm_chatgpt/       # OpenAI/ChatGPT backend implementation
 │   ├── llm_llamacpp/      # llama.cpp local inference backend
 │   ├── llm_claude/        # Anthropic Claude backend implementation
@@ -87,6 +88,7 @@ dart-llm/
 
 - `llm_core`: No dependencies on other packages (base package)
 - `llm_ollama`: Depends on `llm_core`
+- `llm_vllm`: Depends on `llm_core`
 - `llm_chatgpt`: Depends on `llm_core`
 - `llm_llamacpp`: Depends on `llm_core`
 - `llm_claude`: Depends on `llm_core`

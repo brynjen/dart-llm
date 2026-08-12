@@ -27,23 +27,48 @@ import 'package:llm_ollama/src/ollama_stream_converter.dart';
 ///   print(chunk.message?.content ?? '');
 /// }
 /// ```
-class OllamaChatRepository extends LLMChatRepository {
+class OllamaChatRepository extends LLMChatRepository
+    with LLMRepositoryFeatures {
   OllamaChatRepository({
     String? baseUrl,
-    this.maxToolAttempts = 90,
-    this.retryConfig,
-    this.timeoutConfig,
+    int maxToolAttempts = 90,
+    RetryConfig? retryConfig,
+    TimeoutConfig? timeoutConfig,
+    RateLimiter? rateLimiter,
+    ResponseCache? responseCache,
+    LLMMetrics? metrics,
     http.Client? httpClient,
-  }) : baseUrl = baseUrl ?? 'http://localhost:11434',
-       httpClient = httpClient ?? http.Client(),
-       _httpHelper = HttpClientHelper(
+  }) : this._(
+         baseUrl: baseUrl ?? 'http://localhost:11434',
+         maxToolAttempts: maxToolAttempts,
+         retryConfig: retryConfig,
+         timeoutConfig: timeoutConfig,
+         rateLimiter: rateLimiter,
+         responseCache: responseCache,
+         metrics: metrics,
          httpClient: httpClient ?? http.Client(),
+         ownsHttpClient: httpClient == null,
+       );
+
+  OllamaChatRepository._({
+    required this.baseUrl,
+    required this.maxToolAttempts,
+    required this.retryConfig,
+    required this.timeoutConfig,
+    required this.httpClient,
+    required bool ownsHttpClient,
+    RateLimiter? rateLimiter,
+    this.responseCache,
+    this.metrics,
+  }) : _ownsHttpClient = ownsHttpClient,
+       _rateLimiter = rateLimiter?.enabled == true
+           ? TokenBucketRateLimiter(rateLimiter!)
+           : null,
+       _httpHelper = HttpClientHelper(
+         httpClient: httpClient,
          timeoutConfig: timeoutConfig,
        ),
-       _ollamaRepo = OllamaRepository(
-         baseUrl: baseUrl ?? 'http://localhost:11434',
-         httpClient: httpClient,
-       );
+       _ollamaRepo = OllamaRepository(baseUrl: baseUrl, httpClient: httpClient);
 
   /// The base URL of the Ollama server.
   final String baseUrl;
@@ -54,6 +79,10 @@ class OllamaChatRepository extends LLMChatRepository {
   /// The HTTP client helper for making requests.
   final HttpClientHelper _httpHelper;
 
+  final bool _ownsHttpClient;
+
+  final TokenBucketRateLimiter? _rateLimiter;
+
   /// The maximum number of tool attempts to make for a single request.
   final int maxToolAttempts;
 
@@ -62,6 +91,12 @@ class OllamaChatRepository extends LLMChatRepository {
 
   /// Timeout configuration for requests.
   final TimeoutConfig? timeoutConfig;
+
+  @override
+  final ResponseCache? responseCache;
+
+  @override
+  final LLMMetrics? metrics;
 
   final OllamaRepository _ollamaRepo;
 
@@ -73,6 +108,24 @@ class OllamaChatRepository extends LLMChatRepository {
   }
 
   @override
+  LLMCapabilities capabilitiesForModel(String model) {
+    return const LLMCapabilities(
+      streaming: true,
+      tools: true,
+      vision: true,
+      structuredOutput: true,
+      thinking: true,
+      embeddings: true,
+    );
+  }
+
+  /// Releases owned resources.
+  void close() {
+    _rateLimiter?.dispose();
+    if (_ownsHttpClient) httpClient.close();
+  }
+
+  @override
   Stream<LLMChunk> streamChat(
     String model, {
     required List<LLMMessage> messages,
@@ -80,7 +133,7 @@ class OllamaChatRepository extends LLMChatRepository {
     dynamic extra,
     int? toolAttempts,
     bool think = false,
-    StreamChatOptions? options,
+    LLMChatOptions? options,
   }) async* {
     Validation.validateModelName(model);
     Validation.validateMessages(messages);
@@ -91,7 +144,9 @@ class OllamaChatRepository extends LLMChatRepository {
       tools: tools,
       extra: extra,
       toolAttempts: toolAttempts,
+      retryConfig: retryConfig,
     );
+    final effectiveRetryConfig = merged.retryConfig ?? retryConfig;
 
     if (messages.any((msg) => msg.images != null && msg.images!.isNotEmpty)) {
       if (!(await _ollamaRepo.supportsVision(model))) {
@@ -113,14 +168,23 @@ class OllamaChatRepository extends LLMChatRepository {
           .map((tool) => tool.toJson)
           .toList(growable: false);
     }
-    _applyBackendOptions(body, merged.backendOptions, merged.responseFormat);
+    _applyBackendOptions(body, merged);
 
-    final response = await _httpHelper.sendStreamingRequest(
-      method: 'POST',
-      uri: uri,
-      headers: {'content-type': 'application/json'},
-      body: utf8.encode(json.encode(body)),
-      applyTimeoutToSend: false, // Timeout applied when reading stream
+    final response = await RateLimiterUtil.executeWithRateLimit(
+      rateLimiter: _rateLimiter,
+      operation: () => RetryUtil.executeWithRetry(
+        operation: () => _httpHelper.sendStreamingRequest(
+          method: 'POST',
+          uri: uri,
+          headers: {'content-type': 'application/json'},
+          body: utf8.encode(json.encode(body)),
+          applyTimeoutToSend: false, // Timeout applied when reading stream
+          timeout: merged.timeout,
+        ),
+        config: effectiveRetryConfig,
+        isRetryable: (error) =>
+            ErrorHandlers.isRetryableError(error, effectiveRetryConfig),
+      ),
     );
 
     try {
@@ -147,14 +211,22 @@ class OllamaChatRepository extends LLMChatRepository {
                     messages: messages,
                     tools: tools,
                     extra: extra,
-                    options: StreamChatOptions(
+                    options: LLMChatOptions(
                       think: merged.think,
                       tools: tools,
                       extra: extra,
                       toolAttempts: toolAttempts,
                       autoExecuteTools: merged.autoExecuteTools,
                       backendOptions: merged.backendOptions,
+                      timeout: merged.timeout,
+                      retryConfig: effectiveRetryConfig,
                       responseFormat: merged.responseFormat,
+                      temperature: merged.temperature,
+                      topP: merged.topP,
+                      topK: merged.topK,
+                      maxOutputTokens: merged.maxOutputTokens,
+                      stopSequences: merged.stopSequences,
+                      reasoningBudget: merged.reasoningBudget,
                     ),
                   ),
             );
@@ -211,19 +283,22 @@ class OllamaChatRepository extends LLMChatRepository {
       if (filteredOptions.isNotEmpty) 'options': filteredOptions,
       if (keepAlive != null) 'keep_alive': keepAlive,
     };
-    final response = await RetryUtil.executeWithRetry(
-      operation: () => _httpHelper.sendNonStreamingRequest(
-        method: 'POST',
-        uri: Uri.parse('$baseUrl/api/embed'),
-        headers: {
-          'content-type': 'application/json',
-          'accept': 'application/json',
-        },
-        body: json.encode(body),
+    final response = await RateLimiterUtil.executeWithRateLimit(
+      rateLimiter: _rateLimiter,
+      operation: () => RetryUtil.executeWithRetry(
+        operation: () => _httpHelper.sendNonStreamingRequest(
+          method: 'POST',
+          uri: Uri.parse('$baseUrl/api/embed'),
+          headers: {
+            'content-type': 'application/json',
+            'accept': 'application/json',
+          },
+          body: json.encode(body),
+        ),
+        config: retryConfig,
+        isRetryable: (error) =>
+            ErrorHandlers.isRetryableError(error, retryConfig),
       ),
-      config: retryConfig,
-      isRetryable: (error) =>
-          ErrorHandlers.isRetryableError(error, retryConfig),
     );
     switch (response.statusCode) {
       case 200: // HttpStatus.ok
@@ -248,11 +323,9 @@ class OllamaChatRepository extends LLMChatRepository {
     return embed(model: model, messages: messages, options: options);
   }
 
-  void _applyBackendOptions(
-    Map<String, dynamic> body,
-    Map<String, dynamic> backendOptions,
-    LLMResponseFormat? responseFormat,
-  ) {
+  void _applyBackendOptions(Map<String, dynamic> body, MergedOptions merged) {
+    final backendOptions = merged.backendOptions;
+    final responseFormat = merged.responseFormat;
     if (responseFormat != null) {
       switch (responseFormat) {
         case JsonFormat():
@@ -264,7 +337,43 @@ class OllamaChatRepository extends LLMChatRepository {
       body['format'] = backendOptions['format'];
     }
     if (backendOptions['options'] != null) {
-      body['options'] = backendOptions['options'];
+      body['options'] = Map<String, dynamic>.from(backendOptions['options']);
+    }
+    final options = Map<String, dynamic>.from(
+      body['options'] as Map<String, dynamic>? ?? const {},
+    );
+    if (merged.temperature != null) {
+      options['temperature'] = merged.temperature;
+    }
+    if (merged.topP != null) {
+      options['top_p'] = merged.topP;
+    }
+    if (merged.topK != null) {
+      options['top_k'] = merged.topK;
+    }
+    if (merged.maxOutputTokens != null) {
+      options['num_predict'] = merged.maxOutputTokens;
+    }
+    if (merged.stopSequences != null) {
+      options['stop'] = merged.stopSequences;
+    }
+    if (backendOptions['temperature'] != null) {
+      options['temperature'] = backendOptions['temperature'];
+    }
+    if (backendOptions['topP'] != null) {
+      options['top_p'] = backendOptions['topP'];
+    }
+    if (backendOptions['topK'] != null) {
+      options['top_k'] = backendOptions['topK'];
+    }
+    if (backendOptions['maxOutputTokens'] != null) {
+      options['num_predict'] = backendOptions['maxOutputTokens'];
+    }
+    if (backendOptions['stopSequences'] != null) {
+      options['stop'] = backendOptions['stopSequences'];
+    }
+    if (options.isNotEmpty) {
+      body['options'] = options;
     }
     final keepAlive = backendOptions.containsKey('keep_alive')
         ? backendOptions['keep_alive']

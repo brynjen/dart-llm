@@ -7,7 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.2.0] - 2026-04-09
+## [0.2.0] - 2026-08-12
+
+### Changed
+- **Breaking:** Adopted `LLMChatOptions?` in chat APIs.
+- Explicit empty tool lists now clear inherited tool options.
+- Local tool loops now respect `autoExecuteTools: false`.
 
 ### Added
 - Structured output support via `StreamChatOptions.responseFormat`:

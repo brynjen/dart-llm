@@ -7,14 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.2.0] - 2026-04-09
+## [0.2.0] - 2026-08-12
 
 ### Added
+- Provider-local functional integration coverage for manual tool calls, automatic tool execution, structured output, and low-cost live-test model defaults.
+- Builder support for metrics, response cache, and rate limiting.
 - Structured output support via `StreamChatOptions.responseFormat`:
   - `JsonFormat()` → `response_format: {type: "json_object"}` (native OpenAI API)
   - `JsonSchemaFormat(name, schema, strict)` → `response_format: {type: "json_schema", json_schema: {name, strict, schema}}` (native OpenAI API)
   - `responseFormat` is propagated through tool-call loops so format constraints are preserved across all turns
 - Bumped `llm_core` dependency to `^0.2.0`
+
+### Changed
+- Requests now honor per-call timeout, retry, generation, cache, and metrics options.
+- OpenAI live tests default to `gpt-5.4-nano` for chat and `text-embedding-3-small` for embeddings.
+
+### Fixed
+- `autoExecuteTools: false` now exposes tool calls without executing them.
+- HTTP client ownership and disposal are deterministic.
 
 ## [0.1.9] - 2026-02-28
 

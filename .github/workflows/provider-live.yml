@@ -1,0 +1,196 @@
+name: Provider Live Tests
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 4 * * 1'
+
+jobs:
+  openai:
+    name: OpenAI live tests
+    runs-on: ubuntu-latest
+    env:
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      OPENAI_CHAT_MODEL: ${{ vars.OPENAI_CHAT_MODEL || 'gpt-5.4-nano' }}
+      OPENAI_EMBEDDING_MODEL: ${{ vars.OPENAI_EMBEDDING_MODEL || 'text-embedding-3-small' }}
+    steps:
+      - name: Check secret
+        id: secret
+        run: |
+          if [ -z "$OPENAI_API_KEY" ]; then
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "OPENAI_API_KEY is not configured; skipping OpenAI live tests."
+          else
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.secret.outputs.run == 'true'
+
+      - name: Setup Dart SDK
+        if: steps.secret.outputs.run == 'true'
+        uses: dart-lang/setup-dart@v1
+        with:
+          sdk: stable
+
+      - name: Install Melos
+        if: steps.secret.outputs.run == 'true'
+        run: dart pub global activate melos
+
+      - name: Install dependencies
+        if: steps.secret.outputs.run == 'true'
+        run: |
+          cp pubspec.yaml pubspec.yaml.backup
+          sed -i '/packages\/llm_llamacpp/d' pubspec.yaml
+          melos bootstrap --scope="llm_chatgpt"
+
+      - name: Run OpenAI integration tests
+        if: steps.secret.outputs.run == 'true'
+        run: cd packages/llm_chatgpt && dart test --tags integration test/integration/all_integration_tests.dart
+
+      - name: Restore workspace
+        if: always() && steps.secret.outputs.run == 'true'
+        run: '[ -f pubspec.yaml.backup ] && mv pubspec.yaml.backup pubspec.yaml || true'
+
+  claude:
+    name: Claude live tests
+    runs-on: ubuntu-latest
+    env:
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      ANTHROPIC_CHAT_MODEL: ${{ vars.ANTHROPIC_CHAT_MODEL || 'claude-haiku-4-5-20251001' }}
+    steps:
+      - name: Check secret
+        id: secret
+        run: |
+          if [ -z "$ANTHROPIC_API_KEY" ]; then
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "ANTHROPIC_API_KEY is not configured; skipping Claude live tests."
+          else
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.secret.outputs.run == 'true'
+
+      - name: Setup Dart SDK
+        if: steps.secret.outputs.run == 'true'
+        uses: dart-lang/setup-dart@v1
+        with:
+          sdk: stable
+
+      - name: Install Melos
+        if: steps.secret.outputs.run == 'true'
+        run: dart pub global activate melos
+
+      - name: Install dependencies
+        if: steps.secret.outputs.run == 'true'
+        run: |
+          cp pubspec.yaml pubspec.yaml.backup
+          sed -i '/packages\/llm_llamacpp/d' pubspec.yaml
+          melos bootstrap --scope="llm_claude"
+
+      - name: Run Claude integration tests
+        if: steps.secret.outputs.run == 'true'
+        run: cd packages/llm_claude && dart test --tags integration test/integration/all_integration_tests.dart
+
+      - name: Restore workspace
+        if: always() && steps.secret.outputs.run == 'true'
+        run: '[ -f pubspec.yaml.backup ] && mv pubspec.yaml.backup pubspec.yaml || true'
+
+  gemini:
+    name: Gemini live tests
+    runs-on: ubuntu-latest
+    env:
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      GEMINI_CHAT_MODEL: ${{ vars.GEMINI_CHAT_MODEL || 'gemini-3.1-flash-lite' }}
+      GEMINI_EMBEDDING_MODEL: ${{ vars.GEMINI_EMBEDDING_MODEL || 'gemini-embedding-001' }}
+    steps:
+      - name: Check secret
+        id: secret
+        run: |
+          if [ -z "$GEMINI_API_KEY" ]; then
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "GEMINI_API_KEY is not configured; skipping Gemini live tests."
+          else
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.secret.outputs.run == 'true'
+
+      - name: Setup Dart SDK
+        if: steps.secret.outputs.run == 'true'
+        uses: dart-lang/setup-dart@v1
+        with:
+          sdk: stable
+
+      - name: Install Melos
+        if: steps.secret.outputs.run == 'true'
+        run: dart pub global activate melos
+
+      - name: Install dependencies
+        if: steps.secret.outputs.run == 'true'
+        run: |
+          cp pubspec.yaml pubspec.yaml.backup
+          sed -i '/packages\/llm_llamacpp/d' pubspec.yaml
+          melos bootstrap --scope="llm_gemini"
+
+      - name: Run Gemini integration tests
+        if: steps.secret.outputs.run == 'true'
+        run: cd packages/llm_gemini && dart test --tags integration test/integration/all_integration_tests.dart
+
+      - name: Restore workspace
+        if: always() && steps.secret.outputs.run == 'true'
+        run: '[ -f pubspec.yaml.backup ] && mv pubspec.yaml.backup pubspec.yaml || true'
+
+  vllm:
+    name: vLLM live tests
+    runs-on: ubuntu-latest
+    env:
+      VLLM_BASE_URL: ${{ vars.VLLM_BASE_URL }}
+      VLLM_API_KEY: ${{ secrets.VLLM_API_KEY }}
+      VLLM_CHAT_MODEL: ${{ vars.VLLM_CHAT_MODEL || 'Qwen/Qwen3-0.6B' }}
+      VLLM_EMBEDDING_MODEL: ${{ vars.VLLM_EMBEDDING_MODEL || vars.VLLM_CHAT_MODEL || 'Qwen/Qwen3-0.6B' }}
+      # Without these the tool, reasoning and embedding suites self-skip, so
+      # the live job silently covered only basic chat.
+      VLLM_ENABLE_TOOL_TESTS: ${{ vars.VLLM_ENABLE_TOOL_TESTS || 'false' }}
+      VLLM_ENABLE_REASONING_TESTS: ${{ vars.VLLM_ENABLE_REASONING_TESTS || 'false' }}
+      VLLM_ENABLE_EMBEDDING_TESTS: ${{ vars.VLLM_ENABLE_EMBEDDING_TESTS || 'false' }}
+    steps:
+      - name: Check server URL
+        id: server
+        run: |
+          if [ -z "$VLLM_BASE_URL" ]; then
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "VLLM_BASE_URL is not configured; skipping vLLM live tests."
+          else
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.server.outputs.run == 'true'
+
+      - name: Setup Dart SDK
+        if: steps.server.outputs.run == 'true'
+        uses: dart-lang/setup-dart@v1
+        with:
+          sdk: stable
+
+      - name: Install Melos
+        if: steps.server.outputs.run == 'true'
+        run: dart pub global activate melos
+
+      - name: Install dependencies
+        if: steps.server.outputs.run == 'true'
+        run: |
+          cp pubspec.yaml pubspec.yaml.backup
+          sed -i '/packages\/llm_llamacpp/d' pubspec.yaml
+          melos bootstrap --scope="llm_vllm"
+
+      - name: Run vLLM integration tests
+        if: steps.server.outputs.run == 'true'
+        run: cd packages/llm_vllm && dart test --tags integration test/integration/all_integration_tests.dart
+
+      - name: Restore workspace
+        if: always() && steps.server.outputs.run == 'true'
+        run: '[ -f pubspec.yaml.backup ] && mv pubspec.yaml.backup pubspec.yaml || true'

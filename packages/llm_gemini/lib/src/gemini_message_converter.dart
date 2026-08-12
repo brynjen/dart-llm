@@ -1,161 +1,175 @@
-import 'dart:convert';
-
 import 'package:llm_core/llm_core.dart';
 
-/// Converts [LLMMessage] lists to the Gemini API format.
+/// Converts [LLMMessage] lists and [LLMTool] declarations to the Gemini
+/// Interactions API request format.
 ///
-/// Key differences from OpenAI format:
-/// - System messages become a top-level `systemInstruction` field
-/// - Uses `contents` array with `role: "user"` or `role: "model"` (not "assistant")
-/// - Content is structured as `parts` arrays
-/// - Tool calls are `functionCall` parts; tool results are `functionResponse` parts
-/// - Consecutive tool results are merged into a single user content entry
+/// Key differences from the legacy `generateContent` format:
+/// - Turns live in a top-level `input` array instead of `contents`.
+/// - A turn's payload is a list of typed content *blocks*
+///   (`{"type": "text", …}`) instead of untyped `parts`.
+/// - Tool results are `function_result` blocks instead of `functionResponse`
+///   parts.
+/// - Tool declarations are flat `{"type": "function", "name": …}` objects
+///   instead of being nested under `tools[].functionDeclarations`.
 class GeminiMessageConverter {
-  /// Converts a list of [LLMMessage] to the Gemini API request fields.
+  /// Serializes a full conversation into the Interactions API `input` array.
   ///
-  /// Returns a record with:
-  /// - `systemInstruction`: optional system instruction map
-  /// - `contents`: list of Gemini-format content maps
-  static ({
-    Map<String, dynamic>? systemInstruction,
-    List<Map<String, dynamic>> contents,
-  })
-  convert(List<LLMMessage> messages) {
-    Map<String, dynamic>? systemInstruction;
-    final systemParts = <String>[];
-    final contents = <Map<String, dynamic>>[];
+  /// ## ⚠️ UNVERIFIED WIRE SHAPE — CHECK HERE FIRST ON HTTP 400
+  ///
+  /// [LLMChatRepository.streamChat] is stateless: it receives the entire
+  /// conversation on every call, so requests are sent with `store: false` and
+  /// the whole history serialized here rather than relying on
+  /// `previous_interaction_id`.
+  ///
+  /// Google's documentation states that `input` accepts "a plain string, a list
+  /// of typed content objects, or a list of role-tagged turns (for stateless
+  /// history)", but the exact JSON of a role-tagged turn is **not documented in
+  /// any source available when this was written**. The shape produced here is
+  /// an informed assumption:
+  ///
+  /// ```json
+  /// [
+  ///   {"role": "user",  "content": [{"type": "text", "text": "…"}]},
+  ///   {"role": "model", "content": [{"type": "text", "text": "…"}]}
+  /// ]
+  /// ```
+  ///
+  /// Every assumption about that envelope is confined to this one function so
+  /// there is a single place to fix. Specifically, the following are inferred
+  /// rather than read from documentation:
+  /// - the `{"role": …, "content": [...]}` turn envelope itself;
+  /// - `"model"` as the assistant role name (carried over from
+  ///   `generateContent`, where Gemini uses `model` rather than `assistant`);
+  /// - system messages being emitted as leading `user` turns, because the
+  ///   Interactions request body has no documented system-instruction field;
+  /// - the `{"type": "function_call", "id", "name", "arguments"}` block used to
+  ///   echo a previous assistant tool call back (modeled on the `step.start`
+  ///   event payload for a `function_call` step);
+  /// - the `{"type": "image", "mime_type", "data"}` block (modeled on the
+  ///   `step.delta` image delta);
+  /// - `function_result` blocks being carried on a `user` turn.
+  ///
+  /// The `function_result` block *content* is documented:
+  /// `{"type": "function_result", "call_id": …, "name": …, "result": [{"type":
+  /// "text", "text": …}]}`.
+  ///
+  /// Known limitation: `thought_signature` values observed on the response
+  /// stream are surfaced through `LLMChunk.providerMetadata`, but there is no
+  /// documented input block for echoing them back, so multi-turn function
+  /// calling may still hit "Function call is missing a thought_signature".
+  static List<Map<String, dynamic>> buildStatelessInput(
+    List<LLMMessage> messages,
+  ) {
+    final turns = <Map<String, dynamic>>[];
+
+    void addTurn(String role, List<Map<String, dynamic>> content) {
+      turns.add(<String, dynamic>{'role': role, 'content': content});
+    }
 
     for (final msg in messages) {
       switch (msg.role) {
         case LLMRole.system:
-          if (msg.content != null) systemParts.add(msg.content!);
+          if (msg.content != null && msg.content!.isNotEmpty) {
+            addTurn('user', [_textBlock(msg.content!)]);
+          }
+
         case LLMRole.user:
-          contents.add(_convertUserMessage(msg));
+          final content = <Map<String, dynamic>>[];
+          for (final image in msg.images ?? const <String>[]) {
+            content.add(_imageBlock(image));
+          }
+          if (msg.content != null && msg.content!.isNotEmpty) {
+            content.add(_textBlock(msg.content!));
+          }
+          addTurn('user', content.isEmpty ? [_textBlock('')] : content);
+
         case LLMRole.assistant:
-          contents.add(_convertAssistantMessage(msg));
+          final content = <Map<String, dynamic>>[];
+          if (msg.content != null && msg.content!.isNotEmpty) {
+            content.add(_textBlock(msg.content!));
+          }
+          for (final toolCall in msg.toolCalls ?? const <LLMToolCall>[]) {
+            Map<String, dynamic> arguments;
+            try {
+              arguments = toolCall.argumentsJson;
+            } catch (_) {
+              arguments = <String, dynamic>{};
+            }
+            content.add(<String, dynamic>{
+              'type': 'function_call',
+              if (toolCall.id != null && toolCall.id!.isNotEmpty)
+                'id': toolCall.id,
+              'name': toolCall.name,
+              'arguments': arguments,
+            });
+          }
+          addTurn('model', content.isEmpty ? [_textBlock('')] : content);
+
         case LLMRole.tool:
-          // Tool results become user contents with functionResponse parts
-          final toolContent = _convertToolResultMessage(msg);
-          // Merge consecutive tool responses into one user content
-          if (contents.isNotEmpty &&
-              contents.last['role'] == 'user' &&
-              _isFunctionResponseContent(contents.last)) {
-            final existing =
-                contents.last['parts'] as List<Map<String, dynamic>>;
-            existing.addAll(toolContent['parts'] as List<Map<String, dynamic>>);
+          final block = _functionResultBlock(msg);
+          // Consecutive tool results belong to the same turn: one assistant
+          // turn may request several calls in parallel.
+          if (turns.isNotEmpty &&
+              turns.last['role'] == 'user' &&
+              _isFunctionResultTurn(turns.last)) {
+            (turns.last['content'] as List<Map<String, dynamic>>).add(block);
           } else {
-            contents.add(toolContent);
+            addTurn('user', [block]);
           }
       }
     }
 
-    if (systemParts.isNotEmpty) {
-      systemInstruction = {
-        'parts': [
-          {'text': systemParts.join('\n\n')},
-        ],
-      };
-    }
-
-    return (systemInstruction: systemInstruction, contents: contents);
+    return turns;
   }
 
-  static Map<String, dynamic> _convertUserMessage(LLMMessage msg) {
-    final parts = <Map<String, dynamic>>[];
-
-    if (msg.images != null) {
-      for (final imageData in msg.images!) {
-        parts.add(_imageInlineData(imageData));
-      }
-    }
-
-    if (msg.content != null && msg.content!.isNotEmpty) {
-      parts.add({'text': msg.content!});
-    }
-
-    return {
-      'role': 'user',
-      'parts': parts.isEmpty
-          ? [
-              {'text': ''},
-            ]
-          : parts,
+  /// Converts an [LLMTool] to an Interactions API tool entry.
+  ///
+  /// The Interactions API takes a flat array of tool objects — unlike
+  /// `generateContent`, which wraps declarations in
+  /// `tools[0].functionDeclarations`:
+  /// ```json
+  /// {"type": "function", "name": "…", "description": "…", "parameters": {…}}
+  /// ```
+  static Map<String, dynamic> toolToFunctionSpec(LLMTool tool) {
+    final openAiFormat = tool.toJson;
+    final function = openAiFormat['function'] as Map<String, dynamic>? ?? {};
+    final parameters = function['parameters'] as Map<String, dynamic>? ?? {};
+    return <String, dynamic>{
+      'type': 'function',
+      'name': function['name'] ?? tool.name,
+      'description': function['description'] ?? tool.description,
+      'parameters': parameters,
     };
   }
 
-  static Map<String, dynamic> _convertAssistantMessage(LLMMessage msg) {
-    final parts = <Map<String, dynamic>>[];
+  static Map<String, dynamic> _textBlock(String text) => <String, dynamic>{
+    'type': 'text',
+    'text': text,
+  };
 
-    if (msg.content != null && msg.content!.isNotEmpty) {
-      parts.add({'text': msg.content!});
-    }
-
-    if (msg.toolCalls != null) {
-      for (final tc in msg.toolCalls!) {
-        final name = tc['function']?['name'] as String? ?? '';
-        final argsRaw = tc['function']?['arguments'];
-        final Map<String, dynamic> args;
-        if (argsRaw is String) {
-          try {
-            args = json.decode(argsRaw) as Map<String, dynamic>;
-          } catch (_) {
-            continue;
-          }
-        } else if (argsRaw is Map<String, dynamic>) {
-          args = argsRaw;
-        } else {
-          args = {};
-        }
-        parts.add({
-          'functionCall': {'name': name, 'args': args},
-        });
-      }
-    }
-
-    return {
-      'role': 'model',
-      'parts': parts.isEmpty
-          ? [
-              {'text': ''},
-            ]
-          : parts,
+  /// Builds a documented `function_result` block from a tool-result message.
+  ///
+  /// [LLMMessage.toolCallId] carries the id of the call being answered and
+  /// [LLMMessage.status] carries the tool name, matching how
+  /// [StreamToolExecutor] populates tool messages.
+  static Map<String, dynamic> _functionResultBlock(LLMMessage msg) {
+    return <String, dynamic>{
+      'type': 'function_result',
+      'call_id': msg.toolCallId ?? '',
+      'name': msg.status ?? '',
+      'result': [_textBlock(msg.content ?? '')],
     };
   }
 
-  static Map<String, dynamic> _convertToolResultMessage(LLMMessage msg) {
-    // Determine the function name — Gemini requires it in functionResponse
-    // We try to parse it from content or fall back to empty string
-    final name = msg.status ?? '';
-    final response = <String, dynamic>{};
-    if (msg.content != null) {
-      try {
-        final decoded = json.decode(msg.content!) as Map<String, dynamic>;
-        response.addAll(decoded);
-      } catch (_) {
-        response['result'] = msg.content;
-      }
-    }
-
-    return {
-      'role': 'user',
-      'parts': [
-        {
-          'functionResponse': {'name': name, 'response': response},
-        },
-      ],
-    };
+  static bool _isFunctionResultTurn(Map<String, dynamic> turn) {
+    final content = turn['content'];
+    if (content is! List || content.isEmpty) return false;
+    return (content.first as Map<String, dynamic>)['type'] == 'function_result';
   }
 
-  static bool _isFunctionResponseContent(Map<String, dynamic> content) {
-    if (content['role'] != 'user') return false;
-    final parts = content['parts'];
-    if (parts is! List || parts.isEmpty) return false;
-    return (parts.first as Map<String, dynamic>).containsKey(
-      'functionResponse',
-    );
-  }
-
-  static Map<String, dynamic> _imageInlineData(String imageData) {
+  /// Builds an image block, sniffing the MIME type from a data URI or from the
+  /// leading bytes of a bare base64 payload.
+  static Map<String, dynamic> _imageBlock(String imageData) {
     String mimeType = 'image/jpeg';
     String data = imageData;
 
@@ -179,20 +193,10 @@ class GeminiMessageConverter {
       mimeType = 'image/webp';
     }
 
-    return {
-      'inlineData': {'mimeType': mimeType, 'data': data},
-    };
-  }
-
-  /// Converts an [LLMTool] to Gemini's functionDeclaration format.
-  static Map<String, dynamic> toolToFunctionDeclaration(LLMTool tool) {
-    final openAiFormat = tool.toJson;
-    final function = openAiFormat['function'] as Map<String, dynamic>? ?? {};
-    final parameters = function['parameters'] as Map<String, dynamic>? ?? {};
-    return {
-      'name': function['name'] ?? tool.name,
-      'description': function['description'] ?? tool.description,
-      'parameters': parameters,
+    return <String, dynamic>{
+      'type': 'image',
+      'mime_type': mimeType,
+      'data': data,
     };
   }
 }

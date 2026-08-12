@@ -37,7 +37,7 @@ import 'package:llm_claude/llm_claude.dart';
 
 final repo = ClaudeChatRepository(apiKey: 'your-api-key');
 
-final stream = repo.streamChat('claude-opus-4-5', messages: [
+final stream = repo.streamChat('claude-haiku-4-5-20251001', messages: [
   LLMMessage(role: LLMRole.user, content: 'Hello!'),
 ]);
 
@@ -49,7 +49,7 @@ await for (final chunk in stream) {
 ### System Message
 
 ```dart
-final stream = repo.streamChat('claude-opus-4-5', messages: [
+final stream = repo.streamChat('claude-haiku-4-5-20251001', messages: [
   LLMMessage(role: LLMRole.system, content: 'You are a concise assistant.'),
   LLMMessage(role: LLMRole.user, content: 'Explain quantum entanglement.'),
 ]);
@@ -82,7 +82,7 @@ class WeatherTool extends LLMTool {
 }
 
 final stream = repo.streamChat(
-  'claude-opus-4-5',
+  'claude-haiku-4-5-20251001',
   messages: [LLMMessage(role: LLMRole.user, content: 'What is the weather in Oslo?')],
   tools: [WeatherTool()],
 );
@@ -97,9 +97,9 @@ import 'package:llm_core/llm_core.dart';
 
 // Simple JSON mode
 final stream = repo.streamChat(
-  'claude-opus-4-5',
+  'claude-haiku-4-5-20251001',
   messages: [LLMMessage(role: LLMRole.user, content: 'List three fruits as JSON.')],
-  options: const StreamChatOptions(responseFormat: JsonFormat()),
+  options: const LLMChatOptions(responseFormat: JsonFormat()),
 );
 
 // JSON Schema mode
@@ -113,9 +113,9 @@ const schema = {
 };
 
 final stream = repo.streamChat(
-  'claude-opus-4-5',
+  'claude-haiku-4-5-20251001',
   messages: [LLMMessage(role: LLMRole.user, content: 'Return a person object.')],
-  options: const StreamChatOptions(
+  options: const LLMChatOptions(
     responseFormat: JsonSchemaFormat(name: 'Person', schema: schema),
   ),
 );
@@ -127,10 +127,10 @@ Extended reasoning (thinking) is supported on compatible models:
 
 ```dart
 final stream = repo.streamChat(
-  'claude-opus-4-5',
+  'claude-haiku-4-5-20251001',
   messages: [LLMMessage(role: LLMRole.user, content: 'Solve this step by step: ...')],
   think: true,
-  options: const StreamChatOptions(
+  options: const LLMChatOptions(
     backendOptions: {'thinking_budget': 16000},
   ),
 );
@@ -148,17 +148,17 @@ await for (final chunk in stream) {
 ### Non-Streaming Response
 
 ```dart
-final response = await repo.chatResponse('claude-opus-4-5', messages: [
+final response = await repo.chatResponse('claude-haiku-4-5-20251001', messages: [
   LLMMessage(role: LLMRole.user, content: 'Hello!'),
 ]);
 
 print(response.content);
 ```
 
-### Using StreamChatOptions
+### Using LLMChatOptions
 
 ```dart
-final options = StreamChatOptions(
+final options = LLMChatOptions(
   tools: [WeatherTool()],
   toolAttempts: 5,
   backendOptions: {
@@ -167,7 +167,7 @@ final options = StreamChatOptions(
   },
 );
 
-final stream = repo.streamChat('claude-opus-4-5', messages: messages, options: options);
+final stream = repo.streamChat('claude-haiku-4-5-20251001', messages: messages, options: options);
 ```
 
 ## Advanced Configuration
@@ -222,9 +222,27 @@ final repo = ClaudeChatRepository(
 
 See [Anthropic Models](https://docs.anthropic.com/en/docs/about-claude/models) for available models:
 
-- `claude-opus-4-5` — Most capable
-- `claude-sonnet-4-5` — Balanced performance and cost
-- `claude-haiku-3-5` — Fast and cost-effective
+- `claude-haiku-4-5-20251001` — Low-cost current Haiku model used by live tests
+- `claude-opus-5` — Most capable
+- `claude-sonnet-5` — Balanced performance and cost
+- `claude-haiku-4-5` — Fastest and cheapest
+
+Model families differ in the request shape they accept, and `llm_claude`
+selects it automatically from the model id:
+
+| Model family | Thinking | `temperature` / `top_p` / `top_k` | Structured output |
+|---|---|---|---|
+| Opus 4.7+, Sonnet 5, Fable 5, Mythos 5 | `adaptive` | **rejected (400)** — omitted automatically | native `output_config` |
+| Opus 4.6, Sonnet 4.6 | `adaptive` | accepted | native `output_config` |
+| Opus 4.5 and earlier, Haiku 4.5, Claude 3 | `budget_tokens` | accepted | system-prompt injection |
+
+Sending `budget_tokens` to a current model — or a sampling parameter to Opus
+4.7+ — is a `400`, not a warning. `LLMChatOptions.reasoningBudget` is
+translated to an `output_config.effort` level on models that no longer accept
+token budgets, so the setting is honored rather than dropped.
+
+An unrecognized model id is treated as a current model, so a newly released
+Claude works without a library update.
 
 ## Notes
 

@@ -7,20 +7,83 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.2.0] - 2026-04-09
+## [0.2.0] - 2026-08-12
+
+Initial release of the Google Gemini backend for the dart-llm ecosystem.
 
 ### Added
-- Initial release of the Google Gemini backend for the dart-llm ecosystem
-- Streaming chat responses via the Gemini API (`streamGenerateContent`)
-- Tool/function calling with automatic tool-loop execution (`autoExecuteTools: true`)
-- Thinking mode support (`think: true`) with configurable token budget via `backendOptions['thinking_budget']`
-- Native embeddings via `embed()` and `batchEmbed()` (single and batch endpoints)
-- Structured output via `StreamChatOptions.responseFormat` (native `generationConfig` API):
-  - `JsonFormat()` → `responseMimeType: "application/json"`
-  - `JsonSchemaFormat(name, schema)` → `responseMimeType: "application/json"` + `responseSchema: {schema}`
-  - Note: Gemini `responseSchema` uses UPPERCASE type names (`"STRING"`, `"OBJECT"`, etc.)
-  - `responseFormat` is propagated through tool-call loops so format constraints are preserved across all turns
-- `generationConfig` options via `backendOptions` (`temperature`, `topP`, `topK`, `maxOutputTokens`, `stopSequences`, `responseMimeType`)
-- `GeminiChatRepository.builder()` for fluent configuration
-- `RetryConfig` and `TimeoutConfig` support for resilient production deployments
-- Full compatibility with `LLMChatRepository` interface from `llm_core`
+
+- `GeminiChatRepository` — streaming chat via the **Interactions API**
+  (`POST /v1beta/interactions`). Google labels the older `generateContent`
+  endpoint legacy, so this package targets Interactions from the outset.
+  Requests carry `model`, `input`, `stream`, `store`, `tools`,
+  `response_format`, and `generation_config`; responses are parsed from
+  `interaction.created`, `step.start`, `step.delta`, `step.stop`, and
+  `interaction.completed` events.
+- The API key is sent in the `x-goog-api-key` **header**, for chat and
+  embeddings alike — never appended to the URL as `key=…`, where it would leak
+  into logs, proxies, and crash reports.
+- Stateless by default: requests send `store: false` and serialize the whole
+  conversation into `input` as role-tagged turns, matching
+  `LLMChatRepository`'s stateless contract. Server-side continuation is opt-in
+  via `backendOptions['previous_interaction_id']`.
+- Tool/function calling with automatic tool-loop execution
+  (`autoExecuteTools: true`). Declarations are sent as a flat `tools` array of
+  `{"type": "function", "name", "description", "parameters"}` entries. Tool
+  calls carry the server-provided call id, and argument JSON is assembled by
+  concatenating `arguments_delta` fragments.
+- Thinking, with `thought_summary` deltas populating
+  `LLMChunkMessage.thinking` and `text` deltas populating
+  `LLMChunkMessage.content` — the two are kept separate rather than reasoning
+  being emitted as ordinary assistant output.
+  `LLMChatOptions.reasoningBudget` maps onto the discrete
+  `generation_config.thinking_level` (`minimal`/`low`/`medium`/`high`); the
+  Interactions API has no raw token budget. Override with
+  `backendOptions['thinking_level']`.
+- `thought_signature` values are accumulated per step index and surfaced via
+  `LLMChunk.providerMetadata['thought_signatures']`.
+- Structured output via `LLMChatOptions.responseFormat`, mapped onto the
+  `response_format` array. Standard lowercase JSON Schema is forwarded
+  unchanged. Propagated through tool-call loops so the constraint holds across
+  every turn.
+- Embeddings via `embed()` and `batchEmbed()` (`embedContent` /
+  `batchEmbedContents`).
+- Usage mapping for the Interactions field names (`total_tokens`,
+  `total_input_tokens`, `total_output_tokens`, `total_cached_tokens`,
+  `total_thought_tokens`, `total_tool_use_tokens`); thought, cached and total
+  counts are surfaced through `LLMChunk.providerMetadata` alongside
+  `interaction_id`.
+- `GeminiChatRepository.builder()` for fluent configuration, with retry,
+  timeout, rate limiting, response cache, and metrics support.
+
+### Notes
+
+- `topP`, `topK` and `stopSequences` are not sent: the Interactions
+  `generation_config` documents no equivalent. Pass them through
+  `backendOptions['generation_config']` if your account supports them.
+- Defaults and docs use `gemini-3.5-flash-lite`. The `gemini-3.1-flash-lite`
+  id referenced during development does not appear in Google's published model
+  list.
+
+### Verification status
+
+This package has **not** been exercised against the live Gemini API — there was
+no API key available. Coverage is unit tests asserting the serialized request
+body and parsed stream events; the integration suites are key-gated and unrun.
+
+Two shapes are **inferred from prose rather than read from a specification**
+and are the first things to check if requests fail with HTTP 400:
+
+- The role-tagged `input` turn envelope
+  (`{"role": "user"|"model", "content": [ … ]}`), together with the `text`,
+  `function_call` and `image` input blocks and the placement of
+  `function_result` blocks on a `user` turn. All of this is confined to
+  `GeminiMessageConverter.buildStatelessInput`, which documents each
+  assumption individually.
+- The `response_format` element shape
+  (`[{"type": "json_object"}]` / `[{"type": "json_schema", "name", "schema"}]`);
+  only the fact that it is an array is documented.
+
+Known limitation: `thought_signature` values are surfaced on the response, but
+Google documents no input block for echoing them back, so multi-turn function
+calling may still hit "Function call is missing a thought_signature".

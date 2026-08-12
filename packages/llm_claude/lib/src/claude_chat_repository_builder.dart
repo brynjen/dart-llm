@@ -39,6 +39,9 @@ class ClaudeChatRepositoryBuilder
       maxToolAttempts: maxToolAttemptsValue,
       retryConfig: retryConfigValue,
       timeoutConfig: timeoutConfigValue,
+      rateLimiter: rateLimiterValue,
+      responseCache: responseCacheValue,
+      metrics: metricsValue,
       httpClient: httpClientValue,
     );
   }

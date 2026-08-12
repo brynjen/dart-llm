@@ -1,5 +1,3 @@
-import 'dart:convert';
-
 import 'package:llm_core/llm_core.dart';
 
 /// Converts LLM messages to Ollama API format.
@@ -70,11 +68,8 @@ class OllamaMessageConverter {
           prev.toolCalls != null &&
           prev.toolCalls!.isNotEmpty) {
         for (final tc in prev.toolCalls!) {
-          final id = tc['id'];
-          if (id == toolCallId) {
-            final fn = tc['function'] as Map<String, dynamic>?;
-            final name = fn?['name'];
-            if (name is String && name.isNotEmpty) return name;
+          if (tc.id == toolCallId) {
+            if (tc.name.isNotEmpty) return tc.name;
             return null;
           }
         }
@@ -89,25 +84,18 @@ class OllamaMessageConverter {
 
   /// Converts tool_calls for Ollama: arguments must be object, not string.
   static List<Map<String, dynamic>> _convertToolCallsForOllama(
-    List<Map<String, dynamic>> toolCalls,
+    List<LLMToolCall> toolCalls,
   ) {
     return toolCalls.asMap().entries.map((entry) {
       final i = entry.key;
       final tc = entry.value;
       final result = <String, dynamic>{'type': 'function'};
-      final function = tc['function'] as Map<String, dynamic>?;
-      if (function != null) {
-        final args = function['arguments'];
-        final argsObj = args is String
-            ? json.decode(args) as Map<String, dynamic>
-            : args as Map<String, dynamic>;
-        result['function'] = {
-          'index': i,
-          'name': function['name'],
-          'arguments': argsObj,
-        };
-      }
-      if (tc['id'] != null) result['id'] = tc['id'];
+      result['function'] = {
+        'index': i,
+        'name': tc.name,
+        'arguments': tc.argumentsJson,
+      };
+      if (tc.id != null) result['id'] = tc.id;
       return result;
     }).toList();
   }

@@ -7,9 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.2.0] - 2026-04-09
+## [0.2.0] - 2026-08-12
 
 ### Added
+- Builder support for metrics, response cache, and rate limiting.
 - Structured output support via `StreamChatOptions.responseFormat`:
   - `JsonFormat()` → `format: "json"` (works on all Ollama models)
   - `JsonSchemaFormat(name, schema)` → `format: {schema}` (schema object passed directly; requires a model with `structured_outputs` capability)
@@ -17,6 +18,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `responseFormat` is propagated through tool-call loops so format constraints are preserved across all turns
 - `OllamaRepository.supportsStructuredOutput(String model)` — queries `/api/show` capabilities array for `"structured_outputs"`; mirrors the existing `supportsVision()` pattern
 - Bumped `llm_core` dependency to `^0.2.0`
+
+### Changed
+- Requests now honor per-call timeout, retry, generation, cache, metrics, and backend-specific options.
+
+### Fixed
+- HTTP client ownership and disposal are deterministic.
 
 ## [0.1.9] - 2026-02-28
 

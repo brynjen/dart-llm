@@ -9,6 +9,9 @@ class ClaudeChunk extends LLMChunk {
     super.message,
     super.promptEvalCount,
     super.evalCount,
+    super.usage,
+    super.finishReason,
+    super.providerMetadata,
     super.status,
   });
 }

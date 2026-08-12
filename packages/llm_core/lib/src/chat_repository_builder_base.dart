@@ -1,4 +1,5 @@
 import 'package:http/http.dart' as http;
+import 'package:llm_core/src/llm_metrics.dart';
 import 'package:llm_core/src/rate_limiter.dart';
 import 'package:llm_core/src/response_cache.dart';
 import 'package:llm_core/src/retry_config.dart';
@@ -17,6 +18,7 @@ abstract class ChatRepositoryBuilderBase<T> {
   TimeoutConfig? _timeoutConfig;
   RateLimiter? _rateLimiter;
   ResponseCache? _responseCache;
+  LLMMetrics? _metrics;
   http.Client? _httpClient;
 
   /// Set the maximum number of tool attempts.
@@ -49,6 +51,12 @@ abstract class ChatRepositoryBuilderBase<T> {
     return this as T;
   }
 
+  /// Set a metrics collector.
+  T metrics(LLMMetrics metrics) {
+    _metrics = metrics;
+    return this as T;
+  }
+
   /// Set a custom HTTP client.
   T httpClient(http.Client httpClient) {
     _httpClient = httpClient;
@@ -69,6 +77,9 @@ abstract class ChatRepositoryBuilderBase<T> {
 
   /// Get the response cache.
   ResponseCache? get responseCacheValue => _responseCache;
+
+  /// Get the metrics collector.
+  LLMMetrics? get metricsValue => _metrics;
 
   /// Get the HTTP client.
   http.Client? get httpClientValue => _httpClient;

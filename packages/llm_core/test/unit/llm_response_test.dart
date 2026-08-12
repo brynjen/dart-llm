@@ -24,7 +24,11 @@ void main() {
 
       expect(response.model, 'gpt-4o');
       expect(response.createdAt, DateTime(2024));
-      expect(response.role, 'assistant');
+      expect(response.role, LLMRole.assistant);
+      expect(response.roleName, 'assistant');
+      expect(response.usage.promptTokens, 10);
+      expect(response.usage.completionTokens, 5);
+      expect(response.finishReason, LLMFinishReason.stop);
       expect(response.content, 'Hello, world!');
       expect(response.done, true);
       expect(response.doneReason, 'stop');

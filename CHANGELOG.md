@@ -7,23 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.2.0] - 2026-04-09
+## [0.2.0] - 2026-08-12
 
 ### Added
-- **llm_claude** — New Anthropic Claude backend package: streaming chat, tool calling, thinking mode, and structured output via system message injection
-- **llm_gemini** — New Google Gemini backend package: streaming chat, tool calling, thinking mode, native structured output, and embeddings
+- **llm_claude** — New Anthropic Claude backend package: streaming chat, tool calling with `tool_choice`, model-aware thinking (adaptive on current models, token budget on older ones), and native structured output via `output_config.format`
+- **llm_gemini** — New Google Gemini backend package targeting the **Interactions API** (`POST /v1beta/interactions`; Google labels `generateContent` legacy): streaming chat, tool calling, thinking with thought summaries separated from content, native structured output, and embeddings. The API key is sent as the `x-goog-api-key` header rather than a URL query parameter.
 - **Structured output** (`LLMResponseFormat`) across all backends:
   - `JsonFormat` — simple JSON mode
   - `JsonSchemaFormat` — full JSON Schema enforcement (native where supported, system-message injection otherwise)
   - `responseFormat` field added to `StreamChatOptions` (fully backward compatible)
   - ChatGPT: native `response_format` API field (`json_object` / `json_schema`)
-  - Gemini: native `generationConfig.responseMimeType` + `responseSchema`
+  - Gemini: native `response_format` (Interactions API)
   - Ollama: native `format` field; `supportsStructuredOutput(model)` capability check
-  - Claude & llama.cpp: system message injection
+  - Claude: native `output_config.format`; system-message injection on pre-4.6 models
+  - llama.cpp: system message injection
+- **llm_vllm** — retries are on by default (a vLLM server answers `503` while loading weights), `TimeoutConfig.totalTimeout` is enforced on streams, `batchEmbed` splits large inputs, and `VLLMRepository.resolveCapabilities()` probes what a deployment actually offers rather than what the backend implements.
+- **llm_vllm** — layered request-parameter handling for vLLM's 64-parameter surface: portable settings on `LLMChatOptions`, typed helpers (`VLLMSamplingOptions`, `VLLMStructuredOutputs`) for the vLLM-only knobs, and a validated `backendOptions` map for the long tail. Unknown keys throw with a suggested correction rather than being silently dropped by the server; server configuration can be probed via `VLLMRepository.supportsToolCalling` / `supportsReasoningParser` / `fetchSupportedParams`.
+- **llm_vllm** — New vLLM OpenAI-compatible backend package: streaming chat, optional API key auth, embeddings, model listing, OpenAI-compatible `response_format` plus vLLM-native `structured_outputs` guided decoding, reasoning via `chat_template_kwargs.enable_thinking`, and multi-instance pooling.
 
 ### Changed
-- All packages bumped to `0.2.0`
-- `llm_core` dependency updated to `^0.2.0` across all backend packages
+- All packages bumped to `0.2.0`; `llm_core` dependency updated to `^0.2.0` across all backend packages
+
+### Fixed
+- **llm_vllm** — `RetryConfig.retryableStatusCodes` never applied to streaming requests: a non-2xx is *returned* rather than thrown and the status check ran after the retry wrapper, so retries only fired on transport errors. `think` was mapped to `include_reasoning`, which defaults to `true` and controls only whether reasoning is *surfaced*, not whether the model thinks; `think: false` was therefore silently ignored. Thinking is now gated through `chat_template_kwargs.enable_thinking`. A base URL ending in `/v1` produced `/v1/v1/...` and a 404; `reasoningBudget` caused a hard 400; and the documented `extra_body` guided-decoding pattern was a no-op. Removed `guided_*` names now raise `ArgumentError` rather than silently yielding unconstrained output.
+- **llm_claude** — `think: true` failed on every current model (`budget_tokens` returns a 400 on Opus 4.7+), sampling parameters were sent to models that reject them, thinking text was always empty (`display` defaults to `omitted`), and mid-stream SSE `error` events ended the stream as a success with truncated output.
+- **llm_core** — `LLMFinishReason.fromProvider` recognized only 8 provider spellings; `stop_sequence`, `refusal`, `model_context_window_exceeded` and Gemini's safety reasons all collapsed to `unknown`.
+- Example programs logged through `DefaultLLMLogger`, which emits nothing without a `logging` subscription — every status banner was invisible. Examples now write to stdout.
+
+### CI
+- `coverage.yml`, `docs.yml` and `scripts/generate-docs.sh` covered only `llm_core`, `llm_ollama` and `llm_chatgpt`; `llm_vllm`, `llm_claude` and `llm_gemini` are now included.
+- `provider-live.yml` did not pass the `VLLM_ENABLE_*` flags, so the vLLM live job silently skipped its tool, reasoning and embedding suites.
 
 ## [0.1.8] - 2026-02-26
 

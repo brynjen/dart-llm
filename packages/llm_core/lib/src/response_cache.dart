@@ -1,4 +1,8 @@
+import 'dart:convert';
+
 import 'package:llm_core/src/llm_response.dart';
+import 'package:llm_core/src/stream_chat_options.dart';
+import 'package:llm_core/src/tool/llm_tool.dart';
 
 /// Interface for caching LLM responses.
 ///
@@ -163,9 +167,42 @@ class CacheKeyGenerator {
     List<dynamic> messages, {
     String? optionsHash,
   }) {
-    // Create a simple hash from model and messages
-    final messagesHash = messages.map((m) => m.toString()).join('|');
+    final messagesHash = jsonEncode(
+      messages
+          .map((message) {
+            final dynamic value = message;
+            try {
+              return value.toJson();
+            } catch (_) {
+              return value.toString();
+            }
+          })
+          .toList(growable: false),
+    );
     final key = '$model|$messagesHash';
     return optionsHash != null ? '$key|$optionsHash' : key;
+  }
+
+  /// Generate a stable hash from shared chat options.
+  static String optionsHash(
+    LLMChatOptions options, {
+    bool? think,
+    List<LLMTool> tools = const [],
+  }) {
+    final effectiveTools = options.overridesTools ? options.tools : tools;
+    return jsonEncode({
+      'think': think ?? options.think,
+      'tools': effectiveTools.map((tool) => tool.name).toList(growable: false),
+      'toolAttempts': options.toolAttempts,
+      'autoExecuteTools': options.autoExecuteTools,
+      'backendOptions': options.backendOptions,
+      'responseFormat': options.responseFormat.toString(),
+      'temperature': options.temperature,
+      'topP': options.topP,
+      'topK': options.topK,
+      'maxOutputTokens': options.maxOutputTokens,
+      'stopSequences': options.stopSequences,
+      'reasoningBudget': options.reasoningBudget,
+    });
   }
 }

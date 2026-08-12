@@ -13,6 +13,7 @@ dart-llm/
 ├── packages/
 │   ├── llm_core/          # Core abstractions (no dependencies on other packages)
 │   ├── llm_ollama/        # Ollama backend (depends on llm_core)
+│   ├── llm_vllm/          # vLLM OpenAI-compatible backend (depends on llm_core)
 │   ├── llm_chatgpt/       # OpenAI/ChatGPT backend (depends on llm_core)
 │   ├── llm_llamacpp/      # llama.cpp local inference (depends on llm_core)
 │   ├── llm_claude/        # Anthropic Claude backend (depends on llm_core)
@@ -25,6 +26,7 @@ dart-llm/
 llm_core (base)
     ↑
     ├── llm_ollama
+    ├── llm_vllm
     ├── llm_chatgpt
     ├── llm_llamacpp
     ├── llm_claude
@@ -141,9 +143,10 @@ final options = StreamChatOptions(
 | Backend | Mechanism | Notes |
 |---|---|---|
 | `llm_chatgpt` | Native `response_format` field | `json_object` or `json_schema` with `strict` |
-| `llm_gemini` | Native `generationConfig.responseMimeType` + `responseSchema` | Schema uses UPPERCASE type names (`"STRING"`, `"OBJECT"`) |
+| `llm_vllm` | Native OpenAI-compatible `response_format` field | `json_object` or `json_schema` with `strict`; vLLM-native `structured_outputs` (regex / choice / grammar) via `VLLMStructuredOutputs` |
+| `llm_gemini` | Native `response_format` (Interactions API) | Chat uses `POST /v1beta/interactions`; the legacy `generateContent` endpoint is deprecated by Google |
 | `llm_ollama` | Native `format` field | `"json"` string or schema object; schema requires model support |
-| `llm_claude` | System message injection | No native API support; instruction appended to system prompt |
+| `llm_claude` | Native `output_config.format` | `json_schema` on Opus 4.6+ / Sonnet 5 / Fable 5; system-message injection on older models |
 | `llm_llamacpp` | System message injection | Instruction prepended/appended to system message |
 
 **Tool-Loop Propagation**: All backends forward `responseFormat` in the `StreamChatOptions` used for recursive tool-call rounds, ensuring the constraint is preserved across all iterations.
@@ -208,6 +211,25 @@ final options = StreamChatOptions(
 - Uses HTTP client for API communication
 - Supports OpenAI API format
 - Handles streaming responses
+
+### llm_vllm
+
+**Purpose**: vLLM OpenAI-compatible backend implementation.
+
+**Features**:
+- Streaming chat
+- Tool/function calling
+- Vision payloads through OpenAI-compatible message content
+- Embeddings
+- Model listing
+- Native structured output (`json_object` and `json_schema` modes)
+- Multi-instance pool routing and health checks
+
+**Implementation Details**:
+- Uses vLLM's OpenAI-compatible `/v1/chat/completions`, `/v1/embeddings`, and `/v1/models` endpoints
+- Supports optional bearer auth for servers started with `--api-key`
+- Handles SSE streaming responses and vLLM reasoning deltas
+- Implements retry logic with exponential backoff
 - Configurable base URL for Azure compatibility
 
 ### llm_llamacpp
@@ -236,9 +258,9 @@ final options = StreamChatOptions(
 
 **Features**:
 - Streaming chat
-- Tool/function calling
-- Thinking (extended reasoning) mode
-- Structured output via system message injection
+- Tool/function calling, including `tool_choice`
+- Model-aware thinking: adaptive on current models, token budget on older ones
+- Native structured output via `output_config.format`
 - Configurable base URL (custom endpoints)
 
 **Implementation Details**:
@@ -253,16 +275,22 @@ final options = StreamChatOptions(
 **Purpose**: Google Gemini backend implementation.
 
 **Features**:
-- Streaming chat
+- Streaming chat via the Interactions API (`POST /v1beta/interactions`)
 - Tool/function calling
-- Thinking (extended reasoning) mode
-- Native structured output (`responseMimeType` + `responseSchema`)
-- Embeddings
+- Thinking, with thought summaries surfaced on `chunk.message.thinking`
+- Native structured output (`response_format`)
+- Embeddings (`embedContent` / `batchEmbedContents`)
 
 **Implementation Details**:
-- Uses HTTP client for Gemini API
-- Handles streaming responses
-- `responseSchema` uses Gemini-specific UPPERCASE type names (`"STRING"`, `"OBJECT"`, etc.) — callers must use Gemini schema format, not standard JSON Schema
+- Chat targets the Interactions API; Google labels the `generateContent`
+  endpoint legacy
+- The API key is sent as the `x-goog-api-key` header rather than a `key=`
+  query parameter, so it does not leak into logs or proxies
+- Streaming is a step machine (`step.start` / `step.delta` / `step.stop`)
+  rather than a `candidates[]` array; `arguments_delta` fragments are
+  concatenated to form tool-call arguments
+- `thought_signature` values are captured and exposed via
+  `LLMChunk.providerMetadata`, which multi-turn function calling requires
 - Implements retry logic with exponential backoff
 
 ## Design Patterns

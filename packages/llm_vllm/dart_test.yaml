@@ -1,0 +1,13 @@
+# Tag configuration for llm_vllm tests.
+#
+# Tests tagged 'integration' call a live VLLM endpoint and are excluded in CI.
+# - CI: dart test --exclude-tags integration
+# - Local (with VLLM running): dart test
+# - Local (integration only): dart test --tags integration
+#
+# Integration tests hit a shared VLLM instance and should run serially to
+# avoid overloading large models.
+concurrency: 1
+
+tags:
+  integration:

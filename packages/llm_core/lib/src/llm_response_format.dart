@@ -33,12 +33,9 @@
 /// | Claude    | System-message injection            | System-message injection with schema      |
 /// | llamacpp  | System-message injection            | System-message injection with schema      |
 ///
-/// ### Gemini type names
-///
-/// Gemini's `responseSchema` uses uppercase type names (`"STRING"`, `"OBJECT"`,
-/// `"ARRAY"`, etc.) rather than the lowercase used in standard JSON Schema.
-/// When targeting Gemini with [JsonSchemaFormat], provide a schema using
-/// Gemini's conventions.
+/// Provider implementations accept standard lowercase JSON Schema. Providers
+/// with different wire formats, such as Gemini, translate the schema at the
+/// boundary.
 sealed class LLMResponseFormat {
   const LLMResponseFormat();
 }

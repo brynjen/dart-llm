@@ -264,7 +264,7 @@ class OllamaPool extends LLMChatRepository {
     bool think = false,
     List<LLMTool> tools = const [],
     dynamic extra,
-    StreamChatOptions? options,
+    LLMChatOptions? options,
   }) async* {
     Validation.validateModelName(model);
     Validation.validateMessages(messages);
@@ -394,13 +394,10 @@ class OllamaPool extends LLMChatRepository {
     }
   }
 
-  /// Merges the model config's [keepAlive] into [StreamChatOptions.backendOptions]
+  /// Merges the model config's [keepAlive] into [LLMChatOptions.backendOptions]
   /// unless the caller already set a `keep_alive` value.
-  StreamChatOptions _injectModelKeepAlive(
-    String model,
-    StreamChatOptions? options,
-  ) {
-    final opts = options ?? const StreamChatOptions();
+  LLMChatOptions _injectModelKeepAlive(String model, LLMChatOptions? options) {
+    final opts = options ?? const LLMChatOptions();
     final keepAlive = _configFor(model)?.keepAliveParam;
     if (keepAlive == null) return opts;
 

@@ -24,6 +24,7 @@ export 'src/llm_message.dart';
 export 'src/llm_chunk.dart';
 export 'src/llm_response.dart';
 export 'src/llm_embedding.dart';
+export 'src/llm_capabilities.dart';
 
 // Tools
 export 'src/tool/llm_tool.dart';
@@ -69,6 +70,7 @@ export 'src/http_client_utils.dart';
 
 // Tool execution
 export 'src/tool_executor.dart';
+export 'src/repository_features.dart';
 
 // Builder base
 export 'src/chat_repository_builder_base.dart';

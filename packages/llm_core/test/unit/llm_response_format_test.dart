@@ -24,10 +24,7 @@ void main() {
 
   group('JsonSchemaFormat', () {
     test('is const-constructible with required fields', () {
-      const format = JsonSchemaFormat(
-        name: 'User',
-        schema: {'type': 'object'},
-      );
+      const format = JsonSchemaFormat(name: 'User', schema: {'type': 'object'});
       expect(format, isA<JsonSchemaFormat>());
       expect(format, isA<LLMResponseFormat>());
       expect(format.name, 'User');
@@ -36,10 +33,7 @@ void main() {
     });
 
     test('strict defaults to true', () {
-      const format = JsonSchemaFormat(
-        name: 'Test',
-        schema: {'type': 'string'},
-      );
+      const format = JsonSchemaFormat(name: 'Test', schema: {'type': 'string'});
       expect(format.strict, isTrue);
     });
 
@@ -87,7 +81,12 @@ void main() {
     test('JsonSchemaFormat carries payload through switch', () {
       const format = JsonSchemaFormat(
         name: 'MySchema',
-        schema: {'type': 'object', 'properties': {'id': {'type': 'integer'}}},
+        schema: {
+          'type': 'object',
+          'properties': {
+            'id': {'type': 'integer'},
+          },
+        },
         strict: false,
       );
 

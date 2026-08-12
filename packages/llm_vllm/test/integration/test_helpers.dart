@@ -1,0 +1,654 @@
+/// Shared helpers, configuration, and test tools for VLLM integration tests.
+library;
+
+import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
+import 'dart:math';
+
+import 'package:dotenv/dotenv.dart';
+import 'package:llm_vllm/llm_vllm.dart';
+import 'package:path/path.dart' as p;
+import 'package:test/test.dart';
+
+const _packageDirName = 'llm_vllm';
+
+final DotEnv _integrationEnv = DotEnv(quiet: true);
+
+bool _integrationEnvLoaded = false;
+
+void _ensureIntegrationEnvLoaded() {
+  if (_integrationEnvLoaded) return;
+  _integrationEnvLoaded = true;
+  final candidates = [
+    p.join(Directory.current.path, '.env'),
+    p.join(Directory.current.path, 'packages', _packageDirName, '.env'),
+  ];
+  for (final filePath in candidates) {
+    if (File(filePath).existsSync()) {
+      _integrationEnv.load([filePath]);
+      break;
+    }
+  }
+}
+
+// ============================================================================
+// Test Configuration
+// ============================================================================
+
+/// Default VLLM base URL for integration tests.
+///
+/// Override with `VLLM_BASE_URL` in the environment or in a local `.env`
+/// file (see `.env.example`).
+///
+/// Non-empty [Platform.environment] entries take precedence over `.env`.
+String get baseUrl {
+  final fromPlatform = Platform.environment['VLLM_BASE_URL'];
+  if (fromPlatform != null && fromPlatform.isNotEmpty) {
+    return fromPlatform;
+  }
+  _ensureIntegrationEnvLoaded();
+  if (_integrationEnv.isDefined('VLLM_BASE_URL')) {
+    return _integrationEnv['VLLM_BASE_URL']!;
+  }
+  return 'http://localhost:8000';
+}
+
+String? get apiKey {
+  final fromPlatform = Platform.environment['VLLM_API_KEY'];
+  if (fromPlatform != null && fromPlatform.isNotEmpty) {
+    return fromPlatform;
+  }
+  _ensureIntegrationEnvLoaded();
+  if (_integrationEnv.isDefined('VLLM_API_KEY')) {
+    final value = _integrationEnv['VLLM_API_KEY']!;
+    return value.isEmpty ? null : value;
+  }
+  return null;
+}
+
+String get chatModel {
+  final fromPlatform = Platform.environment['VLLM_CHAT_MODEL'];
+  if (fromPlatform != null && fromPlatform.isNotEmpty) {
+    return fromPlatform;
+  }
+  _ensureIntegrationEnvLoaded();
+  if (_integrationEnv.isDefined('VLLM_CHAT_MODEL')) {
+    return _integrationEnv['VLLM_CHAT_MODEL']!;
+  }
+  return 'Qwen/Qwen3-0.6B';
+}
+
+String get embeddingBaseUrl {
+  final fromPlatform = Platform.environment['VLLM_EMBEDDING_BASE_URL'];
+  if (fromPlatform != null && fromPlatform.isNotEmpty) {
+    return fromPlatform;
+  }
+  _ensureIntegrationEnvLoaded();
+  if (_integrationEnv.isDefined('VLLM_EMBEDDING_BASE_URL')) {
+    final value = _integrationEnv['VLLM_EMBEDDING_BASE_URL']!;
+    return value.isEmpty ? baseUrl : value;
+  }
+  return baseUrl;
+}
+
+String get embeddingModel {
+  final fromPlatform = Platform.environment['VLLM_EMBEDDING_MODEL'];
+  if (fromPlatform != null && fromPlatform.isNotEmpty) {
+    return fromPlatform;
+  }
+  _ensureIntegrationEnvLoaded();
+  if (_integrationEnv.isDefined('VLLM_EMBEDDING_MODEL')) {
+    return _integrationEnv['VLLM_EMBEDDING_MODEL']!;
+  }
+  return chatModel;
+}
+
+bool get toolTestsEnabled => _envFlag('VLLM_ENABLE_TOOL_TESTS');
+
+bool get reasoningTestsEnabled => _envFlag('VLLM_ENABLE_REASONING_TESTS');
+
+bool get embeddingTestsEnabled => _envFlag('VLLM_ENABLE_EMBEDDING_TESTS');
+
+bool _envFlag(String name) {
+  final fromPlatform = Platform.environment[name];
+  if (fromPlatform != null && fromPlatform.isNotEmpty) {
+    return _truthy(fromPlatform);
+  }
+  _ensureIntegrationEnvLoaded();
+  if (_integrationEnv.isDefined(name)) {
+    return _truthy(_integrationEnv[name]!);
+  }
+  return false;
+}
+
+bool _truthy(String value) {
+  final normalized = value.toLowerCase().trim();
+  return normalized == '1' || normalized == 'true' || normalized == 'yes';
+}
+
+// ============================================================================
+// Helper Utilities
+// ============================================================================
+
+/// Creates a test repository with default configuration.
+VLLMChatRepository createRepository({
+  String? customBaseUrl,
+  TimeoutConfig? timeoutConfig,
+  RetryConfig? retryConfig,
+}) {
+  return VLLMChatRepositoryBuilder()
+      .baseUrl(customBaseUrl ?? baseUrl)
+      .apiKey(apiKey ?? '')
+      .timeoutConfig(
+        timeoutConfig ??
+            const TimeoutConfig(
+              connectionTimeout: Duration(seconds: 10),
+              readTimeout: Duration(minutes: 2),
+            ),
+      )
+      .retryConfig(retryConfig ?? const RetryConfig(maxAttempts: 3))
+      .build();
+}
+
+/// Collects all chunks from a stream.
+Future<List<LLMChunk>> collectStream(Stream<LLMChunk> stream) async {
+  final chunks = <LLMChunk>[];
+  await for (final chunk in stream) {
+    chunks.add(chunk);
+  }
+  return chunks;
+}
+
+/// Waits for stream completion and collects chunks with timeout.
+Future<List<LLMChunk>> collectStreamWithTimeout(
+  Stream<LLMChunk> stream,
+  Duration timeout,
+) async {
+  return await stream.timeout(timeout).toList();
+}
+
+/// Extracts accumulated content from chunks.
+String extractContent(List<LLMChunk> chunks) {
+  return chunks
+      .map((chunk) => chunk.message?.content ?? '')
+      .where((content) => content.isNotEmpty)
+      .join();
+}
+
+/// Extracts accumulated thinking from chunks.
+String extractThinking(List<LLMChunk> chunks) {
+  return chunks
+      .map((chunk) => chunk.message?.thinking ?? '')
+      .where((thinking) => thinking.isNotEmpty)
+      .join();
+}
+
+/// Verifies chunk structure is valid.
+void verifyChunkStructure(LLMChunk chunk) {
+  expect(chunk.model, isNotNull, reason: 'Chunk model should not be null');
+  expect(chunk.model, isNotEmpty, reason: 'Chunk model should not be empty');
+  expect(
+    chunk.createdAt,
+    isNotNull,
+    reason: 'Chunk createdAt should not be null',
+  );
+  expect(
+    chunk.createdAt,
+    isA<DateTime>(),
+    reason: 'Chunk createdAt should be a DateTime',
+  );
+}
+
+/// Verifies response structure is valid.
+void verifyResponseStructure(LLMResponse response) {
+  expect(response.done, isTrue, reason: 'Response should be done');
+  expect(
+    response.content,
+    isNotNull,
+    reason: 'Response content should not be null',
+  );
+  expect(
+    response.model,
+    isNotNull,
+    reason: 'Response model should not be null',
+  );
+  expect(
+    response.model,
+    isNotEmpty,
+    reason: 'Response model should not be empty',
+  );
+  expect(
+    response.role,
+    equals(LLMRole.assistant),
+    reason: 'Response role should be assistant',
+  );
+  expect(
+    response.createdAt,
+    isNotNull,
+    reason: 'Response createdAt should not be null',
+  );
+  expect(
+    response.createdAt,
+    isA<DateTime>(),
+    reason: 'Response createdAt should be a DateTime',
+  );
+  expect(
+    response.doneReason,
+    isNotNull,
+    reason: 'Response doneReason should not be null',
+  );
+  expect(
+    response.doneReason,
+    isNotEmpty,
+    reason: 'Response doneReason should not be empty',
+  );
+  expect(
+    response.promptEvalCount,
+    greaterThanOrEqualTo(0),
+    reason: 'Response promptEvalCount should be non-negative',
+  );
+  expect(
+    response.evalCount,
+    greaterThanOrEqualTo(0),
+    reason: 'Response evalCount should be non-negative',
+  );
+}
+
+/// Calculates cosine similarity between two vectors.
+double cosineSimilarity(List<double> a, List<double> b) {
+  if (a.length != b.length) {
+    throw ArgumentError('Vectors must have the same length');
+  }
+  double dotProduct = 0.0;
+  double normA = 0.0;
+  double normB = 0.0;
+  for (int i = 0; i < a.length; i++) {
+    dotProduct += a[i] * b[i];
+    normA += a[i] * a[i];
+    normB += b[i] * b[i];
+  }
+  if (normA == 0.0 || normB == 0.0) return 0.0;
+  return dotProduct / (sqrt(normA) * sqrt(normB));
+}
+
+// ============================================================================
+// Test Tool Implementations
+// ============================================================================
+
+/// Calculator tool for testing basic arithmetic operations.
+class CalculatorTool extends LLMTool {
+  @override
+  String get name => 'calculator';
+
+  @override
+  String get description =>
+      'Performs basic arithmetic operations (addition, subtraction, multiplication, division)';
+
+  @override
+  List<LLMToolParam> get parameters => [
+    LLMToolParam(
+      name: 'expression',
+      type: 'string',
+      description:
+          'The arithmetic expression to evaluate (e.g., "2 + 2", "10 * 5")',
+      isRequired: true,
+    ),
+  ];
+
+  @override
+  Future<dynamic> execute(Map<String, dynamic> args, {dynamic extra}) async {
+    final expression = args['expression'] as String;
+    // Simple arithmetic evaluator (for testing purposes)
+    try {
+      // Remove spaces and evaluate
+      final cleanExpr = expression.replaceAll(' ', '');
+      final result = _evaluateExpression(cleanExpr);
+      return 'Result: $result';
+    } catch (e) {
+      return 'Error: Invalid expression - $e';
+    }
+  }
+
+  double _evaluateExpression(String expr) {
+    // Very simple evaluator for testing - handles basic operations
+    if (expr.contains('+')) {
+      final parts = expr.split('+');
+      return parts.map((p) => double.parse(p)).reduce((a, b) => a + b);
+    } else if (expr.contains('-')) {
+      final parts = expr.split('-');
+      return parts.map((p) => double.parse(p)).reduce((a, b) => a - b);
+    } else if (expr.contains('*')) {
+      final parts = expr.split('*');
+      return parts.map((p) => double.parse(p)).reduce((a, b) => a * b);
+    } else if (expr.contains('/')) {
+      final parts = expr.split('/');
+      return parts.map((p) => double.parse(p)).reduce((a, b) => a / b);
+    } else {
+      return double.parse(expr);
+    }
+  }
+}
+
+/// Weather tool for testing with mock data.
+class WeatherTool extends LLMTool {
+  @override
+  String get name => 'get_weather';
+
+  @override
+  String get description => 'Gets the current weather for a given location';
+
+  @override
+  List<LLMToolParam> get parameters => [
+    LLMToolParam(
+      name: 'location',
+      type: 'string',
+      description: 'The city or location name',
+      isRequired: true,
+    ),
+    LLMToolParam(
+      name: 'unit',
+      type: 'string',
+      description: 'Temperature unit: celsius or fahrenheit',
+      isRequired: false,
+      enums: ['celsius', 'fahrenheit'],
+    ),
+  ];
+
+  @override
+  Future<dynamic> execute(Map<String, dynamic> args, {dynamic extra}) async {
+    final location = args['location'] as String;
+    final unit = args['unit'] as String? ?? 'celsius';
+    // Mock weather data
+    return jsonEncode({
+      'location': location,
+      'temperature': unit == 'fahrenheit' ? 72 : 22,
+      'unit': unit,
+      'condition': 'sunny',
+      'humidity': 65,
+    });
+  }
+}
+
+/// Echo tool that returns input as output.
+class EchoTool extends LLMTool {
+  @override
+  String get name => 'echo';
+
+  @override
+  String get description => 'Echoes back the input message';
+
+  @override
+  List<LLMToolParam> get parameters => [
+    LLMToolParam(
+      name: 'message',
+      type: 'string',
+      description: 'The message to echo back',
+      isRequired: true,
+    ),
+  ];
+
+  @override
+  Future<dynamic> execute(Map<String, dynamic> args, {dynamic extra}) async {
+    return args['message'] as String;
+  }
+}
+
+/// Tool that always throws an error for testing error handling.
+class ErrorTool extends LLMTool {
+  @override
+  String get name => 'error_tool';
+
+  @override
+  String get description =>
+      'A tool that always throws an error for testing purposes';
+
+  @override
+  List<LLMToolParam> get parameters => [
+    LLMToolParam(
+      name: 'should_error',
+      type: 'boolean',
+      description: 'Whether to throw an error',
+      isRequired: true,
+    ),
+  ];
+
+  @override
+  Future<dynamic> execute(Map<String, dynamic> args, {dynamic extra}) async {
+    throw Exception('Intentional error for testing');
+  }
+}
+
+/// Tool that simulates slow execution.
+class SlowTool extends LLMTool {
+  @override
+  String get name => 'slow_tool';
+
+  @override
+  String get description => 'A tool that takes a long time to execute';
+
+  @override
+  List<LLMToolParam> get parameters => [
+    LLMToolParam(
+      name: 'delay_seconds',
+      type: 'integer',
+      description: 'Number of seconds to delay',
+      isRequired: true,
+    ),
+  ];
+
+  @override
+  Future<dynamic> execute(Map<String, dynamic> args, {dynamic extra}) async {
+    final delay = args['delay_seconds'] as int;
+    await Future.delayed(Duration(seconds: delay));
+    return 'Completed after $delay seconds';
+  }
+}
+
+/// Search tool for testing multiple tools.
+class SearchTool extends LLMTool {
+  @override
+  String get name => 'search';
+
+  @override
+  String get description => 'Searches for information on a given topic';
+
+  @override
+  List<LLMToolParam> get parameters => [
+    LLMToolParam(
+      name: 'query',
+      type: 'string',
+      description: 'The search query',
+      isRequired: true,
+    ),
+    LLMToolParam(
+      name: 'limit',
+      type: 'integer',
+      description: 'Maximum number of results',
+      isRequired: false,
+    ),
+  ];
+
+  @override
+  Future<dynamic> execute(Map<String, dynamic> args, {dynamic extra}) async {
+    final query = args['query'] as String;
+    final limit = args['limit'] as int? ?? 5;
+    return jsonEncode({
+      'query': query,
+      'results': List.generate(limit, (i) => 'Result ${i + 1} for "$query"'),
+      'count': limit,
+    });
+  }
+}
+
+/// Tool with no parameters.
+class NoParamTool extends LLMTool {
+  @override
+  String get name => 'get_time';
+
+  @override
+  String get description => 'Gets the current time';
+
+  @override
+  List<LLMToolParam> get parameters => [];
+
+  @override
+  Future<dynamic> execute(Map<String, dynamic> args, {dynamic extra}) async {
+    return DateTime.now().toIso8601String();
+  }
+}
+
+/// Tool with complex nested parameters.
+class ComplexTool extends LLMTool {
+  @override
+  String get name => 'complex_tool';
+
+  @override
+  String get description => 'A tool with complex nested parameters';
+
+  @override
+  List<LLMToolParam> get parameters => [
+    LLMToolParam(
+      name: 'config',
+      type: 'object',
+      description: 'Configuration object',
+      isRequired: true,
+      properties: [
+        LLMToolParam(
+          name: 'items',
+          type: 'array',
+          description: 'Array of items',
+          items: LLMToolParam(
+            name: 'item',
+            type: 'string',
+            description: 'An item',
+          ),
+        ),
+        LLMToolParam(
+          name: 'enabled',
+          type: 'boolean',
+          description: 'Whether enabled',
+          isRequired: true,
+        ),
+      ],
+    ),
+  ];
+
+  @override
+  Future<dynamic> execute(Map<String, dynamic> args, {dynamic extra}) async {
+    return jsonEncode({'processed': true, 'config': args['config']});
+  }
+}
+
+/// Reads a file from the filesystem. For integration tests only.
+/// [extra] must contain 'basePath' (String) - only paths under basePath are allowed.
+class ReadFileTool extends LLMTool {
+  @override
+  String get name => 'read_file';
+
+  @override
+  String get description =>
+      'Reads the contents of a file at the given path. Use for reading files.';
+
+  @override
+  List<LLMToolParam> get parameters => [
+    LLMToolParam(
+      name: 'path',
+      type: 'string',
+      description: 'The path to the file to read',
+      isRequired: true,
+    ),
+  ];
+
+  @override
+  Future<dynamic> execute(Map<String, dynamic> args, {dynamic extra}) async {
+    final path = args['path'] as String;
+    final basePath = extra is Map ? extra['basePath'] as String? : null;
+    if (basePath == null) {
+      return 'Error: basePath not provided in extra';
+    }
+    final resolved = _resolvePath(path, basePath);
+    if (resolved == null) {
+      return 'Error: path must be under basePath';
+    }
+    final file = File(resolved);
+    if (!file.existsSync()) {
+      return 'Error: file not found: $path';
+    }
+    return file.readAsStringSync();
+  }
+
+  String? _resolvePath(String path, String basePath) {
+    if (path.contains('..')) return null;
+    final base = basePath.endsWith(Platform.pathSeparator)
+        ? basePath
+        : '$basePath${Platform.pathSeparator}';
+    final normalized = path.startsWith('/') || path.startsWith(r'\')
+        ? path.substring(1)
+        : path;
+    final full = '$base$normalized';
+    final abs = File(full).absolute.path;
+    final baseAbs = Directory(basePath).absolute.path;
+    if (!abs.startsWith(baseAbs)) return null;
+    return abs;
+  }
+}
+
+/// Writes content to a file. For integration tests only.
+/// [extra] must contain 'basePath' (String) - only paths under basePath are allowed.
+class WriteFileTool extends LLMTool {
+  @override
+  String get name => 'write_file';
+
+  @override
+  String get description =>
+      'Writes content to a file at the given path. Use for writing files.';
+
+  @override
+  List<LLMToolParam> get parameters => [
+    LLMToolParam(
+      name: 'path',
+      type: 'string',
+      description: 'The path to the file to write',
+      isRequired: true,
+    ),
+    LLMToolParam(
+      name: 'content',
+      type: 'string',
+      description: 'The content to write to the file',
+      isRequired: true,
+    ),
+  ];
+
+  @override
+  Future<dynamic> execute(Map<String, dynamic> args, {dynamic extra}) async {
+    final path = args['path'] as String;
+    final content = args['content'] as String;
+    final basePath = extra is Map ? extra['basePath'] as String? : null;
+    if (basePath == null) {
+      return 'Error: basePath not provided in extra';
+    }
+    final resolved = _resolvePath(path, basePath);
+    if (resolved == null) {
+      return 'Error: path must be under basePath';
+    }
+    final file = File(resolved);
+    file.writeAsStringSync(content);
+    return 'Wrote ${content.length} bytes to $path';
+  }
+
+  String? _resolvePath(String path, String basePath) {
+    if (path.contains('..')) return null;
+    final base = basePath.endsWith(Platform.pathSeparator)
+        ? basePath
+        : '$basePath${Platform.pathSeparator}';
+    final normalized = path.startsWith('/') || path.startsWith(r'\')
+        ? path.substring(1)
+        : path;
+    final full = '$base$normalized';
+    final abs = File(full).absolute.path;
+    final baseAbs = Directory(basePath).absolute.path;
+    if (!abs.startsWith(baseAbs)) return null;
+    return abs;
+  }
+}

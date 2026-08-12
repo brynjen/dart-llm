@@ -26,6 +26,7 @@ class OllamaChunk extends LLMChunk {
     super.done,
     super.promptEvalCount,
     super.evalCount,
+    super.finishReason,
   });
 
   factory OllamaChunk.fromJson(Map<String, dynamic> json) {
@@ -38,6 +39,9 @@ class OllamaChunk extends LLMChunk {
       done: json['done'],
       promptEvalCount: json['prompt_eval_count'],
       evalCount: json['eval_count'],
+      finishReason: json['done_reason'] != null
+          ? LLMFinishReason.fromProvider(json['done_reason'] as String?)
+          : null,
     );
   }
 }

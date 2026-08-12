@@ -36,6 +36,7 @@ class HttpClientHelper {
     required Map<String, String> headers,
     List<int>? body,
     bool applyTimeoutToSend = false,
+    Duration? timeout,
   }) async {
     final request = http.StreamedRequest(method, uri);
     request.headers.addAll(headers);
@@ -52,7 +53,7 @@ class HttpClientHelper {
 
     final config = timeoutConfig ?? TimeoutConfig.defaultConfig;
     final payloadSize = body?.length ?? 0;
-    final readTimeout = config.getReadTimeoutForPayload(payloadSize);
+    final readTimeout = timeout ?? config.getReadTimeoutForPayload(payloadSize);
 
     if (applyTimeoutToSend) {
       return httpClient
@@ -84,10 +85,11 @@ class HttpClientHelper {
     required Uri uri,
     required Map<String, String> headers,
     String? body,
+    Duration? timeout,
   }) async {
     final config = timeoutConfig ?? TimeoutConfig.defaultConfig;
     final payloadSize = body?.length ?? 0;
-    final readTimeout = config.getReadTimeoutForPayload(payloadSize);
+    final readTimeout = timeout ?? config.getReadTimeoutForPayload(payloadSize);
 
     final response = method.toUpperCase() == 'POST'
         ? await httpClient

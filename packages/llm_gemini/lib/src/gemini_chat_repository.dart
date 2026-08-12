@@ -11,27 +11,66 @@ import 'package:llm_gemini/src/gemini_stream_converter.dart';
 
 /// Repository for chatting with Google's Gemini models.
 ///
+/// Chat runs on the Interactions API (`POST /v1beta/interactions`), not the
+/// legacy `generateContent` endpoint. Embeddings still use `embedContent` /
+/// `batchEmbedContents`.
+///
+/// The API key is sent in the `x-goog-api-key` header rather than a `key=`
+/// query parameter, so it does not leak into request logs, proxies, or crash
+/// reports.
+///
 /// Example:
 /// ```dart
 /// final repo = GeminiChatRepository(apiKey: 'your-api-key');
-/// final stream = repo.streamChat('gemini-2.0-flash', messages: [
+/// final stream = repo.streamChat('gemini-3.5-flash-lite', messages: [
 ///   LLMMessage(role: LLMRole.user, content: 'Hello!')
 /// ]);
 /// await for (final chunk in stream) {
 ///   print(chunk.message?.content ?? '');
 /// }
 /// ```
-class GeminiChatRepository extends LLMChatRepository {
+class GeminiChatRepository extends LLMChatRepository
+    with LLMRepositoryFeatures {
   GeminiChatRepository({
-    required this.apiKey,
-    this.baseUrl = 'https://generativelanguage.googleapis.com',
-    this.maxToolAttempts = 90,
-    this.retryConfig,
-    this.timeoutConfig,
+    required String apiKey,
+    String baseUrl = 'https://generativelanguage.googleapis.com',
+    int maxToolAttempts = 90,
+    RetryConfig? retryConfig,
+    TimeoutConfig? timeoutConfig,
+    RateLimiter? rateLimiter,
+    ResponseCache? responseCache,
+    LLMMetrics? metrics,
     http.Client? httpClient,
-  }) : httpClient = httpClient ?? http.Client(),
-       _httpHelper = HttpClientHelper(
+  }) : this._(
+         apiKey: apiKey,
+         baseUrl: baseUrl,
+         maxToolAttempts: maxToolAttempts,
+         retryConfig: retryConfig,
+         timeoutConfig: timeoutConfig,
+         rateLimiter: rateLimiter,
+         responseCache: responseCache,
+         metrics: metrics,
          httpClient: httpClient ?? http.Client(),
+         ownsHttpClient: httpClient == null,
+       );
+
+  GeminiChatRepository._({
+    required this.apiKey,
+    required this.baseUrl,
+    required this.maxToolAttempts,
+    required this.retryConfig,
+    required this.timeoutConfig,
+    required this.httpClient,
+    required bool ownsHttpClient,
+    RateLimiter? rateLimiter,
+    this.responseCache,
+    this.metrics,
+  }) : _ownsHttpClient = ownsHttpClient,
+       _rateLimiter = rateLimiter?.enabled == true
+           ? TokenBucketRateLimiter(rateLimiter!)
+           : null,
+       _httpHelper = HttpClientHelper(
+         httpClient: httpClient,
          timeoutConfig: timeoutConfig,
        );
 
@@ -47,6 +86,10 @@ class GeminiChatRepository extends LLMChatRepository {
   /// The HTTP client helper for making requests.
   final HttpClientHelper _httpHelper;
 
+  final bool _ownsHttpClient;
+
+  final TokenBucketRateLimiter? _rateLimiter;
+
   /// The maximum number of tool attempts for a single request.
   final int maxToolAttempts;
 
@@ -56,22 +99,55 @@ class GeminiChatRepository extends LLMChatRepository {
   /// Timeout configuration for requests.
   final TimeoutConfig? timeoutConfig;
 
+  @override
+  final ResponseCache? responseCache;
+
+  @override
+  final LLMMetrics? metrics;
+
   static const String _apiVersion = 'v1beta';
 
-  Uri _streamUri(String model) => Uri.parse(
-    '$baseUrl/$_apiVersion/models/$model:streamGenerateContent?key=$apiKey&alt=sse',
-  );
+  /// Request body keys owned by the repository and the generation-config keys
+  /// it maps itself; anything else in `backendOptions` is passed through.
+  static const Set<String> _handledBackendOptionKeys = {
+    'temperature',
+    'max_output_tokens',
+    'thinking_level',
+    'thinking_summaries',
+    'generation_config',
+    'previous_interaction_id',
+  };
+
+  /// The Interactions endpoint used for all chat traffic.
+  Uri get interactionsUri => Uri.parse('$baseUrl/$_apiVersion/interactions');
 
   Uri _embedUri(String model) =>
-      Uri.parse('$baseUrl/$_apiVersion/models/$model:embedContent?key=$apiKey');
+      Uri.parse('$baseUrl/$_apiVersion/models/$model:embedContent');
 
-  Uri _batchEmbedUri(String model) => Uri.parse(
-    '$baseUrl/$_apiVersion/models/$model:batchEmbedContents?key=$apiKey',
-  );
+  Uri _batchEmbedUri(String model) =>
+      Uri.parse('$baseUrl/$_apiVersion/models/$model:batchEmbedContents');
 
   /// Create a builder for configuring a new repository instance.
   static GeminiChatRepositoryBuilder builder() {
     return GeminiChatRepositoryBuilder();
+  }
+
+  @override
+  LLMCapabilities capabilitiesForModel(String model) {
+    return const LLMCapabilities(
+      streaming: true,
+      tools: true,
+      vision: true,
+      structuredOutput: true,
+      thinking: true,
+      embeddings: true,
+    );
+  }
+
+  /// Releases owned resources.
+  void close() {
+    _rateLimiter?.dispose();
+    if (_ownsHttpClient) httpClient.close();
   }
 
   @override
@@ -82,7 +158,7 @@ class GeminiChatRepository extends LLMChatRepository {
     dynamic extra,
     int? toolAttempts,
     bool think = false,
-    StreamChatOptions? options,
+    LLMChatOptions? options,
   }) async* {
     Validation.validateModelName(model);
     Validation.validateMessages(messages);
@@ -93,93 +169,63 @@ class GeminiChatRepository extends LLMChatRepository {
       tools: tools,
       extra: extra,
       toolAttempts: toolAttempts,
+      retryConfig: retryConfig,
     );
+    final effectiveRetryConfig = merged.retryConfig ?? retryConfig;
 
-    final converted = GeminiMessageConverter.convert(messages);
-
-    final body = <String, dynamic>{'contents': converted.contents};
-
-    if (converted.systemInstruction != null) {
-      body['systemInstruction'] = converted.systemInstruction;
-    }
+    final body = <String, dynamic>{
+      'model': model,
+      'input': GeminiMessageConverter.buildStatelessInput(messages),
+      'stream': true,
+      // Interactions are stored server-side by default (`store: true`), which
+      // would duplicate history that `streamChat` already sends in full on
+      // every call. `streamChat` is stateless, so storage is declined.
+      'store': false,
+    };
 
     if (merged.tools.isNotEmpty) {
-      body['tools'] = [
-        {
-          'functionDeclarations': merged.tools
-              .map(GeminiMessageConverter.toolToFunctionDeclaration)
-              .toList(growable: false),
-        },
-      ];
+      body['tools'] = merged.tools
+          .map(GeminiMessageConverter.toolToFunctionSpec)
+          .toList(growable: false);
     }
 
-    // generationConfig from backendOptions
-    final generationConfig = <String, dynamic>{};
-    for (final key in const [
-      'temperature',
-      'topP',
-      'topK',
-      'maxOutputTokens',
-      'stopSequences',
-      'responseMimeType',
-    ]) {
-      if (merged.backendOptions.containsKey(key)) {
-        generationConfig[key] = merged.backendOptions[key];
-      }
-    }
-    // Apply structured output format to generationConfig
-    if (merged.responseFormat != null) {
-      switch (merged.responseFormat!) {
-        case JsonFormat():
-          generationConfig['responseMimeType'] = 'application/json';
-        case JsonSchemaFormat(:final schema):
-          generationConfig['responseMimeType'] = 'application/json';
-          generationConfig['responseSchema'] = schema;
-      }
-    }
+    final responseFormat = _responseFormatValue(merged.responseFormat);
+    if (responseFormat != null) body['response_format'] = responseFormat;
 
+    final generationConfig = _buildGenerationConfig(merged);
     if (generationConfig.isNotEmpty) {
-      body['generationConfig'] = generationConfig;
+      body['generation_config'] = generationConfig;
     }
 
-    if (merged.think) {
-      final budget = merged.backendOptions['thinking_budget'] ?? 5000;
-      body['generationConfig'] = {
-        ...generationConfig,
-        'thinkingConfig': {'thinkingBudget': budget},
-      };
+    // Stateful continuation escape hatch: callers that opt into server-side
+    // storage can chain interactions instead of resending history.
+    final previousInteractionId =
+        merged.backendOptions['previous_interaction_id'];
+    if (previousInteractionId != null) {
+      body['previous_interaction_id'] = previousInteractionId;
     }
 
-    // Any remaining backend options at top level
-    final handledKeys = {
-      'temperature',
-      'topP',
-      'topK',
-      'maxOutputTokens',
-      'stopSequences',
-      'responseMimeType',
-      'responseSchema',
-      'thinking_budget',
-    };
+    // Any remaining backend options are passed through at the top level.
     for (final entry in merged.backendOptions.entries) {
-      if (!handledKeys.contains(entry.key)) {
+      if (!_handledBackendOptionKeys.contains(entry.key)) {
         body[entry.key] = entry.value;
       }
     }
 
-    final response = await RetryUtil.executeWithRetry(
-      operation: () => _httpHelper.sendStreamingRequest(
-        method: 'POST',
-        uri: _streamUri(model),
-        headers: {
-          'content-type': 'application/json',
-          'accept': 'text/event-stream',
-        },
-        body: utf8.encode(json.encode(body)),
+    final response = await RateLimiterUtil.executeWithRateLimit(
+      rateLimiter: _rateLimiter,
+      operation: () => RetryUtil.executeWithRetry(
+        operation: () => _httpHelper.sendStreamingRequest(
+          method: 'POST',
+          uri: interactionsUri,
+          headers: _headers(accept: 'text/event-stream'),
+          body: utf8.encode(json.encode(body)),
+          timeout: merged.timeout,
+        ),
+        config: effectiveRetryConfig,
+        isRetryable: (error) =>
+            ErrorHandlers.isRetryableError(error, effectiveRetryConfig),
       ),
-      config: retryConfig,
-      isRetryable: (error) =>
-          ErrorHandlers.isRetryableError(error, retryConfig),
     );
 
     switch (response.statusCode) {
@@ -205,14 +251,22 @@ class GeminiChatRepository extends LLMChatRepository {
                   messages: messages,
                   tools: tools,
                   extra: extra,
-                  options: StreamChatOptions(
+                  options: LLMChatOptions(
                     think: merged.think,
                     tools: tools,
                     extra: extra,
                     toolAttempts: toolAttempts,
                     autoExecuteTools: merged.autoExecuteTools,
                     backendOptions: merged.backendOptions,
+                    timeout: merged.timeout,
+                    retryConfig: effectiveRetryConfig,
                     responseFormat: merged.responseFormat,
+                    temperature: merged.temperature,
+                    topP: merged.topP,
+                    topK: merged.topK,
+                    maxOutputTokens: merged.maxOutputTokens,
+                    stopSequences: merged.stopSequences,
+                    reasoningBudget: merged.reasoningBudget,
                   ),
                 ),
           );
@@ -251,19 +305,19 @@ class GeminiChatRepository extends LLMChatRepository {
         },
         ...options,
       };
-      final response = await RetryUtil.executeWithRetry(
-        operation: () => _httpHelper.sendNonStreamingRequest(
-          method: 'POST',
-          uri: _embedUri(model),
-          headers: {
-            'content-type': 'application/json',
-            'accept': 'application/json',
-          },
-          body: json.encode(body),
+      final response = await RateLimiterUtil.executeWithRateLimit(
+        rateLimiter: _rateLimiter,
+        operation: () => RetryUtil.executeWithRetry(
+          operation: () => _httpHelper.sendNonStreamingRequest(
+            method: 'POST',
+            uri: _embedUri(model),
+            headers: _headers(accept: 'application/json'),
+            body: json.encode(body),
+          ),
+          config: retryConfig,
+          isRetryable: (error) =>
+              ErrorHandlers.isRetryableError(error, retryConfig),
         ),
-        config: retryConfig,
-        isRetryable: (error) =>
-            ErrorHandlers.isRetryableError(error, retryConfig),
       );
       switch (response.statusCode) {
         case 200:
@@ -303,19 +357,19 @@ class GeminiChatRepository extends LLMChatRepository {
         .toList(growable: false);
 
     final body = <String, dynamic>{'requests': requests, ...options};
-    final response = await RetryUtil.executeWithRetry(
-      operation: () => _httpHelper.sendNonStreamingRequest(
-        method: 'POST',
-        uri: _batchEmbedUri(model),
-        headers: {
-          'content-type': 'application/json',
-          'accept': 'application/json',
-        },
-        body: json.encode(body),
+    final response = await RateLimiterUtil.executeWithRateLimit(
+      rateLimiter: _rateLimiter,
+      operation: () => RetryUtil.executeWithRetry(
+        operation: () => _httpHelper.sendNonStreamingRequest(
+          method: 'POST',
+          uri: _batchEmbedUri(model),
+          headers: _headers(accept: 'application/json'),
+          body: json.encode(body),
+        ),
+        config: retryConfig,
+        isRetryable: (error) =>
+            ErrorHandlers.isRetryableError(error, retryConfig),
       ),
-      config: retryConfig,
-      isRetryable: (error) =>
-          ErrorHandlers.isRetryableError(error, retryConfig),
     );
     switch (response.statusCode) {
       case 200:
@@ -328,6 +382,112 @@ class GeminiChatRepository extends LLMChatRepository {
           statusCode: response.statusCode,
           responseBody: response.body,
         );
+    }
+  }
+
+  /// Maps a token-oriented [LLMChatOptions.reasoningBudget] onto the
+  /// Interactions API's discrete `thinking_level`.
+  ///
+  /// The Interactions API has no raw thinking-token-budget field, so a budget
+  /// cannot be forwarded as-is. These thresholds are a deliberate heuristic —
+  /// Google publishes no token-to-level equivalence:
+  ///
+  /// | `reasoningBudget`   | `thinking_level` |
+  /// |---------------------|------------------|
+  /// | `null`              | `medium`         |
+  /// | `<= 0`              | `minimal`        |
+  /// | `< 2048`            | `low`            |
+  /// | `< 8192`            | `medium`         |
+  /// | `>= 8192`           | `high`           |
+  ///
+  /// Set `backendOptions['thinking_level']` to bypass the mapping entirely.
+  static String thinkingLevelForBudget(int? reasoningBudget) {
+    if (reasoningBudget == null) return 'medium';
+    if (reasoningBudget <= 0) return 'minimal';
+    if (reasoningBudget < 2048) return 'low';
+    if (reasoningBudget < 8192) return 'medium';
+    return 'high';
+  }
+
+  Map<String, String> _headers({required String accept}) {
+    return {
+      'content-type': 'application/json',
+      'accept': accept,
+      'x-goog-api-key': apiKey,
+    };
+  }
+
+  /// Builds the `generation_config` object.
+  ///
+  /// Only the documented fields are populated: `temperature`,
+  /// `max_output_tokens`, `thinking_level`, and `thinking_summaries`. The
+  /// Interactions API documents no `top_p`, `top_k`, or `stop_sequences`
+  /// fields, so those [LLMChatOptions] values are not sent; pass them through
+  /// `backendOptions['generation_config']` if a model turns out to accept them.
+  static Map<String, dynamic> _buildGenerationConfig(MergedOptions options) {
+    final config = <String, dynamic>{};
+
+    if (options.temperature != null) {
+      config['temperature'] = options.temperature;
+    }
+    if (options.maxOutputTokens != null) {
+      config['max_output_tokens'] = options.maxOutputTokens;
+    }
+
+    // Thought summaries are the only way thinking text reaches the client.
+    config['thinking_summaries'] = options.think ? 'auto' : 'off';
+    final explicitLevel = options.backendOptions['thinking_level'];
+    if (explicitLevel != null) {
+      config['thinking_level'] = explicitLevel;
+    } else if (options.think) {
+      config['thinking_level'] = thinkingLevelForBudget(
+        options.reasoningBudget,
+      );
+    }
+
+    final extraConfig = options.backendOptions['generation_config'];
+    if (extraConfig is Map) {
+      config.addAll(Map<String, dynamic>.from(extraConfig));
+    }
+    for (final key in const [
+      'temperature',
+      'max_output_tokens',
+      'thinking_summaries',
+    ]) {
+      if (options.backendOptions.containsKey(key)) {
+        config[key] = options.backendOptions[key];
+      }
+    }
+
+    return config;
+  }
+
+  /// Builds the `response_format` array for structured output.
+  ///
+  /// **Inferred shape.** The Interactions contract documents `response_format`
+  /// as an array but not its element shape, so entries are modeled on the flat,
+  /// `type`-discriminated objects the API uses for `tools`. Standard lowercase
+  /// JSON Schema is forwarded unchanged — unlike `generateContent`, whose
+  /// `responseSchema` required UPPERCASE type names. If structured output
+  /// requests fail with HTTP 400, check this function and
+  /// [GeminiMessageConverter.buildStatelessInput].
+  static List<Map<String, dynamic>>? _responseFormatValue(
+    LLMResponseFormat? format,
+  ) {
+    if (format == null) return null;
+    switch (format) {
+      case JsonFormat():
+        return [
+          <String, dynamic>{'type': 'json_object'},
+        ];
+      case JsonSchemaFormat(:final name, :final schema):
+        return [
+          <String, dynamic>{
+            'type': 'json_schema',
+            'name': name,
+            'schema': schema,
+          },
+        ];
     }
   }
 }

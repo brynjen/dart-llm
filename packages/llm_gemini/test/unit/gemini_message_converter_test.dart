@@ -1,88 +1,85 @@
 import 'package:llm_gemini/llm_gemini.dart';
-import 'package:llm_gemini/src/gemini_message_converter.dart';
 import 'package:test/test.dart';
 
+List<Map<String, dynamic>> _content(Map<String, dynamic> turn) =>
+    (turn['content'] as List).cast<Map<String, dynamic>>();
+
 void main() {
-  group('GeminiMessageConverter', () {
-    test('extracts system message into systemInstruction', () {
-      final messages = [
-        LLMMessage(role: LLMRole.system, content: 'You are helpful.'),
-        LLMMessage(role: LLMRole.user, content: 'Hello'),
-      ];
-      final result = GeminiMessageConverter.convert(messages);
-      expect(result.systemInstruction, isNotNull);
-      final parts = result.systemInstruction!['parts'] as List;
-      expect(parts.first['text'], 'You are helpful.');
-      expect(result.contents.length, 1);
+  group('GeminiMessageConverter.buildStatelessInput', () {
+    test('emits role-tagged turns with typed content blocks', () {
+      final input = GeminiMessageConverter.buildStatelessInput([
+        LLMMessage(role: LLMRole.user, content: 'Hello Gemini'),
+      ]);
+
+      expect(input.length, 1);
+      expect(input.first['role'], 'user');
+      expect(_content(input.first), [
+        {'type': 'text', 'text': 'Hello Gemini'},
+      ]);
     });
 
-    test('concatenates multiple system messages', () {
-      final messages = [
+    test('emits system messages as leading user turns', () {
+      final input = GeminiMessageConverter.buildStatelessInput([
+        LLMMessage(role: LLMRole.system, content: 'You are helpful.'),
+        LLMMessage(role: LLMRole.user, content: 'Hello'),
+      ]);
+
+      expect(input.length, 2);
+      expect(input[0]['role'], 'user');
+      expect(_content(input[0]).first['text'], 'You are helpful.');
+      expect(_content(input[1]).first['text'], 'Hello');
+      // There is no documented system role on the Interactions API.
+      expect(input.every((turn) => turn['role'] != 'system'), isTrue);
+    });
+
+    test('keeps each system message as its own turn', () {
+      final input = GeminiMessageConverter.buildStatelessInput([
         LLMMessage(role: LLMRole.system, content: 'First.'),
         LLMMessage(role: LLMRole.system, content: 'Second.'),
         LLMMessage(role: LLMRole.user, content: 'Hi'),
-      ];
-      final result = GeminiMessageConverter.convert(messages);
-      final parts = result.systemInstruction!['parts'] as List;
-      expect(parts.first['text'], 'First.\n\nSecond.');
+      ]);
+
+      expect(input.length, 3);
+      expect(_content(input[0]).first['text'], 'First.');
+      expect(_content(input[1]).first['text'], 'Second.');
     });
 
-    test('converts user message with role "user"', () {
-      final messages = [
-        LLMMessage(role: LLMRole.user, content: 'Hello Gemini'),
-      ];
-      final result = GeminiMessageConverter.convert(messages);
-      expect(result.contents.length, 1);
-      final content = result.contents[0];
-      expect(content['role'], 'user');
-      final parts = content['parts'] as List;
-      expect(parts.first['text'], 'Hello Gemini');
-    });
-
-    test('converts assistant message with role "model"', () {
-      final messages = [
+    test('uses role "model" for assistant turns', () {
+      final input = GeminiMessageConverter.buildStatelessInput([
         LLMMessage(role: LLMRole.user, content: 'Hi'),
         LLMMessage(role: LLMRole.assistant, content: 'Hello!'),
-      ];
-      final result = GeminiMessageConverter.convert(messages);
-      final modelContent = result.contents[1];
-      expect(modelContent['role'], 'model');
-      final parts = modelContent['parts'] as List;
-      expect(parts.first['text'], 'Hello!');
+      ]);
+
+      expect(input[1]['role'], 'model');
+      expect(_content(input[1]).first, {'type': 'text', 'text': 'Hello!'});
     });
 
-    test(
-      'converts assistant message with tool calls to functionCall parts',
-      () {
-        final messages = [
-          LLMMessage(role: LLMRole.user, content: 'Calculate'),
-          LLMMessage(
-            role: LLMRole.assistant,
-            toolCalls: [
-              {
-                'id': 'call_1',
-                'function': {
-                  'name': 'calculator',
-                  'arguments': '{"expression": "2+2"}',
-                },
+    test('converts assistant tool calls to function_call blocks', () {
+      final input = GeminiMessageConverter.buildStatelessInput([
+        LLMMessage(role: LLMRole.user, content: 'Calculate'),
+        LLMMessage(
+          role: LLMRole.assistant,
+          toolCalls: [
+            {
+              'id': 'call_1',
+              'function': {
+                'name': 'calculator',
+                'arguments': '{"expression": "2+2"}',
               },
-            ],
-          ),
-        ];
-        final result = GeminiMessageConverter.convert(messages);
-        final modelContent = result.contents[1];
-        expect(modelContent['role'], 'model');
-        final parts = modelContent['parts'] as List;
-        final fcPart =
-            parts.firstWhere((p) => (p as Map).containsKey('functionCall'))
-                as Map;
-        expect(fcPart['functionCall']['name'], 'calculator');
-        expect(fcPart['functionCall']['args']['expression'], '2+2');
-      },
-    );
+            },
+          ],
+        ),
+      ]);
 
-    test('converts tool result to user message with functionResponse part', () {
-      final messages = [
+      final block = _content(input[1]).first;
+      expect(block['type'], 'function_call');
+      expect(block['id'], 'call_1');
+      expect(block['name'], 'calculator');
+      expect(block['arguments'], {'expression': '2+2'});
+    });
+
+    test('converts tool results to function_result blocks', () {
+      final input = GeminiMessageConverter.buildStatelessInput([
         LLMMessage(role: LLMRole.user, content: 'Calculate'),
         LLMMessage(
           role: LLMRole.assistant,
@@ -95,21 +92,25 @@ void main() {
         ),
         LLMMessage(
           role: LLMRole.tool,
-          content: '{"result": 4}',
+          content: 'Result: 4',
           toolCallId: 'c1',
+          status: 'calculator',
         ),
-      ];
-      final result = GeminiMessageConverter.convert(messages);
-      final toolContent = result.contents[2];
-      expect(toolContent['role'], 'user');
-      final parts = toolContent['parts'] as List;
-      final frPart = parts.first as Map;
-      expect(frPart['functionResponse'], isNotNull);
-      expect(frPart['functionResponse']['response']['result'], 4);
+      ]);
+
+      expect(input[2]['role'], 'user');
+      expect(_content(input[2]).first, {
+        'type': 'function_result',
+        'call_id': 'c1',
+        'name': 'calculator',
+        'result': [
+          {'type': 'text', 'text': 'Result: 4'},
+        ],
+      });
     });
 
-    test('merges consecutive tool results into one user content', () {
-      final messages = [
+    test('merges consecutive tool results into a single turn', () {
+      final input = GeminiMessageConverter.buildStatelessInput([
         LLMMessage(role: LLMRole.user, content: 'Run tools'),
         LLMMessage(
           role: LLMRole.assistant,
@@ -124,41 +125,51 @@ void main() {
             },
           ],
         ),
-        LLMMessage(role: LLMRole.tool, content: '{"r": 1}', toolCallId: 'i1'),
-        LLMMessage(role: LLMRole.tool, content: '{"r": 2}', toolCallId: 'i2'),
-      ];
-      final result = GeminiMessageConverter.convert(messages);
-      expect(result.contents.length, 3); // user, model, merged-user
-      final toolContent = result.contents[2];
-      final parts = toolContent['parts'] as List;
-      expect(parts.length, 2);
+        LLMMessage(
+          role: LLMRole.tool,
+          content: '1',
+          toolCallId: 'i1',
+          status: 'tool1',
+        ),
+        LLMMessage(
+          role: LLMRole.tool,
+          content: '2',
+          toolCallId: 'i2',
+          status: 'tool2',
+        ),
+      ]);
+
+      expect(input.length, 3); // user, model, merged tool results
+      expect(_content(input[2]).length, 2);
+      expect(_content(input[2])[1]['call_id'], 'i2');
     });
 
-    test('converts image to inlineData part', () {
-      final messages = [
+    test('converts images to image blocks with sniffed mime type', () {
+      final input = GeminiMessageConverter.buildStatelessInput([
         LLMMessage(
           role: LLMRole.user,
           content: 'Describe',
           images: ['/9j/4AAQSkZJRgAB'],
         ),
-      ];
-      final result = GeminiMessageConverter.convert(messages);
-      final parts = result.contents[0]['parts'] as List;
-      final imagePart =
-          parts.firstWhere((p) => (p as Map).containsKey('inlineData')) as Map;
-      expect(imagePart['inlineData']['mimeType'], 'image/jpeg');
-    });
+      ]);
 
-    test('toolToFunctionDeclaration converts tool format', () {
-      // Test with a minimal LLMTool-like object. Since LLMTool is abstract
-      // we use LLMTool.toJson format through the converter's static method.
-      // We'll verify the output structure.
-      final declaration = GeminiMessageConverter.toolToFunctionDeclaration(
-        _TestTool(),
-      );
-      expect(declaration['name'], 'test_tool');
-      expect(declaration['description'], 'A test tool');
-      expect(declaration['parameters'], isA<Map>());
+      final imageBlock = _content(input.first).first;
+      expect(imageBlock['type'], 'image');
+      expect(imageBlock['mime_type'], 'image/jpeg');
+      expect(imageBlock['data'], '/9j/4AAQSkZJRgAB');
+    });
+  });
+
+  group('GeminiMessageConverter.toolToFunctionSpec', () {
+    test('produces a flat function entry', () {
+      final spec = GeminiMessageConverter.toolToFunctionSpec(_TestTool());
+
+      expect(spec['type'], 'function');
+      expect(spec['name'], 'test_tool');
+      expect(spec['description'], 'A test tool');
+      expect(spec['parameters'], isA<Map>());
+      // The Interactions API does not nest declarations.
+      expect(spec.containsKey('functionDeclarations'), isFalse);
     });
   });
 }

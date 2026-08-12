@@ -43,17 +43,36 @@ void main() {
       });
     });
 
-    test('options tools replace individual tools only when non-empty', () {
+    test('options tools replace individual tools when explicitly provided', () {
       final withEmptyOptionsTools = StreamChatOptionsMerger.merge(
         tools: [TestTool()],
         options: const StreamChatOptions(),
       );
       expect(withEmptyOptionsTools.tools.length, 1);
 
+      final withExplicitEmptyOptionsTools = StreamChatOptionsMerger.merge(
+        tools: [TestTool()],
+        options: const StreamChatOptions(tools: []),
+      );
+      expect(withExplicitEmptyOptionsTools.tools, isEmpty);
+
       final withOptionsTools = StreamChatOptionsMerger.merge(
         options: StreamChatOptions(tools: [TestTool()]),
       );
       expect(withOptionsTools.tools.length, 1);
+    });
+
+    test('merges per-request timeout and retry config', () {
+      const retryConfig = RetryConfig(maxAttempts: 2);
+      final merged = StreamChatOptionsMerger.merge(
+        options: const StreamChatOptions(
+          timeout: Duration(seconds: 15),
+          retryConfig: retryConfig,
+        ),
+      );
+
+      expect(merged.timeout, const Duration(seconds: 15));
+      expect(merged.retryConfig, retryConfig);
     });
   });
 }

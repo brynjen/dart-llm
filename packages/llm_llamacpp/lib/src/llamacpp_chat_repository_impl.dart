@@ -7,7 +7,7 @@ Stream<LLMChunk> _streamChatImpl(
   bool think,
   List<LLMTool> tools,
   dynamic extra,
-  StreamChatOptions? options,
+  LLMChatOptions? options,
   GenerationOptions? generationOptions,
 ) async* {
   final genOptions = generationOptions ?? const GenerationOptions();
@@ -43,7 +43,7 @@ Stream<LLMChunk> _streamChatImpl(
     );
   }
 
-  final effectiveTools = options?.tools.isNotEmpty == true
+  final effectiveTools = options?.overridesTools == true
       ? options!.tools
       : tools;
   final effectiveExtra = options?.extra ?? extra;
@@ -165,7 +165,9 @@ Stream<LLMChunk> _streamChatImpl(
           evalCount: message.generatedTokens,
         );
 
-        if (collectedToolCalls.isNotEmpty && effectiveTools.isNotEmpty) {
+        if (collectedToolCalls.isNotEmpty &&
+            effectiveTools.isNotEmpty &&
+            merged.autoExecuteTools) {
           LlamaCppChatRepository._log.info(
             'Executing ${collectedToolCalls.length} tool calls...',
           );
@@ -194,7 +196,7 @@ Stream<LLMChunk> _streamChatImpl(
                   toolAttempts: currentAttempts - 1,
                   responseFormat: merged.responseFormat,
                 ) ??
-                StreamChatOptions(
+                LLMChatOptions(
                   tools: effectiveTools,
                   extra: effectiveExtra,
                   toolAttempts: currentAttempts - 1,

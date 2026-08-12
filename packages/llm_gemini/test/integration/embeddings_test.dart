@@ -316,7 +316,7 @@ void main() {
               .timeout(const Duration(seconds: 60));
 
           final dimension = embeddings[0].embedding.length;
-          // text-embedding-004 should have 768 dimensions
+          // Provider embedding dimensions vary by model, but should be sane.
           expect(
             dimension,
             greaterThan(0),

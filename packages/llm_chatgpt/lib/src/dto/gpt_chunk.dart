@@ -12,6 +12,14 @@ class GPTChunk extends LLMChunk {
   }) : super(
          createdAt: created,
          done: choices[0].finishReason != null,
+         finishReason: choices[0].finishReason != null
+             ? LLMFinishReason.fromProvider(choices[0].finishReason)
+             : null,
+         providerMetadata: {
+           'id': id,
+           if (systemFingerprint != null)
+             'system_fingerprint': systemFingerprint,
+         },
          message: LLMChunkMessage(
            content: choices[0].delta.content,
            role: choices[0].delta.role != null

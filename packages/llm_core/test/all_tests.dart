@@ -32,6 +32,7 @@ import 'unit/validation_test.dart' as validation;
 import 'unit/validation_comprehensive_test.dart' as validation_comprehensive;
 import 'unit/retry_util_test.dart' as retry_util;
 import 'unit/mock_llm_chat_repository_test.dart' as mock_repo_test;
+import 'unit/repository_features_test.dart' as repository_features;
 
 void main() {
   validation.main();
@@ -53,4 +54,5 @@ void main() {
   llm_embedding.main();
   interface_consistency.main();
   mock_repo_test.main();
+  repository_features.main();
 }

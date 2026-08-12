@@ -149,7 +149,7 @@ void verifyResponseStructure(LLMResponse response) {
   );
   expect(
     response.role,
-    equals('assistant'),
+    equals(LLMRole.assistant),
     reason: 'Response role should be assistant',
   );
   expect(

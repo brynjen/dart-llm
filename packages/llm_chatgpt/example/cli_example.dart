@@ -9,14 +9,14 @@ import 'package:llm_chatgpt/llm_chatgpt.dart';
 ///
 /// Examples:
 ///   OPENAI_API_KEY=your-key dart run example/cli_example.dart
-///   OPENAI_API_KEY=your-key dart run example/cli_example.dart gpt-4o
-///   dart run example/cli_example.dart gpt-4o-mini your-api-key
+///   OPENAI_API_KEY=your-key dart run example/cli_example.dart gpt-5.4-nano
+///   dart run example/cli_example.dart gpt-5.4-nano your-api-key
 ///
 /// Requirements:
 ///   - OpenAI API key (set OPENAI_API_KEY env var or pass as argument)
 ///   - Internet connection
 Future<void> main(List<String> args) async {
-  final model = args.isNotEmpty ? args[0] : 'gpt-4o-mini';
+  final model = args.isNotEmpty ? args[0] : 'gpt-5.4-nano';
   final LLMLogger logger = DefaultLLMLogger('llm_chatgpt');
 
   // Get API key from environment or arguments

@@ -18,13 +18,13 @@ dart run example/cli_example.dart
 With custom model:
 
 ```bash
-OPENAI_API_KEY=your-key dart run example/cli_example.dart gpt-4o
+OPENAI_API_KEY=your-key dart run example/cli_example.dart gpt-5.4-nano
 ```
 
 Or pass API key as argument:
 
 ```bash
-dart run example/cli_example.dart gpt-4o-mini your-api-key
+dart run example/cli_example.dart gpt-5.4-nano your-api-key
 ```
 
 ## Using in Your Own Code
@@ -37,7 +37,7 @@ import 'package:llm_chatgpt/llm_chatgpt.dart';
 Future<void> main() async {
   final repo = ChatGPTChatRepository(apiKey: 'your-api-key');
   
-  final stream = repo.streamChat('gpt-4o-mini', messages: [
+  final stream = repo.streamChat('gpt-5.4-nano', messages: [
     LLMMessage(role: LLMRole.system, content: 'You are helpful.'),
     LLMMessage(role: LLMRole.user, content: 'Hello!'),
   ]);
@@ -71,7 +71,7 @@ final repo = ChatGPTChatRepository.builder()
 ### Non-Streaming Response
 
 ```dart
-final response = await repo.chatResponse('gpt-4o-mini', messages: [
+final response = await repo.chatResponse('gpt-5.4-nano', messages: [
   LLMMessage(role: LLMRole.user, content: 'What is 2+2?'),
 ]);
 
@@ -108,7 +108,7 @@ class CalculatorTool extends LLMTool {
 }
 
 final stream = repo.streamChat(
-  'gpt-4o-mini',
+  'gpt-5.4-nano',
   messages: messages,
   tools: [CalculatorTool()],
 );
@@ -159,15 +159,13 @@ final repo = ChatGPTChatRepository.builder()
 ## Available Models
 
 ### Chat Models
-- `gpt-4o` - Latest GPT-4 optimized model
-- `gpt-4o-mini` - Faster, cheaper GPT-4 variant
-- `gpt-4-turbo` - GPT-4 Turbo
-- `gpt-3.5-turbo` - GPT-3.5 Turbo
+- `gpt-5.4-nano` - Low-cost current-generation chat model
+- `gpt-5.4-mini` - Larger current-generation small model
+- `gpt-5.4` - More capable current-generation model
 
 ### Embedding Models
 - `text-embedding-3-small` - Small, fast embeddings
 - `text-embedding-3-large` - Large, high-quality embeddings
-- `text-embedding-ada-002` - Legacy embedding model
 
 ## Troubleshooting
 

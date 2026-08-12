@@ -25,17 +25,48 @@ import 'package:llm_chatgpt/src/gpt_stream_converter.dart';
 ///   print(chunk.message?.content ?? '');
 /// }
 /// ```
-class ChatGPTChatRepository extends LLMChatRepository {
+class ChatGPTChatRepository extends LLMChatRepository
+    with LLMRepositoryFeatures {
   ChatGPTChatRepository({
-    required this.apiKey,
-    this.baseUrl = 'https://api.openai.com',
-    this.maxToolAttempts = 90,
-    this.retryConfig,
-    this.timeoutConfig,
+    required String apiKey,
+    String baseUrl = 'https://api.openai.com',
+    int maxToolAttempts = 90,
+    RetryConfig? retryConfig,
+    TimeoutConfig? timeoutConfig,
+    RateLimiter? rateLimiter,
+    ResponseCache? responseCache,
+    LLMMetrics? metrics,
     http.Client? httpClient,
-  }) : httpClient = httpClient ?? http.Client(),
-       _httpHelper = HttpClientHelper(
+  }) : this._(
+         apiKey: apiKey,
+         baseUrl: baseUrl,
+         maxToolAttempts: maxToolAttempts,
+         retryConfig: retryConfig,
+         timeoutConfig: timeoutConfig,
+         rateLimiter: rateLimiter,
+         responseCache: responseCache,
+         metrics: metrics,
          httpClient: httpClient ?? http.Client(),
+         ownsHttpClient: httpClient == null,
+       );
+
+  ChatGPTChatRepository._({
+    required this.apiKey,
+    required this.baseUrl,
+    required this.maxToolAttempts,
+    required this.retryConfig,
+    required this.timeoutConfig,
+    required this.httpClient,
+    required bool ownsHttpClient,
+    RateLimiter? rateLimiter,
+    this.responseCache,
+    this.metrics,
+  }) : _ownsHttpClient = ownsHttpClient,
+       _rateLimiter = rateLimiter?.enabled == true
+           ? TokenBucketRateLimiter(rateLimiter!)
+           : null,
+       _httpHelper = HttpClientHelper(
+         httpClient: httpClient,
          timeoutConfig: timeoutConfig,
        );
 
@@ -51,6 +82,10 @@ class ChatGPTChatRepository extends LLMChatRepository {
   /// The HTTP client helper for making requests.
   final HttpClientHelper _httpHelper;
 
+  final bool _ownsHttpClient;
+
+  final TokenBucketRateLimiter? _rateLimiter;
+
   /// The maximum number of tool attempts to make for a single request.
   final int maxToolAttempts;
 
@@ -60,11 +95,35 @@ class ChatGPTChatRepository extends LLMChatRepository {
   /// Timeout configuration for requests.
   final TimeoutConfig? timeoutConfig;
 
+  @override
+  final ResponseCache? responseCache;
+
+  @override
+  final LLMMetrics? metrics;
+
   Uri get uri => Uri.parse('$baseUrl/v1/chat/completions');
 
   /// Create a builder for configuring a new repository instance.
   static ChatGPTChatRepositoryBuilder builder() {
     return ChatGPTChatRepositoryBuilder();
+  }
+
+  @override
+  LLMCapabilities capabilitiesForModel(String model) {
+    return const LLMCapabilities(
+      streaming: true,
+      tools: true,
+      vision: true,
+      structuredOutput: true,
+      thinking: true,
+      embeddings: true,
+    );
+  }
+
+  /// Releases owned resources.
+  void close() {
+    _rateLimiter?.dispose();
+    if (_ownsHttpClient) httpClient.close();
   }
 
   @override
@@ -75,7 +134,7 @@ class ChatGPTChatRepository extends LLMChatRepository {
     dynamic extra,
     int? toolAttempts,
     bool think = false,
-    StreamChatOptions? options,
+    LLMChatOptions? options,
   }) async* {
     Validation.validateModelName(model);
     Validation.validateMessages(messages);
@@ -86,7 +145,9 @@ class ChatGPTChatRepository extends LLMChatRepository {
       tools: tools,
       extra: extra,
       toolAttempts: toolAttempts,
+      retryConfig: retryConfig,
     );
+    final effectiveRetryConfig = merged.retryConfig ?? retryConfig;
 
     final body = {
       'model': model,
@@ -99,29 +160,35 @@ class ChatGPTChatRepository extends LLMChatRepository {
           .toList(growable: false);
     }
 
+    _applyGenerationOptions(body, merged);
     _applyResponseFormat(body, merged.responseFormat);
+    _applyBackendOptions(body, merged.backendOptions);
 
-    final response = await RetryUtil.executeWithRetry(
-      operation: () => _httpHelper.sendStreamingRequest(
-        method: 'POST',
-        uri: uri,
-        headers: {
-          'content-type': 'application/json',
-          'accept': 'text/event-stream',
-          'authorization': 'Bearer $apiKey',
-        },
-        body: utf8.encode(json.encode(body)),
-        applyTimeoutToSend: true, // OpenAI applies timeout to send
+    final response = await RateLimiterUtil.executeWithRateLimit(
+      rateLimiter: _rateLimiter,
+      operation: () => RetryUtil.executeWithRetry(
+        operation: () => _httpHelper.sendStreamingRequest(
+          method: 'POST',
+          uri: uri,
+          headers: {
+            'content-type': 'application/json',
+            'accept': 'text/event-stream',
+            'authorization': 'Bearer $apiKey',
+          },
+          body: utf8.encode(json.encode(body)),
+          applyTimeoutToSend: true, // OpenAI applies timeout to send
+          timeout: merged.timeout,
+        ),
+        config: effectiveRetryConfig,
+        isRetryable: (error) =>
+            ErrorHandlers.isRetryableError(error, effectiveRetryConfig),
       ),
-      config: retryConfig,
-      isRetryable: (error) =>
-          ErrorHandlers.isRetryableError(error, retryConfig),
     );
     try {
       switch (response.statusCode) {
         case 200:
           final chunkStream = GPTStreamConverter.toLLMStream(response);
-          if (merged.tools.isNotEmpty) {
+          if (merged.tools.isNotEmpty && merged.autoExecuteTools) {
             final executor = StreamToolExecutor(
               tools: merged.tools,
               extra: merged.extra,
@@ -138,14 +205,22 @@ class ChatGPTChatRepository extends LLMChatRepository {
                     messages: messages,
                     tools: tools,
                     extra: extra,
-                    options: StreamChatOptions(
+                    options: LLMChatOptions(
                       think: merged.think,
                       tools: tools,
                       extra: extra,
                       toolAttempts: toolAttempts,
                       autoExecuteTools: merged.autoExecuteTools,
                       backendOptions: merged.backendOptions,
+                      timeout: merged.timeout,
+                      retryConfig: effectiveRetryConfig,
                       responseFormat: merged.responseFormat,
+                      temperature: merged.temperature,
+                      topP: merged.topP,
+                      topK: merged.topK,
+                      maxOutputTokens: merged.maxOutputTokens,
+                      stopSequences: merged.stopSequences,
+                      reasoningBudget: merged.reasoningBudget,
                     ),
                   ),
             );
@@ -168,6 +243,30 @@ class ChatGPTChatRepository extends LLMChatRepository {
       }
     } catch (e) {
       rethrow;
+    }
+  }
+
+  static void _applyGenerationOptions(
+    Map<String, dynamic> body,
+    MergedOptions options,
+  ) {
+    if (options.temperature != null) body['temperature'] = options.temperature;
+    if (options.topP != null) body['top_p'] = options.topP;
+    if (options.maxOutputTokens != null) {
+      body['max_completion_tokens'] = options.maxOutputTokens;
+    }
+    if (options.stopSequences != null) body['stop'] = options.stopSequences;
+    if (options.reasoningBudget != null) {
+      body['reasoning_effort'] = 'low';
+    }
+  }
+
+  static void _applyBackendOptions(
+    Map<String, dynamic> body,
+    Map<String, dynamic> backendOptions,
+  ) {
+    for (final entry in backendOptions.entries) {
+      body[entry.key] = entry.value;
     }
   }
 
@@ -199,20 +298,23 @@ class ChatGPTChatRepository extends LLMChatRepository {
     Map<String, dynamic> options = const {},
   }) async {
     final body = {'model': model, 'input': messages};
-    final response = await RetryUtil.executeWithRetry(
-      operation: () => _httpHelper.sendNonStreamingRequest(
-        method: 'POST',
-        uri: Uri.parse('$baseUrl/v1/embeddings'),
-        headers: {
-          'content-type': 'application/json',
-          'accept': 'application/json',
-          'authorization': 'Bearer $apiKey',
-        },
-        body: json.encode(body),
+    final response = await RateLimiterUtil.executeWithRateLimit(
+      rateLimiter: _rateLimiter,
+      operation: () => RetryUtil.executeWithRetry(
+        operation: () => _httpHelper.sendNonStreamingRequest(
+          method: 'POST',
+          uri: Uri.parse('$baseUrl/v1/embeddings'),
+          headers: {
+            'content-type': 'application/json',
+            'accept': 'application/json',
+            'authorization': 'Bearer $apiKey',
+          },
+          body: json.encode(body),
+        ),
+        config: retryConfig,
+        isRetryable: (error) =>
+            ErrorHandlers.isRetryableError(error, retryConfig),
       ),
-      config: retryConfig,
-      isRetryable: (error) =>
-          ErrorHandlers.isRetryableError(error, retryConfig),
     );
     switch (response.statusCode) {
       case 200: // HttpStatus.ok

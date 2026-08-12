@@ -8,29 +8,59 @@ import 'package:test/test.dart';
 // Minimal SSE payload that the GPT stream converter can decode.
 String _sseChunk(String content) =>
     'data: ${json.encode({
-          "id": "chatcmpl-test",
-          "object": "chat.completion.chunk",
-          "model": "gpt-4o",
-          "choices": [
-            {
-              "index": 0,
-              "delta": {"content": content},
-              "finish_reason": null,
-            },
-          ],
-        })}\n\n'
+      "id": "chatcmpl-test",
+      "object": "chat.completion.chunk",
+      "model": "gpt-4o",
+      "choices": [
+        {
+          "index": 0,
+          "delta": {"content": content},
+          "finish_reason": null,
+        },
+      ],
+    })}\n\n'
     'data: ${json.encode({
-          "id": "chatcmpl-test",
-          "object": "chat.completion.chunk",
-          "model": "gpt-4o",
-          "choices": [
-            {
-              "index": 0,
-              "delta": {},
-              "finish_reason": "stop",
-            },
-          ],
-        })}\n\n'
+      "id": "chatcmpl-test",
+      "object": "chat.completion.chunk",
+      "model": "gpt-4o",
+      "choices": [
+        {"index": 0, "delta": {}, "finish_reason": "stop"},
+      ],
+    })}\n\n'
+    'data: [DONE]\n\n';
+
+String _sseToolCall() =>
+    'data: ${json.encode({
+      "id": "chatcmpl-test",
+      "object": "chat.completion.chunk",
+      "created": 1700000000,
+      "model": "gpt-4o",
+      "choices": [
+        {
+          "index": 0,
+          "delta": {
+            "tool_calls": [
+              {
+                "id": "call_1",
+                "index": 0,
+                "type": "function",
+                "function": {"name": "calculator", "arguments": "{\"expression\":\"2+2\"}"},
+              },
+            ],
+          },
+          "finish_reason": null,
+        },
+      ],
+    })}\n\n'
+    'data: ${json.encode({
+      "id": "chatcmpl-test",
+      "object": "chat.completion.chunk",
+      "created": 1700000000,
+      "model": "gpt-4o",
+      "choices": [
+        {"index": 0, "delta": {}, "finish_reason": "tool_calls"},
+      ],
+    })}\n\n'
     'data: [DONE]\n\n';
 
 MockClient _captureClient(void Function(Map<String, dynamic>) onBody) =>
@@ -116,34 +146,36 @@ void main() {
       expect(body['response_format'], {'type': 'json_object'});
     });
 
-    test('JsonSchemaFormat emits response_format json_schema with name/schema/strict',
-        () async {
-      late Map<String, dynamic> body;
-      final repo = ChatGPTChatRepository(
-        apiKey: 'key',
-        httpClient: _captureClient((b) => body = b),
-      );
-      await repo
-          .streamChat(
-            'gpt-4o',
-            messages: messages,
-            options: const StreamChatOptions(
-              responseFormat: JsonSchemaFormat(
-                name: 'Answer',
-                schema: {'type': 'object', 'properties': {}},
-                strict: false,
+    test(
+      'JsonSchemaFormat emits response_format json_schema with name/schema/strict',
+      () async {
+        late Map<String, dynamic> body;
+        final repo = ChatGPTChatRepository(
+          apiKey: 'key',
+          httpClient: _captureClient((b) => body = b),
+        );
+        await repo
+            .streamChat(
+              'gpt-4o',
+              messages: messages,
+              options: const StreamChatOptions(
+                responseFormat: JsonSchemaFormat(
+                  name: 'Answer',
+                  schema: {'type': 'object', 'properties': {}},
+                  strict: false,
+                ),
               ),
-            ),
-          )
-          .toList();
+            )
+            .toList();
 
-      final rf = body['response_format'] as Map<String, dynamic>;
-      expect(rf['type'], 'json_schema');
-      final js = rf['json_schema'] as Map<String, dynamic>;
-      expect(js['name'], 'Answer');
-      expect(js['strict'], false);
-      expect(js['schema'], {'type': 'object', 'properties': {}});
-    });
+        final rf = body['response_format'] as Map<String, dynamic>;
+        expect(rf['type'], 'json_schema');
+        final js = rf['json_schema'] as Map<String, dynamic>;
+        expect(js['name'], 'Answer');
+        expect(js['strict'], false);
+        expect(js['schema'], {'type': 'object', 'properties': {}});
+      },
+    );
 
     test('null responseFormat emits no response_format key', () async {
       late Map<String, dynamic> body;
@@ -151,12 +183,53 @@ void main() {
         apiKey: 'key',
         httpClient: _captureClient((b) => body = b),
       );
-      await repo
-          .streamChat('gpt-4o', messages: messages)
-          .toList();
+      await repo.streamChat('gpt-4o', messages: messages).toList();
 
       expect(body.containsKey('response_format'), isFalse);
     });
+  });
+
+  group('ChatGPTChatRepository tool loop behavior', () {
+    test(
+      'autoExecuteTools false exposes tool calls without executing tools',
+      () async {
+        var sendCount = 0;
+        final repo = ChatGPTChatRepository(
+          apiKey: 'key',
+          httpClient: MockClient((request) async {
+            sendCount++;
+            return http.Response(
+              _sseToolCall(),
+              200,
+              headers: {'content-type': 'text/event-stream'},
+            );
+          }),
+        );
+
+        final chunks = await repo
+            .streamChat(
+              'gpt-4o',
+              messages: [LLMMessage(role: LLMRole.user, content: '2+2?')],
+              options: LLMChatOptions(
+                tools: [_CalculatorTool()],
+                autoExecuteTools: false,
+              ),
+            )
+            .toList();
+
+        expect(sendCount, 1);
+        expect(
+          chunks.any(
+            (chunk) => (chunk.message?.toolCalls ?? const []).isNotEmpty,
+          ),
+          isTrue,
+        );
+        expect(
+          chunks.any((chunk) => chunk.message?.role == LLMRole.tool),
+          isFalse,
+        );
+      },
+    );
   });
 
   group('ChatGPTChatRepository validation', () {
@@ -181,4 +254,27 @@ void main() {
       );
     });
   });
+}
+
+class _CalculatorTool extends LLMTool {
+  @override
+  String get name => 'calculator';
+
+  @override
+  String get description => 'Calculator';
+
+  @override
+  List<LLMToolParam> get parameters => [
+    LLMToolParam(
+      name: 'expression',
+      type: 'string',
+      description: 'Expression',
+      isRequired: true,
+    ),
+  ];
+
+  @override
+  Future<String> execute(Map<String, dynamic> args, {dynamic extra}) async {
+    return '4';
+  }
 }

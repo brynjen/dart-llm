@@ -36,22 +36,23 @@ void _ensureIntegrationEnvLoaded() {
 // Test Configuration
 // ============================================================================
 
-/// Default model for testing (cost-effective option).
-const chatModel = 'claude-haiku-4-5-20251001';
+/// Default model for testing (cost-effective current-generation option).
+String get chatModel =>
+    _envValue('ANTHROPIC_CHAT_MODEL') ?? 'claude-haiku-4-5-20251001';
+
+String? _envValue(String name) {
+  final fromPlatform = Platform.environment[name];
+  if (fromPlatform != null && fromPlatform.isNotEmpty) return fromPlatform;
+  _ensureIntegrationEnvLoaded();
+  if (_integrationEnv.isDefined(name)) return _integrationEnv[name];
+  return null;
+}
 
 /// Gets the API key from environment variables or a local `.env` file.
 ///
 /// Non-empty [Platform.environment] entries take precedence over `.env`.
 String? getApiKey() {
-  final fromPlatform = Platform.environment['ANTHROPIC_API_KEY'];
-  if (fromPlatform != null && fromPlatform.isNotEmpty) {
-    return fromPlatform;
-  }
-  _ensureIntegrationEnvLoaded();
-  if (_integrationEnv.isDefined('ANTHROPIC_API_KEY')) {
-    return _integrationEnv['ANTHROPIC_API_KEY'];
-  }
-  return null;
+  return _envValue('ANTHROPIC_API_KEY');
 }
 
 /// Checks if API key is available for testing.
@@ -162,7 +163,7 @@ void verifyResponseStructure(LLMResponse response) {
   );
   expect(
     response.role,
-    equals('assistant'),
+    equals(LLMRole.assistant),
     reason: 'Response role should be assistant',
   );
   expect(

@@ -36,25 +36,27 @@ void _ensureIntegrationEnvLoaded() {
 // Test Configuration
 // ============================================================================
 
-/// Default model for testing (cost-effective option).
-const chatModel = 'gemini-2.0-flash';
+/// Default model for testing (cost-effective current-generation option).
+String get chatModel =>
+    _envValue('GEMINI_CHAT_MODEL') ?? 'gemini-3.5-flash-lite';
 
 /// Default embedding model for testing.
-const embeddingModel = 'text-embedding-004';
+String get embeddingModel =>
+    _envValue('GEMINI_EMBEDDING_MODEL') ?? 'gemini-embedding-001';
+
+String? _envValue(String name) {
+  final fromPlatform = Platform.environment[name];
+  if (fromPlatform != null && fromPlatform.isNotEmpty) return fromPlatform;
+  _ensureIntegrationEnvLoaded();
+  if (_integrationEnv.isDefined(name)) return _integrationEnv[name];
+  return null;
+}
 
 /// Gets the API key from environment variables or a local `.env` file.
 ///
 /// Non-empty [Platform.environment] entries take precedence over `.env`.
 String? getApiKey() {
-  final fromPlatform = Platform.environment['GEMINI_API_KEY'];
-  if (fromPlatform != null && fromPlatform.isNotEmpty) {
-    return fromPlatform;
-  }
-  _ensureIntegrationEnvLoaded();
-  if (_integrationEnv.isDefined('GEMINI_API_KEY')) {
-    return _integrationEnv['GEMINI_API_KEY'];
-  }
-  return null;
+  return _envValue('GEMINI_API_KEY');
 }
 
 /// Checks if API key is available for testing.
@@ -165,7 +167,7 @@ void verifyResponseStructure(LLMResponse response) {
   );
   expect(
     response.role,
-    equals('assistant'),
+    equals(LLMRole.assistant),
     reason: 'Response role should be assistant',
   );
   expect(

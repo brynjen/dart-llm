@@ -208,59 +208,69 @@ void main() {
   group('ClaudeChatRepository responseFormat', () {
     final messages = [LLMMessage(role: LLMRole.user, content: 'hi')];
 
-    test('JsonFormat injects JSON-only instruction into system field', () async {
-      late Map<String, dynamic> capturedBody;
-      final client = MockClient((request) async {
-        capturedBody = json.decode(request.body) as Map<String, dynamic>;
-        return http.Response(
-          _simpleResponse(),
-          200,
-          headers: {'content-type': 'text/event-stream'},
-        );
-      });
+    test(
+      'JsonFormat injects JSON-only instruction into system field',
+      () async {
+        late Map<String, dynamic> capturedBody;
+        final client = MockClient((request) async {
+          capturedBody = json.decode(request.body) as Map<String, dynamic>;
+          return http.Response(
+            _simpleResponse(),
+            200,
+            headers: {'content-type': 'text/event-stream'},
+          );
+        });
 
-      final repo = ClaudeChatRepository(apiKey: 'key', httpClient: client);
-      await repo
-          .streamChat(
-            'claude-opus-4-6',
-            messages: messages,
-            options: const StreamChatOptions(responseFormat: JsonFormat()),
-          )
-          .toList();
+        final repo = ClaudeChatRepository(apiKey: 'key', httpClient: client);
+        await repo
+            .streamChat(
+              'claude-opus-4-6',
+              messages: messages,
+              options: const StreamChatOptions(responseFormat: JsonFormat()),
+            )
+            .toList();
 
-      final system = capturedBody['system'] as String;
-      expect(system, contains('valid JSON'));
-    });
+        final system = capturedBody['system'] as String;
+        expect(system, contains('valid JSON'));
+      },
+    );
 
-    test('JsonSchemaFormat injects schema instruction with schema JSON', () async {
-      late Map<String, dynamic> capturedBody;
-      final client = MockClient((request) async {
-        capturedBody = json.decode(request.body) as Map<String, dynamic>;
-        return http.Response(
-          _simpleResponse(),
-          200,
-          headers: {'content-type': 'text/event-stream'},
-        );
-      });
+    test(
+      'JsonSchemaFormat uses native output_config on supporting models',
+      () async {
+        late Map<String, dynamic> capturedBody;
+        final client = MockClient((request) async {
+          capturedBody = json.decode(request.body) as Map<String, dynamic>;
+          return http.Response(
+            _simpleResponse(),
+            200,
+            headers: {'content-type': 'text/event-stream'},
+          );
+        });
 
-      final repo = ClaudeChatRepository(apiKey: 'key', httpClient: client);
-      await repo
-          .streamChat(
-            'claude-opus-4-6',
-            messages: messages,
-            options: const StreamChatOptions(
-              responseFormat: JsonSchemaFormat(
-                name: 'MyOutput',
-                schema: {'type': 'object'},
+        final repo = ClaudeChatRepository(apiKey: 'key', httpClient: client);
+        await repo
+            .streamChat(
+              'claude-opus-4-6',
+              messages: messages,
+              options: const StreamChatOptions(
+                responseFormat: JsonSchemaFormat(
+                  name: 'MyOutput',
+                  schema: {'type': 'object'},
+                ),
               ),
-            ),
-          )
-          .toList();
+            )
+            .toList();
 
-      final system = capturedBody['system'] as String;
-      expect(system, contains('Schema name: MyOutput'));
-      expect(system, contains('"type":"object"'));
-    });
+        // Opus 4.6 supports native structured outputs, so the schema must
+        // constrain decoding via output_config rather than being pasted into
+        // the system prompt as an instruction the model may ignore.
+        final format = (capturedBody['output_config'] as Map)['format'] as Map;
+        expect(format['type'], 'json_schema');
+        expect(format['schema'], {'type': 'object'});
+        expect(capturedBody['system'], isNull);
+      },
+    );
 
     test('JsonFormat appended after existing system message', () async {
       late Map<String, dynamic> capturedBody;
@@ -302,9 +312,7 @@ void main() {
       });
 
       final repo = ClaudeChatRepository(apiKey: 'key', httpClient: client);
-      await repo
-          .streamChat('claude-opus-4-6', messages: messages)
-          .toList();
+      await repo.streamChat('claude-opus-4-6', messages: messages).toList();
 
       expect(capturedBody.containsKey('system'), isFalse);
     });

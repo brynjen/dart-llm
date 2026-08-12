@@ -9,7 +9,7 @@ echo "Generating API documentation..."
 dart pub global activate dartdoc
 
 # Generate docs for each package
-PACKAGES=("llm_core" "llm_ollama" "llm_chatgpt" "llm_llamacpp")
+PACKAGES=("llm_core" "llm_ollama" "llm_vllm" "llm_chatgpt" "llm_claude" "llm_gemini" "llm_llamacpp")
 
 for package in "${PACKAGES[@]}"; do
   echo "Generating docs for $package..."

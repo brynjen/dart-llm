@@ -14,8 +14,8 @@ import 'package:llm_core/llm_core.dart'
         LLMMessage,
         LLMRole,
         LLMTool,
+        LLMChatOptions,
         ModelLoadException,
-        StreamChatOptions,
         StreamChatOptionsMerger,
         Validation,
         VisionNotSupportedException;
@@ -171,7 +171,7 @@ class LlamaCppChatRepository extends LLMChatRepository {
     bool think = false,
     List<LLMTool> tools = const [],
     dynamic extra,
-    StreamChatOptions? options,
+    LLMChatOptions? options,
   }) async* {
     yield* streamChatWithGenerationOptions(
       model,
@@ -190,7 +190,7 @@ class LlamaCppChatRepository extends LLMChatRepository {
     bool think = false,
     List<LLMTool> tools = const [],
     dynamic extra,
-    StreamChatOptions? options,
+    LLMChatOptions? options,
     GenerationOptions? generationOptions,
   }) async* {
     yield* _streamChatImpl(

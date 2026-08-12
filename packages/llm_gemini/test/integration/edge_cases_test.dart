@@ -238,7 +238,7 @@ void main() {
       );
 
       test(
-        'backendOptions maxOutputTokens override',
+        'backendOptions max_output_tokens override',
         () async {
           if (!hasApiKey()) {
             markTestSkipped('API key not available');
@@ -257,7 +257,7 @@ void main() {
               chatModel,
               messages: messages,
               options: const StreamChatOptions(
-                backendOptions: {'maxOutputTokens': 50},
+                backendOptions: {'max_output_tokens': 50},
               ),
             ),
             const Duration(seconds: 90),

@@ -53,4 +53,3 @@ flutter:
         ffiPlugin: true
       linux:
         ffiPlugin: true
-
