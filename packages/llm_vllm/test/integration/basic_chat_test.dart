@@ -65,6 +65,10 @@ void main() {
               .timeout(const Duration(seconds: 90));
 
           verifyResponseStructure(response);
+          // Not just non-null: live vLLM sends `role` only on the first
+          // delta, and a folding bug once made chatResponse return only that
+          // first (empty) delta's content — which isNotNull cannot catch.
+          expect(response.content, isNotEmpty);
         },
         tags: ['integration'],
         timeout: const Timeout(Duration(minutes: 2)),

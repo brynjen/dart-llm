@@ -230,7 +230,9 @@ final options = StreamChatOptions(
 - Supports optional bearer auth for servers started with `--api-key`
 - Handles SSE streaming responses and vLLM reasoning deltas
 - Implements retry logic with exponential backoff
-- Configurable base URL for Azure compatibility
+- Configurable base URL with `/v1` normalization (`normalizeVllmBaseUrl`)
+- Validates `backendOptions` against vLLM's parameter schema, with camelCase
+  aliases and typo suggestions, because vLLM silently drops unknown fields
 
 ### llm_llamacpp
 

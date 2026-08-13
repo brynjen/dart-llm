@@ -1,4 +1,3 @@
-import 'package:llm_vllm/src/dto/vllm_choice.dart';
 import 'package:llm_vllm/src/dto/vllm_tool_call.dart';
 import 'package:llm_core/llm_core.dart';
 
@@ -22,16 +21,5 @@ extension VLLMToolCallToLLMToolCallExt on List<VLLMToolCall> {
           );
         })
         .toList(growable: false);
-  }
-}
-
-/// Extension to convert VLLM message to LLM message.
-extension VLLMMessageToLLMMessageExt on VLLMMessage {
-  LLMMessage get toLLMMessage {
-    return LLMMessage(
-      content: content,
-      role: LLMRole.values.firstWhere((e) => e.name == role),
-      toolCalls: toolCalls?.map((e) => e.toJson()).toList(growable: false),
-    );
   }
 }

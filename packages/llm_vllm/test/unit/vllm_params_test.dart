@@ -112,8 +112,11 @@ void main() {
     });
 
     test('every alias target is a real parameter', () {
+      // An alias may target either endpoint's schema — `encodingFormat` is
+      // embeddings-only — but must never point at a name neither accepts.
+      final allKnown = {...knownVllmChatParams, ...knownVllmEmbeddingParams};
       for (final target in vllmParamAliases.values) {
-        expect(knownVllmChatParams, contains(target), reason: target);
+        expect(allKnown, contains(target), reason: target);
       }
     });
   });

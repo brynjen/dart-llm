@@ -13,16 +13,32 @@ class VLLMEmbeddingsResponse {
   final VLLMEmbeddingsUsage usage;
   final List<VLLMEmbedding> data;
 
-  factory VLLMEmbeddingsResponse.fromJson(Map<String, dynamic> json) =>
-      VLLMEmbeddingsResponse(
-        model: json['model'],
-        usage: VLLMEmbeddingsUsage.fromJson(
-          json['usage'] as Map<String, dynamic>? ?? const {},
-        ),
-        data: (json['data'] as List<dynamic>)
-            .map((embeddingJson) => VLLMEmbedding.fromJson(embeddingJson))
-            .toList(growable: false),
-      );
+  /// Throws [FormatException] when `data` is missing or not a list — an
+  /// embeddings response without embeddings is unrecoverable, and a
+  /// [FormatException] lets the caller translate it into a domain exception
+  /// instead of leaking a raw [TypeError].
+  factory VLLMEmbeddingsResponse.fromJson(Map<String, dynamic> json) {
+    final data = json['data'];
+    if (data is! List) {
+      throw const FormatException('embeddings response has no "data" list');
+    }
+    return VLLMEmbeddingsResponse(
+      model: json['model'] as String? ?? '',
+      usage: VLLMEmbeddingsUsage.fromJson(
+        json['usage'] as Map<String, dynamic>? ?? const {},
+      ),
+      data: data
+          .map(
+            (embeddingJson) => switch (embeddingJson) {
+              Map<String, dynamic>() => VLLMEmbedding.fromJson(embeddingJson),
+              _ => throw const FormatException(
+                'embeddings response "data" entry is not an object',
+              ),
+            },
+          )
+          .toList(growable: false),
+    );
+  }
 
   Map<String, dynamic> toJson() => {
     'model': model,
@@ -40,12 +56,29 @@ class VLLMEmbedding {
   final int index;
   final List<double> embedding;
 
-  factory VLLMEmbedding.fromJson(Map<String, dynamic> json) => VLLMEmbedding(
-    index: json['index'],
-    embedding: (json['embedding'] as List<dynamic>)
-        .map((e) => (e as num).toDouble())
-        .toList(growable: false),
-  );
+  /// Throws [FormatException] when `embedding` is missing, not a list, or
+  /// holds non-numeric entries — see [VLLMEmbeddingsResponse.fromJson].
+  factory VLLMEmbedding.fromJson(Map<String, dynamic> json) {
+    final embedding = json['embedding'];
+    if (embedding is! List) {
+      throw const FormatException(
+        'embeddings response entry has no "embedding" list',
+      );
+    }
+    return VLLMEmbedding(
+      index: json['index'] as int? ?? 0,
+      embedding: embedding
+          .map(
+            (e) => switch (e) {
+              num() => e.toDouble(),
+              _ => throw const FormatException(
+                'embeddings response vector holds a non-numeric value',
+              ),
+            },
+          )
+          .toList(growable: false),
+    );
+  }
 
   Map<String, dynamic> toJson() => {
     'index': index,

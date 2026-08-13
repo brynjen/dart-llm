@@ -170,6 +170,20 @@ camelCase spellings are accepted and normalized (`minP` → `min_p`), matching
 field — vLLM never reads it, so its contents are flattened onto the request
 body rather than dropped.
 
+A few keys get special treatment:
+
+- **`chat_template_kwargs`** merges key-by-key with the map the repository
+  builds for reasoning control, so setting unrelated template kwargs never
+  discards `enable_thinking`. Your entries win on conflict — an explicit
+  `enable_thinking` here overrides the `think:` flag.
+- **`tool_choice`** accepts `auto`/`none`/`required`, a bare tool name (which
+  is wrapped into the OpenAI named-function form), or the full object.
+  `none` and `auto` are valid without tools; `required` or a named tool
+  without tools is rejected client-side, since vLLM would answer 400.
+- **`n`** must be `1`. The streaming pipeline surfaces only the first choice,
+  so additional candidates would cost tokens and be discarded; issue separate
+  requests instead.
+
 For parameters added by a custom vLLM extension, use `vllm_xargs` — vLLM's own
 escape hatch, which is a declared field and so is never dropped:
 
@@ -214,6 +228,18 @@ final repo = VLLMChatRepository(
 `resolveCapabilities` cannot detect vision (the server does not report model
 modality), so it reports `false`; set it explicitly when serving a multimodal
 model.
+
+Both probes wire through the builder as well:
+
+```dart
+final probe = VLLMRepository(baseUrl: baseUrl);
+final repo = VLLMChatRepository.builder()
+    .baseUrl(baseUrl)
+    .capabilities(await probe.resolveCapabilities('Qwen/Qwen3-0.6B'))
+    .supportedParams(await probe.fetchSupportedParams() ?? knownVllmChatParams)
+    .build();
+probe.close();
+```
 
 ### Retries and timeouts
 
@@ -371,6 +397,36 @@ final pool = VLLMPool(
 `VLLMPool` is a drop-in `LLMChatRepository` with routing, per-instance
 concurrency limits, optional per-model limits, queue limits, and `/v1/models`
 health checks.
+
+Instance-scoped settings (`rateLimiter`, `supportedParams`, `capabilities`,
+`httpClient`) go on each `VLLMInstanceConfig`; request-scoped features
+(`responseCache`, `metrics`) go on the pool itself, so the cache is shared
+across instances and requests are counted once.
+`pool.capabilitiesForModel(model)` reports the OR-fold of what the healthy,
+eligible instances offer.
+
+## Resource cleanup
+
+Every repository owns an HTTP client unless you pass one in; whoever creates
+the client closes it.
+
+```dart
+final repo = VLLMChatRepository(baseUrl: baseUrl);
+// ... use it ...
+repo.close();          // closes the owned client and the rate limiter
+
+final probe = VLLMRepository(baseUrl: baseUrl);
+// ... probe ...
+probe.close();
+
+final pool = VLLMPool(instances: [...]);
+// ... use it ...
+pool.dispose();        // stops health checks, closes owned per-instance
+                       // clients and the state-change stream
+```
+
+A client you supply — to a repository or via
+`VLLMInstanceConfig.httpClient` — is never closed by `close()`/`dispose()`.
 
 ## Testing
 

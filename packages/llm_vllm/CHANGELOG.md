@@ -7,6 +7,80 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-08-13
+
+Correctness sweep over parameter handling, the stream converter, embeddings,
+and the pool, plus test hardening across all of them.
+
+### Fixed
+
+- **`chatResponse` returned empty content against a live server.** vLLM
+  (like OpenAI) sends `role: "assistant"` only on the first SSE delta;
+  later content deltas omit it. `VLLMChunk` mapped the missing role to
+  `null`, and the shared stream-folding logic only accumulates assistant
+  chunks — so everything after the first (empty) delta was dropped.
+  Content-bearing deltas now default to the assistant role.
+- **camelCase `toolChoice` was silently dropped.** The alias passed
+  validation but the request builder read the raw map by wire name, so it
+  never reached the body. `backendOptions` is now normalized once
+  (`normalizeVllmParams`) after validation and every read goes through the
+  normalized map.
+- **Caller-supplied `chat_template_kwargs` discarded `enable_thinking`** —
+  and with it the `think:` flag. The map now merges key-by-key; caller
+  entries win, so an explicit `enable_thinking` still overrides `think:`.
+- **`tool_choice` without tools was silently dropped.** `none`/`auto` now
+  pass through (vLLM accepts them); `required` or a named function without
+  tools throws `ArgumentError` instead of a server-side 400.
+- **Malformed 200 responses threw raw `TypeError`.** `embed` and
+  `VLLMRepository.models()` now translate JSON-shape failures into
+  `LLMApiException` carrying the response body.
+- **Stream-converter edges:** text held back as a potential partial
+  `<think>` tag is flushed at end of stream instead of dropped; in-stream
+  `error` events carry their `code` as `statusCode` so retry classification
+  works; the malformed-event guard now throws on the third event, matching
+  its message.
+- **`embed` options were sent unvalidated** while chat options were strictly
+  checked. Embedding options are now validated against the embeddings
+  schema (`knownVllmEmbeddingParams`), aliases normalize, client-side keys
+  (`batch_size`, `timeout`) are stripped from the wire, empty input throws,
+  and `options['timeout']` (a `Duration`) is honored per request.
+
+### Added
+
+- `VLLMPool` gains pool-level `responseCache` and `metrics` (via
+  `LLMRepositoryFeatures`), a `capabilitiesForModel` override that OR-folds
+  what healthy eligible instances offer, `toolAttempts` forwarding, and a
+  `batchEmbed` that actually batches through the selected instance.
+- `VLLMInstanceConfig` gains per-instance `rateLimiter`, `supportedParams`,
+  `capabilities`, and `httpClient` (caller-supplied clients are not closed
+  by `dispose()`).
+- `VLLMChatRepositoryBuilder.capabilities(...)` and `.supportedParams(...)`,
+  so the probe-then-configure workflow works through the builder.
+- `normalizeVllmParams`, `knownVllmEmbeddingParams`, and
+  `reservedVllmEmbeddingParams` are exported.
+- `backendOptions['n'] != 1` is rejected: the stream surfaces only
+  `choices[0]`, so extra candidates would cost tokens and be discarded.
+
+### Changed
+
+- The pool's `maxQueueDepth` guard is enforced with a synchronous admission
+  counter instead of sampling semaphore state, closing a race where a burst
+  of concurrent requests could all slip past the depth check.
+- Integration suite: `concurrency_test.dart` is now part of
+  `all_integration_tests.dart` (it never ran in CI), and a
+  `structured_output_test.dart` suite was added to match the other
+  providers.
+
+### Removed
+
+- **Breaking:** the dead non-streaming DTOs `VLLMResponse`, `VLLMChoice`,
+  `VLLMMessage`, and `VLLMMessageToLLMMessageExt`. No code path ever
+  produced them — the repository is streaming-only (`chatResponse` folds
+  the stream) — and `toLLMMessage` threw `StateError` on unknown roles.
+- **Breaking:** `VLLMChatRepositoryBuilderExtension`. An extension `static`
+  is unreachable through instances; use `VLLMChatRepository.builder()` or
+  `VLLMChatRepositoryBuilder()`.
+
 ## [0.2.0] - 2026-08-12
 
 Initial release of the vLLM backend for the dart-llm ecosystem.

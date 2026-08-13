@@ -4,7 +4,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:llm_core/llm_core.dart';
 import 'package:llm_vllm/src/dto/vllm_embedding_response.dart';
-import 'package:llm_vllm/src/http_client_utils.dart';
+import 'package:llm_vllm/src/vllm_error_handler.dart';
 import 'package:llm_vllm/src/vllm_base_url.dart';
 import 'package:llm_vllm/src/vllm_chat_repository_builder.dart';
 import 'package:llm_vllm/src/vllm_params.dart';
@@ -207,27 +207,21 @@ class VLLMChatRepository extends LLMChatRepository with LLMRepositoryFeatures {
       body['tools'] = merged.tools
           .map((tool) => tool.toJson)
           .toList(growable: false);
-      // `tool_choice` is OpenAI-compatible on vLLM. Note that both "auto" and
-      // "required" need the server to be started with --tool-call-parser;
-      // without it vLLM rejects the request rather than ignoring the field.
-      final toolChoice = merged.backendOptions['tool_choice'];
-      if (toolChoice != null) {
-        body['tool_choice'] =
-            toolChoice is String && !_openAiToolChoiceModes.contains(toolChoice)
-            ? {
-                'type': 'function',
-                'function': {'name': toolChoice},
-              }
-            : toolChoice;
-      }
     }
 
     _validateBackendOptions(
       merged.backendOptions,
       knownParams: supportedParams,
     );
+    // Normalized *after* validation (which reports the caller's spelling) and
+    // used for every read below. Reading the raw map by wire name is how an
+    // aliased key — `toolChoice` for `tool_choice` — used to pass validation
+    // and then silently never reach the request.
+    final backendOptions = normalizeVllmParams(merged.backendOptions);
+    _rejectMultipleCandidates(backendOptions);
+    _applyToolChoice(body, backendOptions, hasTools: merged.tools.isNotEmpty);
     _applyGenerationOptions(body, merged);
-    _applyBackendOptions(body, merged.backendOptions);
+    _applyBackendOptions(body, backendOptions);
     _applyResponseFormat(body, merged.responseFormat);
 
     final response = await RateLimiterUtil.executeWithRateLimit(
@@ -265,79 +259,81 @@ class VLLMChatRepository extends LLMChatRepository with LLMRepositoryFeatures {
       ),
     );
 
-    try {
-      switch (response.statusCode) {
-        case 200:
-          final chunkStream = VLLMStreamConverter.toLLMStream(
-            response,
-            timeoutConfig: timeoutConfig,
-          );
-          if (merged.tools.isNotEmpty && merged.autoExecuteTools) {
-            final executor = StreamToolExecutor(
-              tools: merged.tools,
-              extra: merged.extra,
-              maxToolAttempts: merged.toolAttempts ?? maxToolAttempts,
-              streamChatCallback:
-                  (
-                    String model,
-                    List<LLMMessage> messages,
-                    List<LLMTool> tools,
-                    dynamic extra,
-                    int toolAttempts,
-                  ) => streamChat(
-                    model,
-                    messages: messages,
+    switch (response.statusCode) {
+      case 200:
+        final chunkStream = VLLMStreamConverter.toLLMStream(
+          response,
+          timeoutConfig: timeoutConfig,
+        );
+        if (merged.tools.isNotEmpty && merged.autoExecuteTools) {
+          final executor = StreamToolExecutor(
+            tools: merged.tools,
+            extra: merged.extra,
+            maxToolAttempts: merged.toolAttempts ?? maxToolAttempts,
+            streamChatCallback:
+                (
+                  String model,
+                  List<LLMMessage> messages,
+                  List<LLMTool> tools,
+                  dynamic extra,
+                  int toolAttempts,
+                ) => streamChat(
+                  model,
+                  messages: messages,
+                  tools: tools,
+                  extra: extra,
+                  options: LLMChatOptions(
+                    think: merged.think,
                     tools: tools,
                     extra: extra,
-                    options: LLMChatOptions(
-                      think: merged.think,
-                      tools: tools,
-                      extra: extra,
-                      toolAttempts: toolAttempts,
-                      autoExecuteTools: merged.autoExecuteTools,
-                      backendOptions: merged.backendOptions,
-                      timeout: merged.timeout,
-                      retryConfig: effectiveRetryConfig,
-                      responseFormat: merged.responseFormat,
-                      temperature: merged.temperature,
-                      topP: merged.topP,
-                      topK: merged.topK,
-                      maxOutputTokens: merged.maxOutputTokens,
-                      stopSequences: merged.stopSequences,
-                      reasoningBudget: merged.reasoningBudget,
-                    ),
+                    toolAttempts: toolAttempts,
+                    autoExecuteTools: merged.autoExecuteTools,
+                    backendOptions: backendOptions,
+                    timeout: merged.timeout,
+                    retryConfig: effectiveRetryConfig,
+                    responseFormat: merged.responseFormat,
+                    temperature: merged.temperature,
+                    topP: merged.topP,
+                    topK: merged.topK,
+                    maxOutputTokens: merged.maxOutputTokens,
+                    stopSequences: merged.stopSequences,
+                    reasoningBudget: merged.reasoningBudget,
                   ),
-            );
-            yield* executor.executeTools(
-              chunkStream: chunkStream,
-              model: model,
-              initialMessages: messages,
-              toolAttempts: merged.toolAttempts ?? maxToolAttempts,
-            );
-          } else {
-            yield* chunkStream;
-          }
-        case 400:
-          final errorBody = await _httpHelper.readErrorBody(response);
-          await VLLMErrorHandler.handleBadRequestError(
-            errorBody: errorBody,
+                ),
+          );
+          yield* executor.executeTools(
+            chunkStream: chunkStream,
             model: model,
-            thinkRequested: merged.think,
-            toolsRequested: merged.tools.isNotEmpty,
+            initialMessages: messages,
+            toolAttempts: merged.toolAttempts ?? maxToolAttempts,
           );
-          break;
-        default:
-          final errorBody = await _httpHelper.readErrorBody(response);
-          _httpHelper.handleHttpError(
-            statusCode: response.statusCode,
-            errorBody: errorBody,
-            defaultMessage: 'vLLM API error',
-          );
-      }
-    } catch (e) {
-      rethrow;
+        } else {
+          yield* chunkStream;
+        }
+      case 400:
+        final errorBody = await _httpHelper.readErrorBody(response);
+        await VLLMErrorHandler.handleBadRequestError(
+          errorBody: errorBody,
+          model: model,
+          thinkRequested: merged.think,
+          toolsRequested: merged.tools.isNotEmpty,
+        );
+      default:
+        final errorBody = await _httpHelper.readErrorBody(response);
+        _httpHelper.handleHttpError(
+          statusCode: response.statusCode,
+          errorBody: errorBody,
+          defaultMessage: 'vLLM API error',
+        );
     }
   }
+
+  /// Keys interpreted client-side by `embed`/`batchEmbed`; never sent.
+  static const Set<String> _clientSideEmbedKeys = {
+    'batch_size',
+    'batchSize',
+    'timeout',
+  };
 
   @override
   Future<List<LLMEmbedding>> embed({
@@ -345,10 +341,34 @@ class VLLMChatRepository extends LLMChatRepository with LLMRepositoryFeatures {
     required List<String> messages,
     Map<String, dynamic> options = const {},
   }) async {
+    Validation.validateModelName(model);
+    if (messages.isEmpty) {
+      throw ArgumentError('messages must not be empty');
+    }
+
+    final timeout = options['timeout'];
+    if (timeout != null && timeout is! Duration) {
+      throw ArgumentError(
+        'options["timeout"] must be a Duration, got ${timeout.runtimeType}',
+      );
+    }
+
+    // Validated like chat's backendOptions, and for the same reason: vLLM
+    // silently drops unknown fields, so an unvalidated typo here looks like a
+    // successful request with the option never applied.
+    final wireOptions = Map<String, dynamic>.from(options)
+      ..removeWhere((key, _) => _clientSideEmbedKeys.contains(key));
+    _validateBackendOptions(
+      wireOptions,
+      knownParams: knownVllmEmbeddingParams,
+      reservedParams: reservedVllmEmbeddingParams,
+      path: 'options',
+    );
+
     final body = <String, dynamic>{
       'model': model,
       'input': messages,
-      ...options,
+      ...normalizeVllmParams(wireOptions),
     };
     final response = await RateLimiterUtil.executeWithRateLimit(
       rateLimiter: _rateLimiter,
@@ -358,6 +378,7 @@ class VLLMChatRepository extends LLMChatRepository with LLMRepositoryFeatures {
           uri: vllmEndpoint(baseUrl, 'embeddings'),
           headers: _headers(accept: 'application/json'),
           body: json.encode(body),
+          timeout: timeout as Duration?,
         ),
         config: retryConfig ?? defaultRetryConfig,
         isRetryable: (error) => ErrorHandlers.isRetryableError(
@@ -368,9 +389,23 @@ class VLLMChatRepository extends LLMChatRepository with LLMRepositoryFeatures {
     );
     switch (response.statusCode) {
       case 200:
-        return VLLMEmbeddingsResponse.fromJson(
-          json.decode(response.body) as Map<String, dynamic>,
-        ).toLLMEmbedding;
+        try {
+          return VLLMEmbeddingsResponse.fromJson(
+            json.decode(response.body) as Map<String, dynamic>,
+          ).toLLMEmbedding;
+        } on FormatException catch (e) {
+          throw LLMApiException(
+            'Malformed vLLM embeddings response: ${e.message}',
+            statusCode: 200,
+            responseBody: response.body,
+          );
+        } on TypeError {
+          throw LLMApiException(
+            'Malformed vLLM embeddings response',
+            statusCode: 200,
+            responseBody: response.body,
+          );
+        }
       case 400:
         // Route through the shared handler so an embedding request against a
         // chat-only model reports the server's own explanation rather than a
@@ -417,10 +452,11 @@ class VLLMChatRepository extends LLMChatRepository with LLMRepositoryFeatures {
     required List<String> messages,
     Map<String, dynamic> options = const {},
   }) async {
-    final requested = options['batch_size'];
+    final requested = options['batch_size'] ?? options['batchSize'];
     final batchSize = requested is int ? requested : defaultEmbeddingBatchSize;
     final embedOptions = Map<String, dynamic>.from(options)
-      ..remove('batch_size');
+      ..remove('batch_size')
+      ..remove('batchSize');
 
     if (batchSize <= 0 || messages.length <= batchSize) {
       return embed(model: model, messages: messages, options: embedOptions);
@@ -536,48 +572,113 @@ class VLLMChatRepository extends LLMChatRepository with LLMRepositoryFeatures {
     'required',
   };
 
-  /// Copies validated backend options onto the request body.
+  /// Applies `tool_choice` from the normalized [backendOptions] to the body.
   ///
-  /// Keys are normalized to their wire spelling (so `topP` becomes `top_p`
-  /// rather than being silently dropped), and a nested `extra_body` map is
-  /// flattened — `extra_body` is an OpenAI *Python SDK* wrapper, not a wire
-  /// field, so vLLM never reads it.
+  /// `tool_choice` is OpenAI-compatible on vLLM. Both "auto" and "required"
+  /// need the server started with --tool-call-parser; without it vLLM rejects
+  /// the request rather than ignoring the field.
   ///
-  /// Validation runs before this in [streamChat]; by the time it is called the
-  /// keys are known-good.
+  /// Applied whether or not tools are present: `none` and `auto` are valid on
+  /// a tool-less request and vLLM accepts them. `required` or a specific tool
+  /// cannot be satisfied without tools — vLLM answers 400 — so that case is
+  /// rejected here, naming the actual problem instead of surfacing a server
+  /// error about a request the caller never meant to send.
+  static void _applyToolChoice(
+    Map<String, dynamic> body,
+    Map<String, dynamic> backendOptions, {
+    required bool hasTools,
+  }) {
+    final toolChoice = backendOptions['tool_choice'];
+    if (toolChoice == null) return;
+
+    final isPassthroughMode =
+        toolChoice is String && _openAiToolChoiceModes.contains(toolChoice);
+    final needsTools = !isPassthroughMode || toolChoice == 'required';
+    if (!hasTools && needsTools) {
+      throw ArgumentError(
+        'tool_choice "$toolChoice" requires at least one tool, but the '
+        'request has none. Pass the tools alongside it, or use "none"/"auto".',
+      );
+    }
+
+    body['tool_choice'] = isPassthroughMode || toolChoice is! String
+        ? toolChoice
+        : {
+            'type': 'function',
+            'function': {'name': toolChoice},
+          };
+  }
+
+  /// Rejects `n > 1`: the streaming pipeline surfaces only `choices[0]`, so
+  /// additional candidates would be generated, paid for, and discarded.
+  static void _rejectMultipleCandidates(Map<String, dynamic> backendOptions) {
+    final n = backendOptions['n'];
+    if (n != null && n != 1) {
+      throw ArgumentError(
+        'backendOptions "n" must be 1 (got $n): this repository streams a '
+        'single completion and discards additional candidates, so they would '
+        'only cost tokens. Issue separate requests for multiple candidates.',
+      );
+    }
+  }
+
+  /// Copies validated, normalized backend options onto the request body.
+  ///
+  /// Keys arrive already alias-normalized and `extra_body`-flattened (see
+  /// [normalizeVllmParams] in [streamChat]); by the time this is called they
+  /// are known-good wire names.
   static void _applyBackendOptions(
     Map<String, dynamic> body,
     Map<String, dynamic> backendOptions,
   ) {
     for (final entry in backendOptions.entries) {
-      if (entry.key == 'extra_body' && entry.value is Map<String, dynamic>) {
-        _applyBackendOptions(body, entry.value as Map<String, dynamic>);
+      // Consumed by _applyToolChoice; the raw value would overwrite the
+      // converted one.
+      if (entry.key == 'tool_choice') continue;
+      // _applyGenerationOptions has already written `enable_thinking` here. A
+      // wholesale assignment would silently discard it — and with it the
+      // `think:` flag — whenever a caller sets unrelated template kwargs.
+      // Merge key-by-key instead; the caller's entries win, so an explicit
+      // `enable_thinking` still overrides `think:`, consistent with how
+      // scalar backend options take precedence over typed options.
+      if (entry.key == 'chat_template_kwargs' &&
+          entry.value is Map<String, dynamic>) {
+        body['chat_template_kwargs'] = <String, dynamic>{
+          ...?body['chat_template_kwargs'] as Map<String, dynamic>?,
+          ...entry.value as Map<String, dynamic>,
+        };
         continue;
       }
-      final key = normalizeVllmParam(entry.key);
-      // Consumed above; the raw value would overwrite the converted one.
-      if (key == 'tool_choice') continue;
-      body[key] = entry.value;
+      body[entry.key] = entry.value;
     }
   }
 
-  /// Rejects backend options vLLM would silently drop or that this repository
-  /// builds itself.
+  /// Rejects options vLLM would silently drop or that this repository builds
+  /// itself.
   ///
   /// [knownParams] defaults to the [knownVllmChatParams] snapshot; pass the
   /// result of `VLLMRepository.fetchSupportedParams()` to validate against a
-  /// specific server's schema instead.
+  /// specific server's schema instead. `embed` passes
+  /// [knownVllmEmbeddingParams]/[reservedVllmEmbeddingParams], since the two
+  /// endpoints accept different parameter sets.
   static void _validateBackendOptions(
     Map<String, dynamic> backendOptions, {
     Set<String>? knownParams,
+    Set<String>? reservedParams,
+    String path = 'backendOptions',
   }) {
     if (backendOptions.isEmpty) return;
-    final errors = validateVllmParams(backendOptions, knownParams: knownParams);
+    final errors = validateVllmParams(
+      backendOptions,
+      knownParams: knownParams,
+      reservedParams: reservedParams,
+      path: path,
+    );
     if (errors.isEmpty) return;
     throw ArgumentError(
       errors.length == 1
           ? errors.single.message
-          : 'Invalid backendOptions:\n'
+          : 'Invalid $path:\n'
                 '${errors.map((e) => '  - ${e.message}').join('\n')}',
     );
   }

@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **llm_vllm** — correctness sweep (0.3.0): camelCase `toolChoice` and other aliased keys now reliably reach the wire (`backendOptions` is normalized once after validation); caller-supplied `chat_template_kwargs` merge with `enable_thinking` instead of clobbering it, so `think:` is always honored; `tool_choice` without tools is applied (`none`/`auto`) or rejected with a clear error (`required`/named); malformed 200 bodies from `/v1/embeddings` and `/v1/models` raise `LLMApiException` instead of `TypeError`; the stream converter flushes partial `<think>` carries at end of stream and stamps in-stream error codes as `statusCode`; `embed` options are validated like chat options.
+
+### Changed
+- **llm_vllm** — `VLLMPool` mixes in `LLMRepositoryFeatures` (pool-level `responseCache`/`metrics`), reports aggregated `capabilitiesForModel`, forwards `toolAttempts` and per-instance `rateLimiter`/`supportedParams`/`capabilities`/`httpClient`, batches `batchEmbed` through the selected instance, and enforces `maxQueueDepth` race-free. Dead non-streaming DTOs (`VLLMResponse`, `VLLMChoice`, `VLLMMessage`) and the unreachable builder extension were removed (breaking; see the package CHANGELOG). Package version bumped to 0.3.0.
+
 ## [0.2.0] - 2026-08-12
 
 ### Added

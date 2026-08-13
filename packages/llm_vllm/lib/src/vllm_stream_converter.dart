@@ -21,6 +21,9 @@ class VLLMStreamConverter {
     final toolCallsByIndex = <int, VLLMToolCall>{};
     final thinkingSplitter = _ThinkingTagSplitter();
     var malformedEventCount = 0;
+    // Kept so a carry flushed at end of stream can reuse the response's
+    // id/model/created instead of inventing them.
+    VLLMChunk? lastChunk;
 
     // `readTimeout` fires on the gap *between* chunks. That alone lets a
     // stream which trickles one token every few seconds run indefinitely, so
@@ -70,6 +73,8 @@ class VLLMStreamConverter {
           continue;
         }
         if (data == '[DONE]') {
+          final carryChunk = _flushCarry(thinkingSplitter, lastChunk);
+          if (carryChunk != null) yield carryChunk;
           return;
         }
 
@@ -83,13 +88,14 @@ class VLLMStreamConverter {
             continue;
           }
           if (decoded['error'] != null) {
-            throw LLMApiException('vLLM stream error: ${decoded['error']}');
+            throw _streamError(decoded['error'], data);
           }
 
           final chunk = _splitThinkingTags(
             VLLMChunk.fromJson(decoded),
             thinkingSplitter,
           );
+          lastChunk = chunk;
           _accumulateToolCalls(chunk, toolCallsByIndex);
 
           final choice = chunk.choices.isEmpty ? null : chunk.choices.first;
@@ -128,6 +134,63 @@ class VLLMStreamConverter {
         );
       }
     }
+
+    // Stream closed without a [DONE] sentinel (server hiccup, proxy cutoff).
+    // Text held back as a potential partial <think> tag is real output at
+    // this point — nothing can complete the tag anymore.
+    final carryChunk = _flushCarry(thinkingSplitter, lastChunk);
+    if (carryChunk != null) yield carryChunk;
+  }
+
+  /// Builds the exception for an in-stream `error` event.
+  ///
+  /// vLLM sends `{"error": {"message": ..., "code": 400, ...}}`; the code is
+  /// surfaced as [LLMApiException.statusCode] because retry classification
+  /// (`ErrorHandlers.isRetryableError`) works off the status code — without
+  /// it a mid-stream 429/503 could never be recognized as retryable.
+  static LLMApiException _streamError(Object error, String rawEvent) {
+    final code = error is Map<String, dynamic>
+        ? (error['code'] ?? error['status'])
+        : null;
+    final statusCode = switch (code) {
+      int() => code,
+      String() => int.tryParse(code),
+      _ => null,
+    };
+    return LLMApiException(
+      'vLLM stream error: $error',
+      statusCode: statusCode,
+      responseBody: rawEvent,
+    );
+  }
+
+  /// Emits leftover splitter carry as a final synthetic chunk, or `null` when
+  /// there is nothing held back.
+  static VLLMChunk? _flushCarry(
+    _ThinkingTagSplitter splitter,
+    VLLMChunk? lastChunk,
+  ) {
+    final carried = splitter.flush();
+    if (carried.isEmpty) return null;
+    return VLLMChunk(
+      id: lastChunk?.id ?? '',
+      created: lastChunk?.created ?? DateTime.now(),
+      model: lastChunk?.model,
+      systemFingerprint: lastChunk?.systemFingerprint,
+      choices: [
+        VLLMChunkChoice(
+          index: 0,
+          delta: VLLMChunkChoiceDelta(
+            role: LLMRole.assistant.name,
+            content: splitter.insideThinking ? null : carried,
+            thinking: splitter.insideThinking ? carried : null,
+            toolCalls: null,
+          ),
+          logProbs: null,
+          finishReason: null,
+        ),
+      ],
+    );
   }
 
   static void _accumulateToolCalls(
@@ -220,7 +283,7 @@ class VLLMStreamConverter {
     required int malformedEventCount,
   }) {
     final updatedMalformedEventCount = malformedEventCount + 1;
-    if (updatedMalformedEventCount > _maxMalformedEvents) {
+    if (updatedMalformedEventCount >= _maxMalformedEvents) {
       final preview = _eventPreview(event);
       throw LLMApiException(
         'Failed to parse vLLM SSE stream after $_maxMalformedEvents malformed events. '
@@ -242,6 +305,21 @@ class _ThinkingTagSplitter {
 
   bool _insideThinking = false;
   String _carry = '';
+
+  /// Whether the splitter is currently inside a `<think>` block, which
+  /// decides where a flushed carry belongs.
+  bool get insideThinking => _insideThinking;
+
+  /// Returns and clears text held back as a potential partial tag.
+  ///
+  /// A stream can end while the splitter is holding e.g. `<thin`, waiting to
+  /// see whether it completes into a tag. At end of stream it never will, so
+  /// the carry is real output and must be emitted rather than dropped.
+  String flush() {
+    final carried = _carry;
+    _carry = '';
+    return carried;
+  }
 
   _ThinkingSplit split(String content) {
     final input = _carry + content;

@@ -105,6 +105,25 @@ const Set<String> reservedVllmParams = {
   'stream_options',
 };
 
+/// Every parameter accepted by vLLM's `/v1/embeddings` endpoint.
+///
+/// From the `EmbeddingChatRequest`/`EmbeddingCompletionRequest` schemas
+/// published at `/openapi.json` (vLLM 0.27.1). Kept separate from
+/// [knownVllmChatParams] because the two endpoints share almost nothing —
+/// validating embedding options against the chat schema would accept
+/// sampling parameters the embeddings endpoint silently drops.
+const Set<String> knownVllmEmbeddingParams = {
+  'dimensions',
+  'encoding_format',
+  'priority',
+  'request_id',
+  'truncate_prompt_tokens',
+  'user',
+};
+
+/// Parameters `embed`/`batchEmbed` build themselves; rejected in `options`.
+const Set<String> reservedVllmEmbeddingParams = {'model', 'input'};
+
 /// camelCase spellings accepted as aliases for their snake_case wire names.
 ///
 /// Dart callers reach for camelCase by habit, and vLLM would silently drop it.
@@ -139,6 +158,8 @@ const Map<String, String> vllmParamAliases = {
   'parallelToolCalls': 'parallel_tool_calls',
   'cacheSalt': 'cache_salt',
   'vllmXargs': 'vllm_xargs',
+  'encodingFormat': 'encoding_format',
+  'requestId': 'request_id',
 };
 
 /// Guided-decoding parameter names removed in vLLM 0.12.
@@ -210,6 +231,32 @@ class VllmParamValidationError {
 /// Normalizes a caller-supplied key to its wire name.
 String normalizeVllmParam(String key) => vllmParamAliases[key] ?? key;
 
+/// Returns a copy of [options] with every key normalized to its wire name
+/// and a nested `extra_body` map flattened into the top level.
+///
+/// Run this *after* [validateVllmParams] — validation works on the raw map so
+/// its error messages show the caller's own spelling. Everything downstream
+/// of validation must read from the normalized map; reading the raw map by
+/// wire name is how an aliased key (`toolChoice`) passes validation and then
+/// silently never reaches the request.
+///
+/// On duplicate keys after normalization (`topP` alongside `top_p`, or a key
+/// repeated inside `extra_body`), the later entry wins — same as `Map`
+/// literal semantics.
+Map<String, dynamic> normalizeVllmParams(Map<String, dynamic> options) {
+  final normalized = <String, dynamic>{};
+  for (final entry in options.entries) {
+    if (entry.key == 'extra_body' && entry.value is Map<String, dynamic>) {
+      normalized.addAll(
+        normalizeVllmParams(entry.value as Map<String, dynamic>),
+      );
+      continue;
+    }
+    normalized[normalizeVllmParam(entry.key)] = entry.value;
+  }
+  return normalized;
+}
+
 /// Validates [options], returning every problem found.
 ///
 /// Recurses into a nested `extra_body` map, which callers coming from the
@@ -217,13 +264,16 @@ String normalizeVllmParam(String key) => vllmParamAliases[key] ?? key;
 ///
 /// Pass [knownParams] to validate against a specific server's schema (see
 /// `VLLMRepository.fetchSupportedParams`); defaults to the snapshot in
-/// [knownVllmChatParams].
+/// [knownVllmChatParams]. [reservedParams] defaults to [reservedVllmParams];
+/// pass [reservedVllmEmbeddingParams] when validating embedding options.
 List<VllmParamValidationError> validateVllmParams(
   Map<String, dynamic> options, {
   Set<String>? knownParams,
+  Set<String>? reservedParams,
   String path = 'backendOptions',
 }) {
   final known = knownParams ?? knownVllmChatParams;
+  final reserved = reservedParams ?? reservedVllmParams;
   final errors = <VllmParamValidationError>[];
 
   for (final entry in options.entries) {
@@ -232,6 +282,7 @@ List<VllmParamValidationError> validateVllmParams(
         validateVllmParams(
           entry.value as Map<String, dynamic>,
           knownParams: known,
+          reservedParams: reserved,
           path: '$path.extra_body',
         ),
       );
@@ -240,7 +291,7 @@ List<VllmParamValidationError> validateVllmParams(
 
     final key = normalizeVllmParam(entry.key);
 
-    if (reservedVllmParams.contains(key)) {
+    if (reserved.contains(key)) {
       errors.add(
         VllmParamValidationError(
           key: entry.key,

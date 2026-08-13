@@ -37,8 +37,25 @@ class VLLMRepository {
   /// GET /v1/models
   Future<List<VLLMModel>> models() async {
     final response = await _sendRequest('GET', vllmEndpoint(baseUrl, 'models'));
-    final json = jsonDecode(response.body) as Map<String, dynamic>;
-    return VLLMModelsResponse.fromJson(json).data;
+    // A proxy or misconfigured endpoint can answer 200 with a non-JSON or
+    // differently-shaped body; surface that as an API error rather than a
+    // raw TypeError from the cast.
+    try {
+      final json = jsonDecode(response.body) as Map<String, dynamic>;
+      return VLLMModelsResponse.fromJson(json).data;
+    } on FormatException catch (e) {
+      throw LLMApiException(
+        'Malformed vLLM models response: ${e.message}',
+        statusCode: response.statusCode,
+        responseBody: response.body,
+      );
+    } on TypeError {
+      throw LLMApiException(
+        'Malformed vLLM models response',
+        statusCode: response.statusCode,
+        responseBody: response.body,
+      );
+    }
   }
 
   /// Whether the server was started with tool-calling enabled.

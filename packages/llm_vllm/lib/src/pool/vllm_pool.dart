@@ -39,6 +39,10 @@ class _VLLMSlot {
         maxToolAttempts: config.maxToolAttempts,
         retryConfig: config.retryConfig,
         timeoutConfig: config.timeoutConfig,
+        rateLimiter: config.rateLimiter,
+        supportedParams: config.supportedParams,
+        capabilities: config.capabilities,
+        httpClient: config.httpClient,
       );
 
   final VLLMInstanceConfig config;
@@ -50,11 +54,22 @@ class _VLLMSlot {
   int get activeCount => _activeCount;
   int get waiting => _semaphore.waiting;
 
-  Future<T> run<T>(Future<T> Function() fn, {Duration? timeout}) async {
-    if (timeout != null) {
-      await _semaphore.acquireWithTimeout(timeout);
-    } else {
-      await _semaphore.acquire();
+  /// [onQueueExit] fires exactly once when the request stops waiting for this
+  /// slot's semaphore — acquired or failed — so the pool can keep its queue
+  /// counter in sync without sampling.
+  Future<T> run<T>(
+    Future<T> Function() fn, {
+    Duration? timeout,
+    void Function()? onQueueExit,
+  }) async {
+    try {
+      if (timeout != null) {
+        await _semaphore.acquireWithTimeout(timeout);
+      } else {
+        await _semaphore.acquire();
+      }
+    } finally {
+      onQueueExit?.call();
     }
     _activeCount++;
     try {
@@ -65,11 +80,19 @@ class _VLLMSlot {
     }
   }
 
-  Stream<T> runStream<T>(Stream<T> Function() fn, {Duration? timeout}) async* {
-    if (timeout != null) {
-      await _semaphore.acquireWithTimeout(timeout);
-    } else {
-      await _semaphore.acquire();
+  Stream<T> runStream<T>(
+    Stream<T> Function() fn, {
+    Duration? timeout,
+    void Function()? onQueueExit,
+  }) async* {
+    try {
+      if (timeout != null) {
+        await _semaphore.acquireWithTimeout(timeout);
+      } else {
+        await _semaphore.acquire();
+      }
+    } finally {
+      onQueueExit?.call();
     }
     _activeCount++;
     try {
@@ -87,6 +110,51 @@ class _VLLMSlot {
     maxConcurrent: config.maxConcurrent,
     queuedRequests: _semaphore.waiting,
   );
+}
+
+// ---------------------------------------------------------------------------
+// Internal: admission bookkeeping
+// ---------------------------------------------------------------------------
+
+/// Tracks one admitted request: its place in the pool's queue counter and its
+/// hold on the per-model semaphore.
+class _PoolAdmission {
+  _PoolAdmission({required this.onLeaveQueue, required this.modelSemaphore});
+
+  final void Function() onLeaveQueue;
+  final Semaphore? modelSemaphore;
+  bool _leftQueue = false;
+  bool _acquiredModelSemaphore = false;
+
+  Future<void> acquireModelSemaphore(Duration? timeout) async {
+    final semaphore = modelSemaphore;
+    if (semaphore == null) return;
+    if (timeout != null) {
+      await semaphore.acquireWithTimeout(timeout);
+    } else {
+      await semaphore.acquire();
+    }
+    _acquiredModelSemaphore = true;
+  }
+
+  /// Removes this request from the queue counter. Idempotent — called from
+  /// the slot's `onQueueExit` in the normal path and again from [release] as
+  /// a backstop for paths that never reached the slot semaphore.
+  void leaveQueue() {
+    if (_leftQueue) return;
+    _leftQueue = true;
+    onLeaveQueue();
+  }
+
+  /// Ends the admission: leaves the queue if still counted and releases the
+  /// model semaphore if it was acquired.
+  void release() {
+    leaveQueue();
+    if (_acquiredModelSemaphore) {
+      _acquiredModelSemaphore = false;
+      modelSemaphore?.release();
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -192,13 +260,15 @@ class _VLLMRouter {
 /// // Drop-in replacement — same API as VLLMChatRepository:
 /// final stream = pool.streamChat('qwen3:4b', messages: [...]);
 /// ```
-class VLLMPool extends LLMChatRepository {
+class VLLMPool extends LLMChatRepository with LLMRepositoryFeatures {
   VLLMPool({
     required List<VLLMInstanceConfig> instances,
     this.modelConfigs = const [],
     HealthCheckConfig? healthCheck,
     this.queueTimeout,
     this.maxQueueDepth,
+    this.responseCache,
+    this.metrics,
   }) : _slots = instances.map(_VLLMSlot.new).toList() {
     assert(instances.isNotEmpty, 'VLLMPool requires at least one instance');
     if (healthCheck != null) _startHealthChecks(healthCheck);
@@ -209,6 +279,21 @@ class VLLMPool extends LLMChatRepository {
 
   /// Per-model constraints applied across all instances.
   final List<VLLMModelConfig> modelConfigs;
+
+  /// Optional response cache, applied at the pool level.
+  ///
+  /// Pool-level rather than per-instance: a cache describes requests, not
+  /// servers — per-slot copies would fragment hit rates by whichever
+  /// instance happened to serve the first identical request.
+  @override
+  final ResponseCache? responseCache;
+
+  /// Optional metrics collector, applied at the pool level.
+  ///
+  /// Pool-level for the same reason as [responseCache]; per-slot collectors
+  /// would additionally double-count once the pool records too.
+  @override
+  final LLMMetrics? metrics;
 
   /// Optional timeout for requests waiting in the queue.
   ///
@@ -257,6 +342,32 @@ class VLLMPool extends LLMChatRepository {
   // LLMChatRepository implementation
   // -------------------------------------------------------------------------
 
+  /// What the eligible instances offer for [model], OR-folded.
+  ///
+  /// A capability is reported when *some* healthy eligible instance provides
+  /// it — the router can send the request there. Without this override the
+  /// pool inherited the base default and reported `tools: false`,
+  /// `embeddings: false` while wrapping repositories that support both.
+  @override
+  LLMCapabilities capabilitiesForModel(String model) {
+    final eligible = _VLLMRouter._eligible(_slots, model);
+    // All-false seed (streaming defaults to true) so a model no instance
+    // accepts reports no capabilities at all.
+    var result = const LLMCapabilities(streaming: false);
+    for (final slot in eligible) {
+      final c = slot.repository.capabilitiesForModel(model);
+      result = LLMCapabilities(
+        streaming: result.streaming || c.streaming,
+        tools: result.tools || c.tools,
+        vision: result.vision || c.vision,
+        structuredOutput: result.structuredOutput || c.structuredOutput,
+        thinking: result.thinking || c.thinking,
+        embeddings: result.embeddings || c.embeddings,
+      );
+    }
+    return result;
+  }
+
   @override
   Stream<LLMChunk> streamChat(
     String model, {
@@ -264,6 +375,7 @@ class VLLMPool extends LLMChatRepository {
     bool think = false,
     List<LLMTool> tools = const [],
     dynamic extra,
+    int? toolAttempts,
     LLMChatOptions? options,
   }) async* {
     Validation.validateModelName(model);
@@ -277,17 +389,7 @@ class VLLMPool extends LLMChatRepository {
       );
     }
 
-    _guardQueueDepth(slot);
-
-    final modelSemaphore = _getOrCreateModelSemaphore(model);
-    if (modelSemaphore != null) {
-      if (queueTimeout != null) {
-        await modelSemaphore.acquireWithTimeout(queueTimeout!);
-      } else {
-        await modelSemaphore.acquire();
-      }
-    }
-
+    final admission = await _admit(model);
     try {
       yield* slot.runStream(
         () => slot.repository.streamChat(
@@ -296,12 +398,14 @@ class VLLMPool extends LLMChatRepository {
           think: think,
           tools: tools,
           extra: extra,
+          toolAttempts: toolAttempts,
           options: options,
         ),
         timeout: queueTimeout,
+        onQueueExit: admission.leaveQueue,
       );
     } finally {
-      modelSemaphore?.release();
+      admission.release();
     }
   }
 
@@ -310,7 +414,36 @@ class VLLMPool extends LLMChatRepository {
     required String model,
     required List<String> messages,
     Map<String, dynamic> options = const {},
-  }) async {
+  }) => _runEmbed(
+    model,
+    (slot) => slot.repository.embed(
+      model: model,
+      messages: messages,
+      options: options,
+    ),
+  );
+
+  /// Batches through the selected instance's own [VLLMChatRepository.batchEmbed]
+  /// rather than delegating to [embed], which sent the whole list in one
+  /// request and silently lost batching.
+  @override
+  Future<List<LLMEmbedding>> batchEmbed({
+    required String model,
+    required List<String> messages,
+    Map<String, dynamic> options = const {},
+  }) => _runEmbed(
+    model,
+    (slot) => slot.repository.batchEmbed(
+      model: model,
+      messages: messages,
+      options: options,
+    ),
+  );
+
+  Future<List<LLMEmbedding>> _runEmbed(
+    String model,
+    Future<List<LLMEmbedding>> Function(_VLLMSlot slot) action,
+  ) async {
     final slot = _VLLMRouter.selectForEmbed(_slots, model);
     if (slot == null) {
       throw VLLMNoEligibleInstanceException(
@@ -318,37 +451,17 @@ class VLLMPool extends LLMChatRepository {
       );
     }
 
-    _guardQueueDepth(slot);
-
-    final modelSemaphore = _getOrCreateModelSemaphore(model);
-    if (modelSemaphore != null) {
-      if (queueTimeout != null) {
-        await modelSemaphore.acquireWithTimeout(queueTimeout!);
-      } else {
-        await modelSemaphore.acquire();
-      }
-    }
-
+    final admission = await _admit(model);
     try {
       return await slot.run(
-        () => slot.repository.embed(
-          model: model,
-          messages: messages,
-          options: options,
-        ),
+        () => action(slot),
         timeout: queueTimeout,
+        onQueueExit: admission.leaveQueue,
       );
     } finally {
-      modelSemaphore?.release();
+      admission.release();
     }
   }
-
-  @override
-  Future<List<LLMEmbedding>> batchEmbed({
-    required String model,
-    required List<String> messages,
-    Map<String, dynamic> options = const {},
-  }) => embed(model: model, messages: messages, options: options);
 
   // -------------------------------------------------------------------------
   // Observability
@@ -381,15 +494,41 @@ class VLLMPool extends LLMChatRepository {
     return _modelSemaphores.putIfAbsent(config.pattern, () => Semaphore(limit));
   }
 
-  void _guardQueueDepth(_VLLMSlot slot) {
-    if (maxQueueDepth == null) return;
-    final totalWaiting = _slots.fold(0, (s, sl) => s + sl.waiting);
-    if (totalWaiting >= maxQueueDepth!) {
+  /// Requests currently waiting anywhere in the pool: for a per-model
+  /// semaphore or for a slot's concurrency semaphore.
+  ///
+  /// Maintained synchronously at admission rather than sampled from the slot
+  /// semaphores at check time — a burst of concurrent requests all sampled
+  /// `waiting` before any of them enqueued, so every one of them passed a
+  /// depth check the group as a whole should have failed.
+  int _queuedRequests = 0;
+
+  /// Admits one request: enforces [maxQueueDepth], joins the queue counter,
+  /// and acquires the per-model semaphore when one is configured.
+  ///
+  /// The returned admission's `leaveQueue` must be called when the request
+  /// stops waiting (the slot passes it to `onQueueExit`); `release` must be
+  /// called exactly once when the request finishes.
+  Future<_PoolAdmission> _admit(String model) async {
+    if (maxQueueDepth != null && _queuedRequests >= maxQueueDepth!) {
       throw VLLMQueueFullException(
-        'Pool queue is full ($totalWaiting/$maxQueueDepth requests queued). '
-        'Consider increasing maxQueueDepth or adding more instances.',
+        'Pool queue is full ($_queuedRequests/$maxQueueDepth requests '
+        'queued). Consider increasing maxQueueDepth or adding more instances.',
       );
     }
+    _queuedRequests++;
+
+    final admission = _PoolAdmission(
+      onLeaveQueue: () => _queuedRequests--,
+      modelSemaphore: _getOrCreateModelSemaphore(model),
+    );
+    try {
+      await admission.acquireModelSemaphore(queueTimeout);
+    } catch (_) {
+      admission.leaveQueue();
+      rethrow;
+    }
+    return admission;
   }
 
   // -------------------------------------------------------------------------

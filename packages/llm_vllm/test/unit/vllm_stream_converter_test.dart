@@ -76,14 +76,63 @@ void main() {
       );
     });
 
-    test('throws after malformed-event retry budget is exceeded', () async {
+    test('stream error carries statusCode so retry can classify it', () async {
+      // Without a statusCode, ErrorHandlers.isRetryableError can never
+      // recognize a mid-stream 429/503 as retryable.
+      final response = http.StreamedResponse(
+        Stream.value(
+          utf8.encode(
+            'data: ${json.encode({
+              'error': {'message': 'overloaded', 'code': 503},
+            })}\n\n',
+          ),
+        ),
+        200,
+      );
+
+      expect(
+        () async => VLLMStreamConverter.toLLMStream(response).toList(),
+        throwsA(
+          isA<LLMApiException>()
+              .having((e) => e.statusCode, 'statusCode', 503)
+              .having(
+                (e) => e.responseBody,
+                'responseBody',
+                contains('overloaded'),
+              ),
+        ),
+      );
+    });
+
+    test('stream error with string code still parses', () async {
+      final response = http.StreamedResponse(
+        Stream.value(
+          utf8.encode(
+            'data: ${json.encode({
+              'error': {'message': 'bad', 'code': '400'},
+            })}\n\n',
+          ),
+        ),
+        200,
+      );
+
+      expect(
+        () async => VLLMStreamConverter.toLLMStream(response).toList(),
+        throwsA(
+          isA<LLMApiException>().having((e) => e.statusCode, 'statusCode', 400),
+        ),
+      );
+    });
+
+    test('throws on the third malformed event, matching the message', () async {
+      // The guard and the message used to disagree: it threw on the 4th
+      // event while claiming "after 3 malformed events".
       final response = http.StreamedResponse(
         Stream.value(
           utf8.encode(
             'data: not-json-1\n\n'
             'data: not-json-2\n\n'
-            'data: not-json-3\n\n'
-            'data: not-json-4\n\n',
+            'data: not-json-3\n\n',
           ),
         ),
         200,
@@ -95,10 +144,39 @@ void main() {
           isA<LLMApiException>().having(
             (e) => e.message,
             'message',
-            contains('Failed to parse vLLM SSE stream'),
+            contains('after 3 malformed events'),
           ),
         ),
       );
+    });
+
+    test('two malformed events followed by valid data recover', () async {
+      final response = http.StreamedResponse(
+        Stream.value(
+          utf8.encode(
+            'data: not-json-1\n\n'
+            'data: not-json-2\n\n'
+            '${_sse([
+              {
+                'id': 'chatcmpl-test',
+                'created': 1700000000,
+                'model': 'test-model',
+                'choices': [
+                  {
+                    'index': 0,
+                    'delta': {'role': 'assistant', 'content': 'ok'},
+                    'finish_reason': 'stop',
+                  },
+                ],
+              },
+            ])}',
+          ),
+        ),
+        200,
+      );
+
+      final parsed = await VLLMStreamConverter.toLLMStream(response).toList();
+      expect(parsed.single.message?.content, 'ok');
     });
 
     test('accumulates streamed tool call arguments', () async {
@@ -171,6 +249,72 @@ void main() {
       expect(toolCall?.name, 'calculator');
       expect(toolCall?.arguments, '{"expression":"2+2"}');
       expect(parsed.single.finishReason, LLMFinishReason.toolCalls);
+    });
+
+    test('deltas without an explicit role fold into chatResponse', () async {
+      // Live vLLM sends `role` only on the first delta of a choice; later
+      // content deltas omit it. Those chunks must still report assistant so
+      // chatResponse accumulates them — this used to silently drop
+      // everything after the first (empty) delta against a real server.
+      final response = http.StreamedResponse(
+        Stream.value(
+          utf8.encode(
+            _sse([
+              {
+                'id': 'chatcmpl-test',
+                'created': 1700000000,
+                'model': 'test-model',
+                'choices': [
+                  {
+                    'index': 0,
+                    'delta': {'role': 'assistant', 'content': ''},
+                    'finish_reason': null,
+                  },
+                ],
+              },
+              {
+                'id': 'chatcmpl-test',
+                'created': 1700000000,
+                'model': 'test-model',
+                'choices': [
+                  {
+                    'index': 0,
+                    'delta': {'content': '{"answer":'},
+                    'finish_reason': null,
+                  },
+                ],
+              },
+              {
+                'id': 'chatcmpl-test',
+                'created': 1700000000,
+                'model': 'test-model',
+                'choices': [
+                  {
+                    'index': 0,
+                    'delta': {'content': ' 4}'},
+                    'finish_reason': 'stop',
+                  },
+                ],
+              },
+            ]),
+          ),
+        ),
+        200,
+      );
+
+      final parsed = await VLLMStreamConverter.toLLMStream(response).toList();
+
+      for (final chunk in parsed) {
+        expect(
+          chunk.message?.role,
+          LLMRole.assistant,
+          reason: 'content-bearing deltas must report assistant',
+        );
+      }
+      expect(
+        parsed.map((chunk) => chunk.message?.content ?? '').join(),
+        '{"answer": 4}',
+      );
     });
 
     test('emits usage-only chunks', () async {
@@ -263,6 +407,104 @@ void main() {
         );
       },
     );
+
+    test('flushes a truncated partial tag at [DONE] as content', () async {
+      // "4<thin" ends the stream: the splitter holds "<thin" back as a
+      // potential tag start, but nothing can complete it anymore — dropping
+      // it would silently truncate the answer.
+      final response = http.StreamedResponse(
+        Stream.value(
+          utf8.encode(
+            _sse([
+              {
+                'id': 'chatcmpl-test',
+                'created': 1700000000,
+                'model': 'test-model',
+                'choices': [
+                  {
+                    'index': 0,
+                    'delta': {'role': 'assistant', 'content': '4<thin'},
+                    'finish_reason': null,
+                  },
+                ],
+              },
+            ]),
+          ),
+        ),
+        200,
+      );
+
+      final parsed = await VLLMStreamConverter.toLLMStream(response).toList();
+
+      expect(
+        parsed.map((chunk) => chunk.message?.content ?? '').join(),
+        '4<thin',
+      );
+    });
+
+    test('flushes a truncated end tag inside thinking as thinking', () async {
+      final response = http.StreamedResponse(
+        Stream.value(
+          utf8.encode(
+            _sse([
+              {
+                'id': 'chatcmpl-test',
+                'created': 1700000000,
+                'model': 'test-model',
+                'choices': [
+                  {
+                    'index': 0,
+                    'delta': {
+                      'role': 'assistant',
+                      'content': '<think>hmm</thi',
+                    },
+                    'finish_reason': null,
+                  },
+                ],
+              },
+            ]),
+          ),
+        ),
+        200,
+      );
+
+      final parsed = await VLLMStreamConverter.toLLMStream(response).toList();
+
+      expect(
+        parsed.map((chunk) => chunk.message?.thinking ?? '').join(),
+        'hmm</thi',
+      );
+      expect(parsed.map((chunk) => chunk.message?.content ?? '').join(), '');
+    });
+
+    test('flushes carry when the stream closes without [DONE]', () async {
+      final response = http.StreamedResponse(
+        Stream.value(
+          utf8.encode(
+            'data: ${json.encode({
+              'id': 'chatcmpl-test',
+              'created': 1700000000,
+              'model': 'test-model',
+              'choices': [
+                {
+                  'index': 0,
+                  'delta': {'role': 'assistant', 'content': 'partial<th'},
+                  'finish_reason': null,
+                },
+              ],
+            })}\n\n',
+          ),
+        ),
+        200,
+      );
+
+      final parsed = await VLLMStreamConverter.toLLMStream(response).toList();
+
+      expect(
+        parsed.map((chunk) => chunk.message?.content ?? '').join(),
+        'partial<th',
+      );
+    });
   });
 }
 

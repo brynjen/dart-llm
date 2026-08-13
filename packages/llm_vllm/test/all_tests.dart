@@ -24,8 +24,11 @@ import 'unit/vllm_chat_repository_builder_test.dart' as builder;
 import 'unit/vllm_chat_repository_test.dart' as vllm_chat_repository;
 import 'unit/vllm_dto_test.dart' as dto;
 import 'unit/vllm_embedding_test.dart' as embedding;
+import 'unit/vllm_error_handler_test.dart' as error_handler;
+import 'unit/vllm_features_test.dart' as features;
 import 'unit/vllm_pool_test.dart' as pool;
 import 'unit/vllm_repository_test.dart' as repository;
+import 'unit/vllm_request_shape_test.dart' as request_shape;
 import 'unit/vllm_stream_converter_test.dart' as stream_converter;
 import 'unit/retry_test.dart' as retry;
 
@@ -38,7 +41,10 @@ void main() {
   dto.main();
   builder.main();
   embedding.main();
+  error_handler.main();
+  features.main();
   repository.main();
+  request_shape.main();
   pool.main();
   stream_converter.main();
 }

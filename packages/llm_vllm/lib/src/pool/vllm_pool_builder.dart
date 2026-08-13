@@ -1,3 +1,4 @@
+import 'package:llm_core/llm_core.dart';
 import 'package:llm_vllm/src/pool/health_check_config.dart';
 import 'package:llm_vllm/src/pool/vllm_instance_config.dart';
 import 'package:llm_vllm/src/pool/vllm_model_config.dart';
@@ -34,6 +35,8 @@ class VLLMPoolBuilder {
   HealthCheckConfig? _healthCheck;
   Duration? _queueTimeout;
   int? _maxQueueDepth;
+  ResponseCache? _responseCache;
+  LLMMetrics? _metrics;
 
   /// Adds a single [VLLMInstanceConfig] to the pool.
   VLLMPoolBuilder addInstance(VLLMInstanceConfig config) {
@@ -87,6 +90,18 @@ class VLLMPoolBuilder {
     return this;
   }
 
+  /// Sets a pool-level response cache (see [VLLMPool.responseCache]).
+  VLLMPoolBuilder responseCache(ResponseCache cache) {
+    _responseCache = cache;
+    return this;
+  }
+
+  /// Sets a pool-level metrics collector (see [VLLMPool.metrics]).
+  VLLMPoolBuilder metrics(LLMMetrics metrics) {
+    _metrics = metrics;
+    return this;
+  }
+
   /// Builds and returns the configured [VLLMPool].
   VLLMPool build() {
     assert(
@@ -99,6 +114,8 @@ class VLLMPoolBuilder {
       healthCheck: _healthCheck,
       queueTimeout: _queueTimeout,
       maxQueueDepth: _maxQueueDepth,
+      responseCache: _responseCache,
+      metrics: _metrics,
     );
   }
 }

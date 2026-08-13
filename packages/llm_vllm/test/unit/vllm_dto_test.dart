@@ -116,36 +116,6 @@ void main() {
     });
   });
 
-  group('VLLMResponse.fromJson', () {
-    test('parses non-streaming response', () {
-      final json = {
-        'id': 'chatcmpl-test',
-        'created': 1700000000,
-        'model': 'test-model',
-        'choices': [
-          {
-            'index': 0,
-            'message': {'role': 'assistant', 'content': 'Hello'},
-            'finish_reason': 'stop',
-          },
-        ],
-        'usage': {
-          'prompt_tokens': 10,
-          'completion_tokens': 5,
-          'total_tokens': 15,
-        },
-      };
-
-      final response = VLLMResponse.fromJson(json);
-
-      expect(response.model, 'test-model');
-      expect(response.role, LLMRole.assistant);
-      expect(response.content, 'Hello');
-      expect(response.doneReason, 'stop');
-      expect(response.usage.totalTokens, 15);
-    });
-  });
-
   group('VLLMModel.fromJson', () {
     test('parses OpenAI-compatible model object', () {
       final json = {

@@ -22,6 +22,8 @@ class VLLMChatRepositoryBuilder
     extends ChatRepositoryBuilderBase<VLLMChatRepositoryBuilder> {
   String? _baseUrl;
   String? _apiKey;
+  LLMCapabilities? _capabilities;
+  Set<String>? _supportedParams;
 
   /// Set the base URL of the VLLM server.
   VLLMChatRepositoryBuilder baseUrl(String baseUrl) {
@@ -32,6 +34,20 @@ class VLLMChatRepositoryBuilder
   /// Set the optional API key for vLLM servers started with `--api-key`.
   VLLMChatRepositoryBuilder apiKey(String apiKey) {
     _apiKey = apiKey;
+    return this;
+  }
+
+  /// Set the deployment capabilities, typically from
+  /// `VLLMRepository.resolveCapabilities()`.
+  VLLMChatRepositoryBuilder capabilities(LLMCapabilities capabilities) {
+    _capabilities = capabilities;
+    return this;
+  }
+
+  /// Set the parameters the server accepts, typically from
+  /// `VLLMRepository.fetchSupportedParams()`.
+  VLLMChatRepositoryBuilder supportedParams(Set<String> params) {
+    _supportedParams = params;
     return this;
   }
 
@@ -47,14 +63,8 @@ class VLLMChatRepositoryBuilder
       responseCache: responseCacheValue,
       metrics: metricsValue,
       httpClient: httpClientValue,
+      capabilities: _capabilities,
+      supportedParams: _supportedParams,
     );
-  }
-}
-
-/// Extension to add builder method to [VLLMChatRepository].
-extension VLLMChatRepositoryBuilderExtension on VLLMChatRepository {
-  /// Create a builder for configuring a new repository instance.
-  static VLLMChatRepositoryBuilder builder() {
-    return VLLMChatRepositoryBuilder();
   }
 }

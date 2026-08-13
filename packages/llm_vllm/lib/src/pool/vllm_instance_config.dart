@@ -1,3 +1,4 @@
+import 'package:http/http.dart' as http;
 import 'package:llm_core/llm_core.dart';
 
 /// Configuration for a single vLLM server instance within a [VLLMPool].
@@ -12,6 +13,10 @@ class VLLMInstanceConfig {
     this.retryConfig,
     this.timeoutConfig,
     this.maxToolAttempts = 90,
+    this.rateLimiter,
+    this.supportedParams,
+    this.capabilities,
+    this.httpClient,
   }) : assert(maxConcurrent > 0, 'maxConcurrent must be positive');
 
   /// The base URL of this vLLM instance, for example `http://localhost:8000`.
@@ -44,6 +49,27 @@ class VLLMInstanceConfig {
 
   /// Maximum tool-call loop iterations for requests on this instance.
   final int maxToolAttempts;
+
+  /// Per-instance rate limit, applied on top of the pool's concurrency
+  /// controls. Instance-scoped because it protects a specific server.
+  final RateLimiter? rateLimiter;
+
+  /// Request parameters this server accepts, from
+  /// `VLLMRepository.fetchSupportedParams()`. Instance-scoped because pooled
+  /// servers may run different vLLM versions.
+  final Set<String>? supportedParams;
+
+  /// What this deployment offers, from
+  /// `VLLMRepository.resolveCapabilities()`. Feeds the pool's
+  /// `capabilitiesForModel` aggregation.
+  final LLMCapabilities? capabilities;
+
+  /// Optional HTTP client for this instance.
+  ///
+  /// A client supplied here is **not** closed by `VLLMPool.dispose()` — its
+  /// owner disposes it, matching `VLLMChatRepository.close()` semantics.
+  /// Leave `null` to let the pooled repository own (and close) its client.
+  final http.Client? httpClient;
 
   /// Returns `true` if this instance is eligible to handle [model].
   bool acceptsModel(String model) {

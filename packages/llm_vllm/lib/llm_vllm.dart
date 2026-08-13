@@ -1,19 +1,23 @@
-/// VLLM backend implementation for LLM interactions.
+/// vLLM backend implementation for LLM interactions.
 ///
-/// This package provides an VLLM-specific implementation of [LLMChatRepository]
-/// with support for streaming chat, embeddings, tool calling, vision, and model management.
+/// This package provides a vLLM-specific implementation of [LLMChatRepository]
+/// with support for streaming chat, embeddings, tool calling, reasoning,
+/// structured output, validated backend options, and multi-instance pooling.
+/// Vision requires a multimodal model; images pass through the
+/// OpenAI-compatible message content.
 ///
 /// Example usage:
 /// ```dart
 /// import 'package:llm_vllm/llm_vllm.dart';
 ///
 /// final repo = VLLMChatRepository(baseUrl: 'http://localhost:8000');
-/// final stream = repo.streamChat('qwen3:0.6b', messages: [
+/// final stream = repo.streamChat('Qwen/Qwen3-0.6B', messages: [
 ///   LLMMessage(role: LLMRole.user, content: 'Hello!')
 /// ]);
 /// await for (final chunk in stream) {
 ///   print(chunk.message?.content ?? '');
 /// }
+/// repo.close();
 /// ```
 library;
 
@@ -32,13 +36,16 @@ export 'src/vllm_structured_outputs.dart' show VLLMStructuredOutputs;
 export 'src/vllm_params.dart'
     show
         knownVllmChatParams,
+        knownVllmEmbeddingParams,
         reservedVllmParams,
+        reservedVllmEmbeddingParams,
         vllmParamAliases,
         legacyGuidedKeys,
         VllmParamIssue,
         VllmParamValidationError,
         validateVllmParams,
         normalizeVllmParam,
+        normalizeVllmParams,
         suggestVllmParam;
 
 // Pool — multi-instance orchestration
@@ -53,9 +60,7 @@ export 'src/pool/semaphore.dart' show VLLMQueueTimeoutException;
 
 // DTOs (for advanced usage)
 export 'src/dto/vllm_model.dart';
-export 'src/dto/vllm_response.dart';
 export 'src/dto/vllm_chunk.dart';
-export 'src/dto/vllm_choice.dart';
 export 'src/dto/vllm_tool_call.dart';
 export 'src/dto/vllm_usage.dart';
 export 'src/dto/vllm_embedding_response.dart';

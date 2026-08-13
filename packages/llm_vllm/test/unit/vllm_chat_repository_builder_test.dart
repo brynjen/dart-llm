@@ -64,9 +64,23 @@ void main() {
       expect(repo.timeoutConfig?.readTimeout, const Duration(minutes: 5));
     });
 
-    test('builder extension method', () {
-      final builder = VLLMChatRepositoryBuilderExtension.builder();
+    test('static builder entry point', () {
+      final builder = VLLMChatRepository.builder();
       expect(builder, isA<VLLMChatRepositoryBuilder>());
+    });
+
+    test('wires capabilities and supportedParams from probes', () {
+      // The README workflow probes the server with VLLMRepository and feeds
+      // the results back in; both used to be constructor-only.
+      const probed = LLMCapabilities(tools: true, embeddings: true);
+      final repo = VLLMChatRepositoryBuilder()
+          .capabilities(probed)
+          .supportedParams({'temperature', 'top_p'})
+          .build();
+
+      expect(repo.capabilities, probed);
+      expect(repo.capabilitiesForModel('any'), probed);
+      expect(repo.supportedParams, {'temperature', 'top_p'});
     });
   });
 }

@@ -39,12 +39,22 @@ class VLLMChunk extends LLMChunk {
              : LLMChunkMessage(
                  content: choices[0].delta.content,
                  thinking: choices[0].delta.thinking,
+                 // vLLM (like OpenAI) sends `role` only on the first delta of
+                 // a choice; later content deltas omit it. Every delta in a
+                 // completion choice is assistant output, so a delta that
+                 // carries anything defaults to assistant — a null role here
+                 // makes `chatResponse` skip the chunk when folding, which
+                 // against a live server dropped all content after the first
+                 // (empty) delta.
                  role: choices[0].delta.role != null
                      ? LLMRole.values.firstWhere(
                          (e) => e.name == choices[0].delta.role,
                          orElse: () => LLMRole.assistant,
                        )
-                     : choices[0].finishReason != null
+                     : choices[0].finishReason != null ||
+                           choices[0].delta.content != null ||
+                           choices[0].delta.thinking != null ||
+                           choices[0].delta.toolCalls != null
                      ? LLMRole.assistant
                      : null,
                  toolCalls: choices[0].delta.toolCalls?.toLLMToolCalls,
