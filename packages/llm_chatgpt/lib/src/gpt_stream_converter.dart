@@ -23,6 +23,14 @@ class GPTStreamConverter {
         try {
           final chunk = GPTChunk.fromJson(json.decode(output));
 
+          if (chunk.choices.isEmpty) {
+            // Usage-only frame sent when `stream_options.include_usage` is on.
+            if (chunk.usage != null) {
+              yield chunk;
+            }
+            continue;
+          }
+
           for (final toolCall
               in chunk.choices[0].delta.toolCalls ?? <GPTToolCall>[]) {
             if (toolCall.id != null) {
@@ -40,8 +48,9 @@ class GPTStreamConverter {
 
           final finishReason = chunk.choices[0].finishReason;
           final content = chunk.choices[0].delta.content;
+          final thinking = chunk.choices[0].delta.thinking;
 
-          if (content != null && finishReason == null) {
+          if ((content != null || thinking != null) && finishReason == null) {
             yield chunk;
           }
 

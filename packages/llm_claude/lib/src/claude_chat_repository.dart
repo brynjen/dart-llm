@@ -264,6 +264,7 @@ class ClaudeChatRepository extends LLMChatRepository
                     maxOutputTokens: merged.maxOutputTokens,
                     stopSequences: merged.stopSequences,
                     reasoningBudget: merged.reasoningBudget,
+                    reasoningEffort: merged.reasoningEffort,
                   ),
                 ),
           );
@@ -402,11 +403,16 @@ class ClaudeChatRepository extends LLMChatRepository
         // for summaries so reasoning is actually observable.
         'display': 'summarized',
       };
-      if (budget != null) {
+      // Effort-native path: an explicit reasoningEffort wins over a
+      // budget-derived level.
+      final effort = options.reasoningEffort != null
+          ? claudeEffortWireValue(options.reasoningEffort!)
+          : (budget != null ? claudeEffortForBudget(budget) : null);
+      if (effort != null) {
         final outputConfig = <String, dynamic>{
           ...?body['output_config'] as Map<String, dynamic>?,
         };
-        outputConfig['effort'] = claudeEffortForBudget(budget);
+        outputConfig['effort'] = effort;
         body['output_config'] = outputConfig;
       }
       return;
@@ -415,9 +421,15 @@ class ClaudeChatRepository extends LLMChatRepository
     // Legacy models: budget_tokens is required, and the API rejects a budget
     // that is not strictly less than max_tokens. The previous default paired a
     // 10000-token budget with a 4096-token max_tokens, which was a guaranteed
-    // 400 on every `think: true` request that did not set max_tokens.
+    // 400 on every `think: true` request that did not set max_tokens. This is
+    // the budget-native path: an explicit budget wins over an effort-derived
+    // one.
     final maxTokens = body['max_tokens'] as int? ?? _defaultMaxTokens;
-    final requested = budget ?? _defaultThinkingBudget;
+    final requested =
+        budget ??
+        (options.reasoningEffort != null
+            ? claudeBudgetForEffort(options.reasoningEffort!)
+            : _defaultThinkingBudget);
     final effective = requested < maxTokens ? requested : maxTokens - 1;
     body['thinking'] = {'type': 'enabled', 'budget_tokens': effective};
   }

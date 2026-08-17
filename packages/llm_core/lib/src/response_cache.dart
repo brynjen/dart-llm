@@ -203,6 +203,7 @@ class CacheKeyGenerator {
       'maxOutputTokens': options.maxOutputTokens,
       'stopSequences': options.stopSequences,
       'reasoningBudget': options.reasoningBudget,
+      'reasoningEffort': options.reasoningEffort?.name,
     });
   }
 }

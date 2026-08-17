@@ -12,65 +12,63 @@ import 'package:llm_core/llm_core.dart';
 /// - Tool declarations are flat `{"type": "function", "name": …}` objects
 ///   instead of being nested under `tools[].functionDeclarations`.
 class GeminiMessageConverter {
-  /// Serializes a full conversation into the Interactions API `input` array.
+  /// Separator used to smuggle a thought signature inside a tool-call id.
   ///
-  /// ## ⚠️ UNVERIFIED WIRE SHAPE — CHECK HERE FIRST ON HTTP 400
+  /// The steps-based Interactions API rejects an echoed `function_call` step
+  /// unless the model's opaque `thought` signature is echoed with it, but
+  /// [LLMMessage] has no channel for signatures. The stream converter appends
+  /// the signature to the call id (`callId::sig::signature`); the id
+  /// round-trips untouched through [StreamToolExecutor], and
+  /// [buildStatelessInput] splits it back apart here.
+  static const String signatureSeparator = '::sig::';
+
+  /// Serializes a full conversation into the Interactions API `input` array
+  /// (steps-based format).
+  ///
+  /// ## ⚠️ WIRE SHAPE VERIFIED AGAINST THE LIVE API — CHECK HERE FIRST ON 400
   ///
   /// [LLMChatRepository.streamChat] is stateless: it receives the entire
   /// conversation on every call, so requests are sent with `store: false` and
   /// the whole history serialized here rather than relying on
   /// `previous_interaction_id`.
   ///
-  /// Google's documentation states that `input` accepts "a plain string, a list
-  /// of typed content objects, or a list of role-tagged turns (for stateless
-  /// history)", but the exact JSON of a role-tagged turn is **not documented in
-  /// any source available when this was written**. The shape produced here is
-  /// an informed assumption:
+  /// The API's earlier role-tagged turn format (`{"role", "content"}`) is now
+  /// rejected with "use step_list input format instead of turn_list". The
+  /// steps-based `input` is a flat list of typed steps (shapes verified live
+  /// 2026-08-17):
   ///
   /// ```json
   /// [
-  ///   {"role": "user",  "content": [{"type": "text", "text": "…"}]},
-  ///   {"role": "model", "content": [{"type": "text", "text": "…"}]}
+  ///   {"type": "user_input",   "content": [{"type": "text", "text": "…"}]},
+  ///   {"type": "thought",      "signature": "…"},
+  ///   {"type": "function_call", "id": "…", "name": "…", "arguments": {…}},
+  ///   {"type": "function_result", "call_id": "…", "name": "…",
+  ///    "result": [{"type": "text", "text": "…"}]},
+  ///   {"type": "model_output", "content": [{"type": "text", "text": "…"}]}
   /// ]
   /// ```
   ///
-  /// Every assumption about that envelope is confined to this one function so
-  /// there is a single place to fix. Specifically, the following are inferred
-  /// rather than read from documentation:
-  /// - the `{"role": …, "content": [...]}` turn envelope itself;
-  /// - `"model"` as the assistant role name (carried over from
-  ///   `generateContent`, where Gemini uses `model` rather than `assistant`);
-  /// - system messages being emitted as leading `user` turns, because the
-  ///   Interactions request body has no documented system-instruction field;
-  /// - the `{"type": "function_call", "id", "name", "arguments"}` block used to
-  ///   echo a previous assistant tool call back (modeled on the `step.start`
-  ///   event payload for a `function_call` step);
-  /// - the `{"type": "image", "mime_type", "data"}` block (modeled on the
-  ///   `step.delta` image delta);
-  /// - `function_result` blocks being carried on a `user` turn.
-  ///
-  /// The `function_result` block *content* is documented:
-  /// `{"type": "function_result", "call_id": …, "name": …, "result": [{"type":
-  /// "text", "text": …}]}`.
-  ///
-  /// Known limitation: `thought_signature` values observed on the response
-  /// stream are surfaced through `LLMChunk.providerMetadata`, but there is no
-  /// documented input block for echoing them back, so multi-turn function
-  /// calling may still hit "Function call is missing a thought_signature".
+  /// Notes:
+  /// - system messages are emitted as leading `user_input` steps — the
+  ///   request body has no documented system-instruction field;
+  /// - `arguments` must be a JSON **object** (a string is rejected);
+  /// - a `function_call` step without its preceding `thought` step (real
+  ///   signature required — empty or placeholder signatures are rejected)
+  ///   fails with "Request contains an invalid argument", hence
+  ///   [signatureSeparator].
   static List<Map<String, dynamic>> buildStatelessInput(
     List<LLMMessage> messages,
   ) {
-    final turns = <Map<String, dynamic>>[];
-
-    void addTurn(String role, List<Map<String, dynamic>> content) {
-      turns.add(<String, dynamic>{'role': role, 'content': content});
-    }
+    final steps = <Map<String, dynamic>>[];
 
     for (final msg in messages) {
       switch (msg.role) {
         case LLMRole.system:
           if (msg.content != null && msg.content!.isNotEmpty) {
-            addTurn('user', [_textBlock(msg.content!)]);
+            steps.add(<String, dynamic>{
+              'type': 'user_input',
+              'content': [_textBlock(msg.content!)],
+            });
           }
 
         case LLMRole.user:
@@ -81,45 +79,77 @@ class GeminiMessageConverter {
           if (msg.content != null && msg.content!.isNotEmpty) {
             content.add(_textBlock(msg.content!));
           }
-          addTurn('user', content.isEmpty ? [_textBlock('')] : content);
+          // An empty text block is a 400 ("Missing text in content of type
+          // text") and a wholly empty input is a 400 ("Request has empty
+          // input"), so a degenerate empty message falls back to a single
+          // space, which the API accepts.
+          steps.add(<String, dynamic>{
+            'type': 'user_input',
+            'content': content.isEmpty ? [_textBlock(' ')] : content,
+          });
 
         case LLMRole.assistant:
-          final content = <Map<String, dynamic>>[];
-          if (msg.content != null && msg.content!.isNotEmpty) {
-            content.add(_textBlock(msg.content!));
+          // Model turns must START with the thought block in thinking models
+          // (a model_output ahead of it is a 400), so the signature — when
+          // one was captured — is emitted before everything else.
+          final toolCalls = msg.toolCalls ?? const <LLMToolCall>[];
+          String? lastSignature;
+          for (final toolCall in toolCalls) {
+            final (_, signature) = _splitSignature(toolCall.id);
+            if (signature != null) {
+              steps.add(<String, dynamic>{
+                'type': 'thought',
+                'signature': signature,
+              });
+              lastSignature = signature;
+              break;
+            }
           }
-          for (final toolCall in msg.toolCalls ?? const <LLMToolCall>[]) {
+          if (msg.content != null && msg.content!.isNotEmpty) {
+            steps.add(<String, dynamic>{
+              'type': 'model_output',
+              'content': [_textBlock(msg.content!)],
+            });
+          }
+          for (final toolCall in toolCalls) {
             Map<String, dynamic> arguments;
             try {
               arguments = toolCall.argumentsJson;
             } catch (_) {
               arguments = <String, dynamic>{};
             }
-            content.add(<String, dynamic>{
+            final (callId, signature) = _splitSignature(toolCall.id);
+            if (signature != null && signature != lastSignature) {
+              steps.add(<String, dynamic>{
+                'type': 'thought',
+                'signature': signature,
+              });
+              lastSignature = signature;
+            }
+            steps.add(<String, dynamic>{
               'type': 'function_call',
-              if (toolCall.id != null && toolCall.id!.isNotEmpty)
-                'id': toolCall.id,
+              if (callId != null && callId.isNotEmpty) 'id': callId,
               'name': toolCall.name,
               'arguments': arguments,
             });
           }
-          addTurn('model', content.isEmpty ? [_textBlock('')] : content);
 
         case LLMRole.tool:
-          final block = _functionResultBlock(msg);
-          // Consecutive tool results belong to the same turn: one assistant
-          // turn may request several calls in parallel.
-          if (turns.isNotEmpty &&
-              turns.last['role'] == 'user' &&
-              _isFunctionResultTurn(turns.last)) {
-            (turns.last['content'] as List<Map<String, dynamic>>).add(block);
-          } else {
-            addTurn('user', [block]);
-          }
+          steps.add(_functionResultStep(msg));
       }
     }
 
-    return turns;
+    return steps;
+  }
+
+  /// Splits a possibly signature-carrying tool-call id into
+  /// `(realId, signature)`.
+  static (String?, String?) _splitSignature(String? id) {
+    if (id == null) return (null, null);
+    final idx = id.indexOf(signatureSeparator);
+    if (idx == -1) return (id, null);
+    final signature = id.substring(idx + signatureSeparator.length);
+    return (id.substring(0, idx), signature.isEmpty ? null : signature);
   }
 
   /// Converts an [LLMTool] to an Interactions API tool entry.
@@ -147,24 +177,19 @@ class GeminiMessageConverter {
     'text': text,
   };
 
-  /// Builds a documented `function_result` block from a tool-result message.
+  /// Builds a `function_result` step from a tool-result message.
   ///
-  /// [LLMMessage.toolCallId] carries the id of the call being answered and
-  /// [LLMMessage.status] carries the tool name, matching how
-  /// [StreamToolExecutor] populates tool messages.
-  static Map<String, dynamic> _functionResultBlock(LLMMessage msg) {
+  /// [LLMMessage.toolCallId] carries the id of the call being answered
+  /// (stripped of any smuggled signature) and [LLMMessage.status] carries the
+  /// tool name, matching how [StreamToolExecutor] populates tool messages.
+  static Map<String, dynamic> _functionResultStep(LLMMessage msg) {
+    final (callId, _) = _splitSignature(msg.toolCallId);
     return <String, dynamic>{
       'type': 'function_result',
-      'call_id': msg.toolCallId ?? '',
+      'call_id': callId ?? '',
       'name': msg.status ?? '',
       'result': [_textBlock(msg.content ?? '')],
     };
-  }
-
-  static bool _isFunctionResultTurn(Map<String, dynamic> turn) {
-    final content = turn['content'];
-    if (content is! List || content.isEmpty) return false;
-    return (content.first as Map<String, dynamic>)['type'] == 'function_result';
   }
 
   /// Builds an image block, sniffing the MIME type from a data URI or from the

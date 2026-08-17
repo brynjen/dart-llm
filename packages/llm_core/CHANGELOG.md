@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-08-17
+
+### Added
+- `ReasoningEffort` enum (`none`…`max`) and `LLMChatOptions.reasoningEffort` —
+  a portable reasoning-depth knob alongside `reasoningBudget`.
+- `reasoningEffortForBudget()` for backends without a native token budget.
+- `LLMUsage.reasoningTokens` for providers that report reasoning-token usage.
+
 ## [0.2.0] - 2026-08-12
 
 ### Fixed

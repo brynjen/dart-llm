@@ -46,7 +46,8 @@ export 'src/vllm_params.dart'
         validateVllmParams,
         normalizeVllmParam,
         normalizeVllmParams,
-        suggestVllmParam;
+        suggestVllmParam,
+        remapVllmReasoningEffort;
 
 // Pool — multi-instance orchestration
 export 'src/pool/vllm_pool.dart'

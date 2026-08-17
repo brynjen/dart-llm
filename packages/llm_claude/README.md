@@ -241,6 +241,11 @@ Sending `budget_tokens` to a current model — or a sampling parameter to Opus
 translated to an `output_config.effort` level on models that no longer accept
 token budgets, so the setting is honored rather than dropped.
 
+On current models an explicit `LLMChatOptions.reasoningEffort` wins over a
+budget-derived level (effort-native path); on legacy models the budget wins,
+and an effort-only request converts through `claudeBudgetForEffort`
+(budget-native path).
+
 An unrecognized model id is treated as a current model, so a newly released
 Claude works without a library update.
 

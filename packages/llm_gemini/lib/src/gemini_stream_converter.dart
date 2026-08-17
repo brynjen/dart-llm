@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 import 'package:llm_core/llm_core.dart';
 import 'package:llm_gemini/src/dto/gemini_chunk.dart';
 import 'package:llm_gemini/src/dto/gemini_usage.dart';
+import 'package:llm_gemini/src/gemini_message_converter.dart';
 
 /// Converts Gemini Interactions API SSE responses to [LLMChunk] streams.
 ///
@@ -186,6 +187,20 @@ class GeminiStreamConverter {
           };
 
           if (functionCalls.isNotEmpty) {
+            // The steps-based API refuses an echoed function_call unless the
+            // model's thought signature is echoed with it, and LLMMessage has
+            // no signature channel — so the signature rides inside the call
+            // id (see GeminiMessageConverter.signatureSeparator), which
+            // round-trips untouched through StreamToolExecutor. Each call
+            // gets the signature accumulated at or before its step index.
+            String? signatureFor(int callIndex) {
+              String? best;
+              for (final entry in thoughtSignatures.entries) {
+                if (entry.key <= callIndex) best = entry.value;
+              }
+              return best;
+            }
+
             yield GeminiChunk(
               model: resolvedModel,
               done: false,
@@ -196,7 +211,10 @@ class GeminiStreamConverter {
                 role: LLMRole.assistant,
                 toolCalls: [
                   for (final entry in functionCalls.entries)
-                    entry.value.toToolCall(entry.key),
+                    entry.value.toToolCall(
+                      entry.key,
+                      signature: signatureFor(entry.key),
+                    ),
                 ],
               ),
             );
@@ -259,7 +277,7 @@ class _GeminiFunctionCallStep {
   /// Concatenated `arguments_delta` fragments.
   final StringBuffer arguments = StringBuffer();
 
-  LLMToolCall toToolCall(int index) {
+  LLMToolCall toToolCall(int index, {String? signature}) {
     final raw = arguments.toString();
     Map<String, dynamic> args = initialArguments ?? const <String, dynamic>{};
     if (raw.isNotEmpty) {
@@ -275,8 +293,11 @@ class _GeminiFunctionCallStep {
         // valid JSON.
       }
     }
+    final callId = (id != null && id!.isNotEmpty) ? id! : 'gemini_call_$index';
     return LLMToolCall(
-      id: (id != null && id!.isNotEmpty) ? id : 'gemini_call_$index',
+      id: signature == null || signature.isEmpty
+          ? callId
+          : '$callId${GeminiMessageConverter.signatureSeparator}$signature',
       name: name,
       arguments: json.encode(args),
     );

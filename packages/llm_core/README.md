@@ -139,6 +139,38 @@ final options = LLMChatOptions(
 final stream = repo.streamChat('model', messages: messages, options: options);
 ```
 
+### Thinking / reasoning control
+
+Reasoning is controlled by three fields on `LLMChatOptions`:
+
+- **`think`** (bool) is the master switch. When `false` (the default), the two
+  knobs below are ignored. Exception: OpenAI reasoning models always reason,
+  so `llm_chatgpt` honors the knobs regardless of `think`.
+- **`reasoningEffort`** (`ReasoningEffort?`) is the portable knob:
+  `none`/`minimal`/`low`/`medium`/`high`/`xhigh`/`max` — the union of the
+  provider scales. Backends clamp to the subset their API accepts. `null`
+  sends nothing (provider default); `ReasoningEffort.none` actively suppresses
+  thinking where the backend can express that.
+- **`reasoningBudget`** (`int?`) is the exact-token knob, for backends with a
+  native token budget (vLLM `thinking_token_budget`, legacy Claude
+  `budget_tokens`). Backends without one (OpenAI, Ollama, Gemini) derive an
+  effort level from it via `reasoningEffortForBudget()`.
+
+Precedence when both knobs are set: effort wins on effort-native backends
+(OpenAI, Ollama, modern Claude, Gemini); budget wins on budget-native paths
+(vLLM, legacy Claude). Backend-specific `backendOptions` keys always beat
+both. Reasoning-token usage, when the provider reports it, is surfaced as
+`LLMUsage.reasoningTokens` (a subset of `completionTokens`).
+
+```dart
+// Portable: works against every backend, clamped to what each supports.
+LLMChatOptions(think: true, reasoningEffort: ReasoningEffort.medium)
+
+// Exact: a hard 512-token thinking cap on vLLM; derived medium-ish effort
+// elsewhere.
+LLMChatOptions(think: true, reasoningBudget: 512)
+```
+
 ### Structured Output
 
 `LLMResponseFormat` is a sealed class for controlling model output format. Each backend implements it according to its API capabilities:

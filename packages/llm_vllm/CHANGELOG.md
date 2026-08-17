@@ -47,6 +47,11 @@ and the pool, plus test hardening across all of them.
 
 ### Added
 
+- Thinking budget: `reasoningBudget` now maps to vLLM's server-enforced
+  `thinking_token_budget` (requires `--reasoning-parser`).
+- `reasoningEffort` maps to vLLM's `reasoning_effort`; `none` disables
+  thinking via the chat template.
+- Reasoning-token usage surfaced as `LLMUsage.reasoningTokens`.
 - `VLLMRepository.describe()` — one-call deployment discovery returning
   `VLLMDeploymentInfo`: served models with their context window
   (`VLLMModel.maxModelLen`, newly parsed from `/v1/models`), probed

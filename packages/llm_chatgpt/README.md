@@ -126,6 +126,30 @@ final options = LLMChatOptions(
 final stream = repo.streamChat('gpt-5.4-nano', messages: messages, options: options);
 ```
 
+### Reasoning models
+
+Reasoning models (o-series, gpt-5 family) are detected by model id
+(`gptIsReasoningModel`) and handled differently from conventional models:
+
+- `temperature` / `top_p` are **dropped** on reasoning models — the API
+  rejects them with a `400`.
+- `reasoningEffort` maps to `reasoning_effort`, clamped to what the family
+  accepts (`gptEffortWireValue`): o-series `low`/`medium`/`high`; gpt-5
+  `minimal`/`low`/`medium`/`high`; gpt-5.1+ `none`/`low`/`medium`/`high`
+  (plus `xhigh` on codex-max ids). Never sent to conventional models or to
+  `o1-mini`/`o1-preview`, which predate the parameter.
+- OpenAI has **no exact reasoning-token budget**, so `reasoningBudget` is
+  honored as a derived effort level (an explicit `reasoningEffort` wins).
+- Reasoning models always reason, so the knobs apply regardless of `think`.
+- Streaming requests set `stream_options: {include_usage: true}`;
+  reasoning-token usage surfaces as `LLMUsage.reasoningTokens` from
+  `completion_tokens_details.reasoning_tokens`.
+
+```dart
+final options = LLMChatOptions(reasoningEffort: ReasoningEffort.high);
+final stream = repo.streamChat('gpt-5.4', messages: messages, options: options);
+```
+
 ### Using with Azure OpenAI
 
 ```dart

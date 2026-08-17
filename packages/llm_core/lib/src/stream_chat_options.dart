@@ -1,4 +1,5 @@
 import 'package:llm_core/src/llm_response_format.dart';
+import 'package:llm_core/src/reasoning_effort.dart';
 import 'package:llm_core/src/retry_config.dart';
 import 'package:llm_core/src/tool/llm_tool.dart';
 
@@ -28,6 +29,7 @@ class LLMChatOptions {
     int? maxOutputTokens,
     List<String>? stopSequences,
     int? reasoningBudget,
+    ReasoningEffort? reasoningEffort,
     bool useCache = false,
     Duration? cacheTtl,
     bool recordMetrics = true,
@@ -47,6 +49,7 @@ class LLMChatOptions {
          maxOutputTokens: maxOutputTokens,
          stopSequences: stopSequences,
          reasoningBudget: reasoningBudget,
+         reasoningEffort: reasoningEffort,
          useCache: useCache,
          cacheTtl: cacheTtl,
          recordMetrics: recordMetrics,
@@ -74,6 +77,7 @@ class LLMChatOptions {
     this.maxOutputTokens,
     this.stopSequences,
     this.reasoningBudget,
+    this.reasoningEffort,
     this.cacheTtl,
   }) : _toolsProvided = toolsProvided,
        _backendOptionsProvided = backendOptionsProvided;
@@ -132,7 +136,23 @@ class LLMChatOptions {
   final List<String>? stopSequences;
 
   /// Thinking/reasoning token budget where supported.
+  ///
+  /// Only honored when [think] is true. When both this and [reasoningEffort]
+  /// are set, budget-native backends (vLLM `thinking_token_budget`, legacy
+  /// Claude `budget_tokens`) use the budget; effort-native backends derive an
+  /// effort level only when [reasoningEffort] is null. Backend-specific
+  /// `backendOptions` keys always take precedence over both.
   final int? reasoningBudget;
+
+  /// Portable thinking/reasoning effort level where supported.
+  ///
+  /// Only honored when [think] is true. Effort-native backends (OpenAI,
+  /// Ollama, modern Claude, Gemini) prefer this over [reasoningBudget];
+  /// budget-native backends use it only when [reasoningBudget] is null.
+  /// Backends clamp to the subset of levels their API accepts. `null` sends
+  /// no reasoning parameter (provider default); [ReasoningEffort.none]
+  /// actively suppresses thinking where expressible.
+  final ReasoningEffort? reasoningEffort;
 
   /// Whether non-streaming [LLMChatRepository.chatResponse] calls may use cache.
   final bool useCache;
@@ -163,6 +183,7 @@ class LLMChatOptions {
     Object? maxOutputTokens = _unset,
     Object? stopSequences = _unset,
     Object? reasoningBudget = _unset,
+    Object? reasoningEffort = _unset,
     bool? useCache,
     Object? cacheTtl = _unset,
     bool? recordMetrics,
@@ -197,6 +218,9 @@ class LLMChatOptions {
       reasoningBudget: identical(reasoningBudget, _unset)
           ? this.reasoningBudget
           : reasoningBudget as int?,
+      reasoningEffort: identical(reasoningEffort, _unset)
+          ? this.reasoningEffort
+          : reasoningEffort as ReasoningEffort?,
       useCache: useCache ?? this.useCache,
       cacheTtl: identical(cacheTtl, _unset)
           ? this.cacheTtl
@@ -230,6 +254,7 @@ class StreamChatOptions extends LLMChatOptions {
     super.maxOutputTokens,
     super.stopSequences,
     super.reasoningBudget,
+    super.reasoningEffort,
     super.useCache,
     super.cacheTtl,
     super.recordMetrics,

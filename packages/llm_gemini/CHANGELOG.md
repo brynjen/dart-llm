@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-08-17
+
+### Added
+- `reasoningEffort` maps to `thinking_level` (wins over the budget mapping).
+- Thought-token usage surfaced as `LLMUsage.reasoningTokens`.
+
+### Fixed
+- Migrated to the Interactions API's steps-based input format (`user_input`/
+  `model_output`/`function_call` steps) — the old turn-based format is now
+  rejected by the live API.
+- Tool loops echo the model's thought signature (required by the API), carried
+  through the tool-call id.
+- Structured output sends the JSON schema inline; the `json_schema` wrapper
+  type is rejected by the live API.
+- `think: false` sent `thinking_summaries: 'off'`, which the live API rejects
+  with a 400; it now sends `'none'`.
+- Empty user messages sent an empty text block (a 400); now a single-space
+  block, the only shape the API accepts for a degenerate empty message.
+
 ## [0.2.0] - 2026-08-12
 
 Initial release of the Google Gemini backend for the dart-llm ecosystem.

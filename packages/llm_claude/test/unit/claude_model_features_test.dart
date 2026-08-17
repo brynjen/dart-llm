@@ -87,4 +87,40 @@ void main() {
       expect(claudeSupportsStructuredOutputs('claude-haiku-4-5'), isFalse);
     });
   });
+
+  group('effort mappings', () {
+    test('claudeEffortWireValue clamps below the API floor', () {
+      expect(claudeEffortWireValue(ReasoningEffort.none), 'low');
+      expect(claudeEffortWireValue(ReasoningEffort.minimal), 'low');
+      expect(claudeEffortWireValue(ReasoningEffort.low), 'low');
+      expect(claudeEffortWireValue(ReasoningEffort.medium), 'medium');
+      expect(claudeEffortWireValue(ReasoningEffort.high), 'high');
+      expect(claudeEffortWireValue(ReasoningEffort.xhigh), 'xhigh');
+      expect(claudeEffortWireValue(ReasoningEffort.max), 'max');
+    });
+
+    test('claudeBudgetForEffort inverts the documented thresholds', () {
+      expect(claudeBudgetForEffort(ReasoningEffort.none), 1024);
+      expect(claudeBudgetForEffort(ReasoningEffort.minimal), 1024);
+      expect(claudeBudgetForEffort(ReasoningEffort.low), 2000);
+      expect(claudeBudgetForEffort(ReasoningEffort.medium), 8000);
+      expect(claudeBudgetForEffort(ReasoningEffort.high), 16000);
+      expect(claudeBudgetForEffort(ReasoningEffort.xhigh), 24000);
+      expect(claudeBudgetForEffort(ReasoningEffort.max), 32000);
+      // Round-trip consistency: each budget maps back to its own level or
+      // stronger, never weaker.
+      expect(
+        claudeEffortForBudget(claudeBudgetForEffort(ReasoningEffort.low)),
+        'low',
+      );
+      expect(
+        claudeEffortForBudget(claudeBudgetForEffort(ReasoningEffort.medium)),
+        'medium',
+      );
+      expect(
+        claudeEffortForBudget(claudeBudgetForEffort(ReasoningEffort.high)),
+        'high',
+      );
+    });
+  });
 }

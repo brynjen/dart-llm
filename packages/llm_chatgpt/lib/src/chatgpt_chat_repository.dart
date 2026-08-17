@@ -4,6 +4,7 @@ import 'package:http/http.dart' as http;
 import 'package:llm_core/llm_core.dart';
 import 'package:llm_chatgpt/src/chatgpt_chat_repository_builder.dart';
 import 'package:llm_chatgpt/src/dto/gpt_embedding_response.dart';
+import 'package:llm_chatgpt/src/gpt_model_features.dart';
 import 'package:llm_chatgpt/src/gpt_stream_converter.dart';
 
 /// Repository for chatting with OpenAI's ChatGPT.
@@ -160,7 +161,7 @@ class ChatGPTChatRepository extends LLMChatRepository
           .toList(growable: false);
     }
 
-    _applyGenerationOptions(body, merged);
+    _applyGenerationOptions(body, merged, model);
     _applyResponseFormat(body, merged.responseFormat);
     _applyBackendOptions(body, merged.backendOptions);
 
@@ -221,6 +222,7 @@ class ChatGPTChatRepository extends LLMChatRepository
                       maxOutputTokens: merged.maxOutputTokens,
                       stopSequences: merged.stopSequences,
                       reasoningBudget: merged.reasoningBudget,
+                      reasoningEffort: merged.reasoningEffort,
                     ),
                   ),
             );
@@ -249,16 +251,37 @@ class ChatGPTChatRepository extends LLMChatRepository
   static void _applyGenerationOptions(
     Map<String, dynamic> body,
     MergedOptions options,
+    String model,
   ) {
-    if (options.temperature != null) body['temperature'] = options.temperature;
-    if (options.topP != null) body['top_p'] = options.topP;
+    // Reasoning models reject temperature/top_p with a hard 400.
+    if (!gptRejectsSamplingParams(model)) {
+      if (options.temperature != null) {
+        body['temperature'] = options.temperature;
+      }
+      if (options.topP != null) body['top_p'] = options.topP;
+    }
     if (options.maxOutputTokens != null) {
       body['max_completion_tokens'] = options.maxOutputTokens;
     }
     if (options.stopSequences != null) body['stop'] = options.stopSequences;
-    if (options.reasoningBudget != null) {
-      body['reasoning_effort'] = 'low';
+
+    // OpenAI has no exact reasoning-token budget — `reasoning_effort` is the
+    // only knob, so `reasoningBudget` is honored as a derived effort level.
+    // Reasoning models reason regardless of `think`, so the knobs apply on
+    // their own; with neither set, nothing is sent (server default).
+    // Conventional models reject the parameter, so it is never sent there.
+    final effort =
+        options.reasoningEffort ??
+        (options.reasoningBudget != null
+            ? reasoningEffortForBudget(options.reasoningBudget!)
+            : null);
+    if (effort != null) {
+      final wireValue = gptEffortWireValue(model, effort);
+      if (wireValue != null) body['reasoning_effort'] = wireValue;
     }
+
+    // Ask for the usage frame OpenAI otherwise omits when streaming.
+    body['stream_options'] = {'include_usage': true};
   }
 
   static void _applyBackendOptions(

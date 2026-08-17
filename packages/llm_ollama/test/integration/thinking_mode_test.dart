@@ -100,6 +100,34 @@ void main() {
         tags: ['integration'],
         timeout: const Timeout(Duration(minutes: 2)),
       );
+
+      test(
+        'reasoningEffort low maps to a think level the server accepts',
+        () async {
+          final messages = [
+            LLMMessage(role: LLMRole.user, content: 'What is 2+2?'),
+          ];
+
+          final chunks = await collectStreamWithTimeout(
+            repo.streamChat(
+              chatModel,
+              messages: messages,
+              options: const LLMChatOptions(
+                think: true,
+                reasoningEffort: ReasoningEffort.low,
+              ),
+            ),
+            const Duration(seconds: 90),
+          );
+
+          expect(chunks, isNotEmpty);
+          final thinking = extractThinking(chunks);
+          final content = extractContent(chunks);
+          expect(thinking.isNotEmpty || content.isNotEmpty, isTrue);
+        },
+        tags: ['integration'],
+        timeout: const Timeout(Duration(minutes: 2)),
+      );
     });
   });
 }

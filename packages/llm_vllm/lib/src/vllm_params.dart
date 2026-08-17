@@ -321,6 +321,58 @@ List<VllmParamValidationError> validateVllmParams(
   return errors;
 }
 
+/// Canonical ordering of reasoning-effort levels, weakest first.
+const List<String> _effortLadder = [
+  'none',
+  'minimal',
+  'low',
+  'medium',
+  'high',
+  'xhigh',
+  'max',
+];
+
+/// Remaps a rejected `reasoning_effort` value to the nearest level the model
+/// supports, or `null` when [errorBody] is not that rejection.
+///
+/// vLLM's request schema advertises the full effort enum, but each served
+/// model validates against its **own** vocabulary and rejects the rest with a
+/// 400 like:
+///
+/// > Bad request: Unexpected reasoning effort high. Supported types are
+/// > xhigh (default), medium, and low.
+///
+/// (Qwen3.8, for example, takes low/medium/xhigh — no `high`.) That error is
+/// the only place the vocabulary is discoverable, so the caller retries once
+/// with the remapped value: the smallest supported level at or above the
+/// requested one, else the largest supported level below it.
+String? remapVllmReasoningEffort(String requested, String errorBody) {
+  if (!RegExp(r'[Uu]nexpected reasoning effort').hasMatch(errorBody)) {
+    return null;
+  }
+  final supportedPart = errorBody.split(RegExp(r'[Ss]upported'));
+  if (supportedPart.length < 2) return null;
+  final vocabulary = supportedPart.sublist(1).join();
+
+  // Word-bounded so 'high' does not match inside 'xhigh'.
+  final supported = _effortLadder
+      .where((level) => RegExp('\\b$level\\b').hasMatch(vocabulary))
+      .toSet();
+  supported.remove(requested); // the server just rejected it
+  if (supported.isEmpty) return null;
+
+  final want = _effortLadder.indexOf(requested);
+  if (want == -1) return null;
+
+  String? best;
+  for (final level in _effortLadder) {
+    if (!supported.contains(level)) continue;
+    best = level;
+    if (_effortLadder.indexOf(level) >= want) break;
+  }
+  return best;
+}
+
 /// Closest known parameter to [key], or `null` when nothing is close enough.
 ///
 /// Uses Levenshtein distance with a threshold that scales with key length, so

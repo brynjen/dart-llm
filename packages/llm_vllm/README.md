@@ -335,17 +335,38 @@ Reasoning text is read from the server's `reasoning` field (aliases:
 `llm_vllm` detects and splits those into `chunk.message.thinking` so the
 behavior is the same either way.
 
-`reasoningBudget` is **not** mapped automatically: vLLM's
-`thinking_token_budget` returns a `400` unless the server was started with
-`--reasoning-parser` / `--reasoning-config`. Set it explicitly when your server
-supports it:
+#### Thinking budget and effort
+
+With `think: true`, `reasoningBudget` maps to vLLM's top-level
+`thinking_token_budget` (vLLM ≥ 0.19), which is **hard-enforced server-side**:
+a logits processor forces the end-of-thinking tokens once the budget is spent.
+It requires the server to run with `--reasoning-parser`; without it the server
+answers `400`, which surfaces as a `ThinkingNotSupportedException` naming the
+missing flag.
 
 ```dart
-options: const LLMChatOptions(
-  think: true,
-  backendOptions: {'thinking_token_budget': 512},
-),
+options: const LLMChatOptions(think: true, reasoningBudget: 512),
 ```
+
+When no budget is set, `reasoningEffort` maps to vLLM's native
+`reasoning_effort` (a soft knob that needs no reasoning parser). vLLM accepts
+`low`/`medium`/`high`, so the portable scale clamps:
+
+| `ReasoningEffort` | wire value |
+|---|---|
+| `none` | `chat_template_kwargs.enable_thinking: false` (no `reasoning_effort`) |
+| `minimal`, `low` | `low` |
+| `medium` | `medium` |
+| `high`, `xhigh`, `max` | `high` |
+
+If both knobs are set, the budget wins (vLLM is budget-native). Explicit
+`backendOptions['thinking_token_budget']` / `['reasoning_effort']` override
+both. Reasoning-token usage is surfaced as `LLMUsage.reasoningTokens` when the
+server reports `completion_tokens_details.reasoning_tokens`.
+
+Known upstream caveats: the budget is not enforced when MTP speculative
+decoding is enabled (vllm#39573), and a tight budget can truncate tool-call
+arguments on Qwen3.5+ (vllm#44676).
 
 To enable tool calling and native reasoning parsing, start vLLM with:
 

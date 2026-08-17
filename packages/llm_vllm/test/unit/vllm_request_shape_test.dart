@@ -173,6 +173,152 @@ void main() {
     });
   });
 
+  group('reasoning budget and effort', () {
+    test(
+      'think + reasoningBudget sends top-level thinking_token_budget',
+      () async {
+        final body = await capture(
+          options: const LLMChatOptions(think: true, reasoningBudget: 256),
+        );
+        expect(body['thinking_token_budget'], 256);
+        expect(body['chat_template_kwargs'], {'enable_thinking': true});
+      },
+    );
+
+    test('budget wins over effort (budget-native backend)', () async {
+      final body = await capture(
+        options: const LLMChatOptions(
+          think: true,
+          reasoningBudget: 256,
+          reasoningEffort: ReasoningEffort.high,
+        ),
+      );
+      expect(body['thinking_token_budget'], 256);
+      expect(body.containsKey('reasoning_effort'), isFalse);
+    });
+
+    test('effort maps to native reasoning_effort with clamping', () async {
+      final expectations = <ReasoningEffort, String>{
+        ReasoningEffort.minimal: 'low',
+        ReasoningEffort.low: 'low',
+        ReasoningEffort.medium: 'medium',
+        ReasoningEffort.high: 'high',
+        ReasoningEffort.xhigh: 'high',
+        ReasoningEffort.max: 'high',
+      };
+      for (final entry in expectations.entries) {
+        final body = await capture(
+          options: LLMChatOptions(think: true, reasoningEffort: entry.key),
+        );
+        expect(body['reasoning_effort'], entry.value, reason: '${entry.key}');
+        expect(body.containsKey('thinking_token_budget'), isFalse);
+      }
+    });
+
+    test('effort none disables thinking via the chat template', () async {
+      final body = await capture(
+        options: const LLMChatOptions(
+          think: true,
+          reasoningEffort: ReasoningEffort.none,
+        ),
+      );
+      expect(body['chat_template_kwargs'], {'enable_thinking': false});
+      expect(body.containsKey('reasoning_effort'), isFalse);
+      expect(body.containsKey('thinking_token_budget'), isFalse);
+    });
+
+    test('knobs are ignored when think is false', () async {
+      final body = await capture(
+        options: const LLMChatOptions(
+          reasoningBudget: 256,
+          reasoningEffort: ReasoningEffort.high,
+        ),
+      );
+      expect(body.containsKey('thinking_token_budget'), isFalse);
+      expect(body.containsKey('reasoning_effort'), isFalse);
+      expect(body['chat_template_kwargs'], {'enable_thinking': false});
+    });
+
+    test(
+      'backendOptions thinking_token_budget overrides the derived value',
+      () async {
+        final body = await capture(
+          options: const LLMChatOptions(
+            think: true,
+            reasoningBudget: 256,
+            backendOptions: {'thinking_token_budget': 512},
+          ),
+        );
+        expect(body['thinking_token_budget'], 512);
+      },
+    );
+  });
+
+  group('reasoning_effort vocabulary remap', () {
+    // Models expose their own effort vocabulary only via a 400, e.g. Qwen3.8:
+    // "Unexpected reasoning effort high. Supported types are xhigh (default),
+    // medium, and low."
+    const qwen38Error =
+        'Bad request: Unexpected reasoning effort high. '
+        'Supported types are xhigh (default), medium, and low.';
+
+    test('remaps to the smallest supported level at or above', () {
+      expect(remapVllmReasoningEffort('high', qwen38Error), 'xhigh');
+      expect(
+        remapVllmReasoningEffort(
+          'minimal',
+          'Unexpected reasoning effort minimal. '
+              'Supported types are low, medium, and high.',
+        ),
+        'low',
+      );
+    });
+
+    test('falls back to the largest supported level below', () {
+      expect(
+        remapVllmReasoningEffort(
+          'max',
+          'Unexpected reasoning effort max. '
+              'Supported types are low and medium.',
+        ),
+        'medium',
+      );
+    });
+
+    test('does not react to unrelated 400s', () {
+      expect(
+        remapVllmReasoningEffort('high', 'some other validation error'),
+        isNull,
+      );
+    });
+
+    test('word boundaries: high does not match inside xhigh', () {
+      final remapped = remapVllmReasoningEffort(
+        'medium',
+        'Unexpected reasoning effort medium. Supported types are xhigh.',
+      );
+      expect(remapped, 'xhigh');
+    });
+
+    test('the request is resent once with the remapped value', () async {
+      final client = _EffortRejectingClient();
+      final repo = VLLMChatRepository(httpClient: client);
+      await repo
+          .streamChat(
+            'test-model',
+            messages: [LLMMessage(role: LLMRole.user, content: 'hi')],
+            options: const LLMChatOptions(
+              think: true,
+              reasoningEffort: ReasoningEffort.high,
+            ),
+          )
+          .toList();
+      expect(client.bodies, hasLength(2));
+      expect(client.bodies.first['reasoning_effort'], 'high');
+      expect(client.bodies.last['reasoning_effort'], 'xhigh');
+    });
+  });
+
   group('multiple candidates', () {
     test('n = 1 is accepted', () async {
       final body = await capture(
@@ -280,6 +426,56 @@ class _StreamCapturingClient extends http.BaseClient {
       sse.writeln();
     }
     sse.writeln('data: [DONE]');
+    return http.StreamedResponse(
+      Stream.value(utf8.encode(sse.toString())),
+      200,
+      headers: {'content-type': 'text/event-stream'},
+    );
+  }
+}
+
+/// Rejects `reasoning_effort: high` the way Qwen3.8 does, then answers.
+class _EffortRejectingClient extends http.BaseClient {
+  final List<Map<String, dynamic>> bodies = [];
+
+  @override
+  Future<http.StreamedResponse> send(http.BaseRequest request) async {
+    final bytes = await request.finalize().toBytes();
+    final body = json.decode(utf8.decode(bytes)) as Map<String, dynamic>;
+    bodies.add(body);
+    if (body['reasoning_effort'] == 'high') {
+      return http.StreamedResponse(
+        Stream.value(
+          utf8.encode(
+            json.encode({
+              'error': {
+                'message':
+                    'Bad request: Unexpected reasoning effort high. '
+                    'Supported types are xhigh (default), medium, and low.',
+              },
+            }),
+          ),
+        ),
+        400,
+      );
+    }
+    final sse = StringBuffer()
+      ..writeln(
+        'data: ${json.encode({
+          'id': 'chatcmpl-test',
+          'created': 1700000000,
+          'model': 'test-model',
+          'choices': [
+            {
+              'index': 0,
+              'delta': {'role': 'assistant', 'content': 'ok'},
+              'finish_reason': 'stop',
+            },
+          ],
+        })}',
+      )
+      ..writeln()
+      ..writeln('data: [DONE]');
     return http.StreamedResponse(
       Stream.value(utf8.encode(sse.toString())),
       200,

@@ -161,7 +161,7 @@ class OllamaChatRepository extends LLMChatRepository
       'model': model,
       'messages': OllamaMessageConverter.messagesToOllamaJson(messages),
       'stream': true,
-      'think': merged.think,
+      'think': _thinkValue(merged),
     };
     if (merged.tools.isNotEmpty) {
       body['tools'] = merged.tools
@@ -227,6 +227,7 @@ class OllamaChatRepository extends LLMChatRepository
                       maxOutputTokens: merged.maxOutputTokens,
                       stopSequences: merged.stopSequences,
                       reasoningBudget: merged.reasoningBudget,
+                      reasoningEffort: merged.reasoningEffort,
                     ),
                   ),
             );
@@ -321,6 +322,36 @@ class OllamaChatRepository extends LLMChatRepository
     Map<String, dynamic> options = const {},
   }) async {
     return embed(model: model, messages: messages, options: options);
+  }
+
+  /// Resolves the wire value for Ollama's `think` field.
+  ///
+  /// Ollama accepts a bool or a level string ("low"/"medium"/"high"/"max").
+  /// Some models take either (Qwen3, DeepSeek); gpt-oss ignores bools and
+  /// requires a level. Ollama has no numeric thinking budget, so
+  /// `reasoningBudget` is honored as a level via [reasoningEffortForBudget].
+  ///
+  /// A bare `think: true` stays a bool so models that reject level strings
+  /// keep working; levels are only sent when the caller opted in through
+  /// `reasoningEffort` or `reasoningBudget`. A model that rejects the value
+  /// errors through the normal error-handler path.
+  static Object _thinkValue(MergedOptions merged) {
+    final override = merged.backendOptions['think'];
+    if (override != null) return override;
+    if (!merged.think) return false;
+    final effort =
+        merged.reasoningEffort ??
+        (merged.reasoningBudget != null
+            ? reasoningEffortForBudget(merged.reasoningBudget!)
+            : null);
+    return switch (effort) {
+      null => true,
+      ReasoningEffort.none => false,
+      ReasoningEffort.minimal || ReasoningEffort.low => 'low',
+      ReasoningEffort.medium => 'medium',
+      ReasoningEffort.high || ReasoningEffort.xhigh => 'high',
+      ReasoningEffort.max => 'max',
+    };
   }
 
   void _applyBackendOptions(Map<String, dynamic> body, MergedOptions merged) {

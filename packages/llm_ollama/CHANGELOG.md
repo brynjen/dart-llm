@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-08-17
+
+### Added
+- `think` now supports Ollama's level strings: `reasoningEffort` or
+  `reasoningBudget` map to `"low"`/`"medium"`/`"high"`/`"max"`; a bare
+  `think: true` stays a bool.
+
 ## [0.2.0] - 2026-08-12
 
 ### Added

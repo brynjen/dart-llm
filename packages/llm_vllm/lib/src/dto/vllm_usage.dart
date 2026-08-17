@@ -17,12 +17,16 @@ class VLLMUsage {
     required this.completionTokens,
     required this.totalTokens,
     required this.usageTokenDetails,
+    this.reasoningTokens,
   });
 
   final int promptTokens;
   final int completionTokens;
   final int totalTokens;
   final VLLMUsageTokenDetails? usageTokenDetails;
+
+  /// Reasoning tokens from `completion_tokens_details`, when reported.
+  final int? reasoningTokens;
 
   factory VLLMUsage.fromJson(Map<String, dynamic> json) => VLLMUsage(
     promptTokens: json['prompt_tokens'] as int? ?? 0,
@@ -36,6 +40,10 @@ class VLLMUsage {
             json['prompt_tokens_details'] as Map<String, dynamic>,
           )
         : null,
+    reasoningTokens:
+        (json['completion_tokens_details']
+                as Map<String, dynamic>?)?['reasoning_tokens']
+            as int?,
   );
 
   Map<String, dynamic> toJson() => {
@@ -43,5 +51,7 @@ class VLLMUsage {
     'completion_tokens': completionTokens,
     'total_tokens': totalTokens,
     'prompt_tokens_details': usageTokenDetails?.toJson(),
+    if (reasoningTokens != null)
+      'completion_tokens_details': {'reasoning_tokens': reasoningTokens},
   };
 }

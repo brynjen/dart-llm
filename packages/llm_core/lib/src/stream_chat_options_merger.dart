@@ -1,4 +1,5 @@
 import 'package:llm_core/src/llm_response_format.dart';
+import 'package:llm_core/src/reasoning_effort.dart';
 import 'package:llm_core/src/retry_config.dart';
 import 'package:llm_core/src/stream_chat_options.dart';
 import 'package:llm_core/src/tool/llm_tool.dart';
@@ -49,6 +50,7 @@ class StreamChatOptionsMerger {
       maxOutputTokens: options?.maxOutputTokens,
       stopSequences: options?.stopSequences,
       reasoningBudget: options?.reasoningBudget,
+      reasoningEffort: options?.reasoningEffort,
       useCache: options?.useCache ?? false,
       cacheTtl: options?.cacheTtl,
       recordMetrics: options?.recordMetrics ?? true,
@@ -76,6 +78,7 @@ class MergedOptions {
     this.maxOutputTokens,
     this.stopSequences,
     this.reasoningBudget,
+    this.reasoningEffort,
     this.cacheTtl,
   });
 
@@ -94,6 +97,7 @@ class MergedOptions {
   final int? maxOutputTokens;
   final List<String>? stopSequences;
   final int? reasoningBudget;
+  final ReasoningEffort? reasoningEffort;
   final bool useCache;
   final Duration? cacheTtl;
   final bool recordMetrics;

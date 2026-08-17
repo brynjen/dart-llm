@@ -71,6 +71,26 @@ await for (final chunk in stream) {
 }
 ```
 
+Ollama's `think` field accepts a bool or a level string, and has **no numeric
+token budget**. `llm_ollama` sends:
+
+| Options | wire `think` |
+|---|---|
+| `think: false` | `false` |
+| `think: true`, no knobs | `true` (bool — keeps bool-only models working) |
+| `think: true, reasoningEffort: none` | `false` |
+| `minimal` / `low` | `"low"` |
+| `medium` | `"medium"` |
+| `high` / `xhigh` | `"high"` |
+| `max` | `"max"` |
+| `think: true, reasoningBudget: N` | level derived via `reasoningEffortForBudget` |
+
+An explicit `reasoningEffort` wins over `reasoningBudget`, and
+`backendOptions['think']` overrides everything. Note that some models accept
+only bools (level strings error server-side) while gpt-oss ignores bools and
+requires a level — levels are therefore only sent when you explicitly set one
+of the knobs.
+
 ### Tool Calling
 
 ```dart

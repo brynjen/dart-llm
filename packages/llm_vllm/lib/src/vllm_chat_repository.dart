@@ -224,7 +224,8 @@ class VLLMChatRepository extends LLMChatRepository with LLMRepositoryFeatures {
     _applyBackendOptions(body, backendOptions);
     _applyResponseFormat(body, merged.responseFormat);
 
-    final response = await RateLimiterUtil.executeWithRateLimit(
+    Future<http.StreamedResponse>
+    send() => RateLimiterUtil.executeWithRateLimit(
       rateLimiter: _rateLimiter,
       operation: () => RetryUtil.executeWithRetry(
         operation: () async {
@@ -258,6 +259,30 @@ class VLLMChatRepository extends LLMChatRepository with LLMRepositoryFeatures {
             ErrorHandlers.isRetryableError(error, effectiveRetryConfig),
       ),
     );
+
+    var response = await send();
+
+    // Each served model validates `reasoning_effort` against its own
+    // vocabulary (Qwen3.8: low/medium/xhigh), discoverable only through the
+    // 400 it returns. Remap once to the nearest supported level and resend so
+    // the portable effort scale works regardless of the model's dialect.
+    if (response.statusCode == 400 && body['reasoning_effort'] is String) {
+      final errorBody = await _httpHelper.readErrorBody(response);
+      final remapped = remapVllmReasoningEffort(
+        body['reasoning_effort'] as String,
+        errorBody,
+      );
+      if (remapped == null) {
+        await VLLMErrorHandler.handleBadRequestError(
+          errorBody: errorBody,
+          model: model,
+          thinkRequested: merged.think,
+          toolsRequested: merged.tools.isNotEmpty,
+        );
+      }
+      body['reasoning_effort'] = remapped;
+      response = await send();
+    }
 
     switch (response.statusCode) {
       case 200:
@@ -298,6 +323,7 @@ class VLLMChatRepository extends LLMChatRepository with LLMRepositoryFeatures {
                     maxOutputTokens: merged.maxOutputTokens,
                     stopSequences: merged.stopSequences,
                     reasoningBudget: merged.reasoningBudget,
+                    reasoningEffort: merged.reasoningEffort,
                   ),
                 ),
           );
@@ -512,14 +538,42 @@ class VLLMChatRepository extends LLMChatRepository with LLMRepositoryFeatures {
     //
     // Sent for `false` as well as `true`, because Qwen3 thinks by default and
     // would otherwise ignore `think: false`.
-    //
-    // `thinking_token_budget` IS a real vLLM field, but the server rejects it
-    // with a 400 unless it was started with `--reasoning-parser` /
-    // `--reasoning-config`. It is therefore opt-in rather than implicit: set
-    // `backendOptions['thinking_token_budget']` when the server supports it.
+    var enableThinking = options.think;
+
+    if (options.think) {
+      if (options.reasoningBudget != null) {
+        // vLLM ≥0.19 enforces `thinking_token_budget` server-side (a logits
+        // processor forces the end-of-thinking tokens once the budget is
+        // spent), but only when the server runs with `--reasoning-parser`.
+        // Without the parser the server answers 400, which the error handler
+        // maps to [ThinkingNotSupportedException]. Top-level on purpose:
+        // routed through `vllm_xargs`/`extra_args` it is silently ignored on
+        // pre-0.19 servers.
+        body['thinking_token_budget'] = options.reasoningBudget;
+      } else if (options.reasoningEffort != null) {
+        // No exact budget requested: use vLLM's native `reasoning_effort`,
+        // which needs no reasoning parser. vLLM accepts only low/medium/high,
+        // so the portable scale is clamped; `none` suppresses thinking via
+        // the chat template instead, since vLLM has no effort value for it.
+        switch (options.reasoningEffort!) {
+          case ReasoningEffort.none:
+            enableThinking = false;
+          case ReasoningEffort.minimal:
+          case ReasoningEffort.low:
+            body['reasoning_effort'] = 'low';
+          case ReasoningEffort.medium:
+            body['reasoning_effort'] = 'medium';
+          case ReasoningEffort.high:
+          case ReasoningEffort.xhigh:
+          case ReasoningEffort.max:
+            body['reasoning_effort'] = 'high';
+        }
+      }
+    }
+
     final templateKwargs = <String, dynamic>{
       ...?body['chat_template_kwargs'] as Map<String, dynamic>?,
-      'enable_thinking': options.think,
+      'enable_thinking': enableThinking,
     };
     body['chat_template_kwargs'] = templateKwargs;
   }

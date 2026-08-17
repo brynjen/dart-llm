@@ -177,7 +177,11 @@ mapped onto the discrete `thinking_level` field with these thresholds:
 | `< 8192`          | `medium`         |
 | `>= 8192`         | `high`           |
 
-Set `backendOptions: {'thinking_level': 'high'}` to bypass the mapping.
+An explicit `LLMChatOptions.reasoningEffort` wins over the budget mapping
+(`none`/`minimal` → `minimal`, `low` → `low`, `medium` → `medium`,
+`high`/`xhigh`/`max` → `high`), and
+`backendOptions: {'thinking_level': 'high'}` bypasses both. Thought-token
+usage is surfaced as `LLMUsage.reasoningTokens`.
 
 ### Embeddings
 

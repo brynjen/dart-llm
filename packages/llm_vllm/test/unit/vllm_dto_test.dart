@@ -156,5 +156,22 @@ void main() {
 
       expect(response.data.map((model) => model.id), ['model-a', 'model-b']);
     });
+
+    test('parses reasoning tokens from completion_tokens_details', () {
+      final usage = VLLMUsage.fromJson(const {
+        'prompt_tokens': 10,
+        'completion_tokens': 30,
+        'total_tokens': 40,
+        'completion_tokens_details': {'reasoning_tokens': 20},
+      });
+      expect(usage.reasoningTokens, 20);
+
+      final withoutDetails = VLLMUsage.fromJson(const {
+        'prompt_tokens': 10,
+        'completion_tokens': 30,
+        'total_tokens': 40,
+      });
+      expect(withoutDetails.reasoningTokens, isNull);
+    });
   });
 }

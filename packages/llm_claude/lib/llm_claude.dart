@@ -35,7 +35,10 @@ export 'src/claude_model_features.dart'
         claudeRequestShapeFor,
         claudeRejectsSamplingParams,
         claudeSupportsAdaptiveThinking,
-        claudeSupportsStructuredOutputs;
+        claudeSupportsStructuredOutputs,
+        claudeEffortForBudget,
+        claudeEffortWireValue,
+        claudeBudgetForEffort;
 
 // DTOs (for advanced usage)
 export 'src/dto/claude_chunk.dart';

@@ -65,6 +65,7 @@ class GeminiUsage {
       promptTokens: inputTokens,
       completionTokens: outputTokens,
       totalTokens: totalTokens > 0 ? totalTokens : null,
+      reasoningTokens: thoughtTokens > 0 ? thoughtTokens : null,
     );
   }
 

@@ -8,6 +8,7 @@ class LLMUsage {
     required this.promptTokens,
     required this.completionTokens,
     int? totalTokens,
+    this.reasoningTokens,
   }) : totalTokens = totalTokens ?? promptTokens + completionTokens;
 
   /// Tokens consumed by the prompt/input.
@@ -18,6 +19,13 @@ class LLMUsage {
 
   /// Total tokens for the request, when known.
   final int totalTokens;
+
+  /// Tokens spent on thinking/reasoning, when the provider reports them.
+  ///
+  /// These are a subset of [completionTokens], not additional to it. Null
+  /// when the provider does not break reasoning tokens out (Claude counts
+  /// them inside output tokens; Ollama has no counter).
+  final int? reasoningTokens;
 }
 
 /// Why a model response finished.

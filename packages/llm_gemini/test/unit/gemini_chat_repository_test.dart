@@ -58,6 +58,11 @@ String _toolCallResponse() =>
       'delta': {'type': 'arguments_delta', 'arguments': '"hi"}'},
     }) +
     _sseLine({
+      'event_type': 'step.delta',
+      'index': 0,
+      'delta': {'type': 'thought_signature', 'signature': 'SIGX'},
+    }) +
+    _sseLine({
       'event_type': 'interaction.completed',
       'interaction': {'id': 'int_1', 'status': 'completed'},
     });
@@ -190,7 +195,7 @@ void main() {
       expect(body.containsKey('systemInstruction'), isFalse);
     });
 
-    test('serializes the conversation into role-tagged input turns', () async {
+    test('serializes the conversation into typed input steps', () async {
       final body = await _captureBody(
         (repo) => repo
             .streamChat(
@@ -206,11 +211,11 @@ void main() {
       );
 
       final input = (body['input'] as List).cast<Map<String, dynamic>>();
-      expect(input.map((turn) => turn['role']), [
-        'user',
-        'user',
-        'model',
-        'user',
+      expect(input.map((step) => step['type']), [
+        'user_input',
+        'user_input',
+        'model_output',
+        'user_input',
       ]);
       expect((input.first['content'] as List).first, {
         'type': 'text',
@@ -239,7 +244,7 @@ void main() {
       expect(tools.first.containsKey('functionDeclarations'), isFalse);
     });
 
-    test('sends thinking_summaries off by default', () async {
+    test('sends thinking_summaries none by default', () async {
       final body = await _captureBody(
         (repo) => repo
             .streamChat(
@@ -250,7 +255,7 @@ void main() {
       );
 
       final config = body['generation_config'] as Map<String, dynamic>;
-      expect(config['thinking_summaries'], 'off');
+      expect(config['thinking_summaries'], 'none');
       expect(config.containsKey('thinking_level'), isFalse);
       expect(body.containsKey('generationConfig'), isFalse);
     });
@@ -284,6 +289,67 @@ void main() {
       expect(GeminiChatRepository.thinkingLevelForBudget(512), 'low');
       expect(GeminiChatRepository.thinkingLevelForBudget(4096), 'medium');
       expect(GeminiChatRepository.thinkingLevelForBudget(32768), 'high');
+    });
+
+    test('reasoningEffort wins over budget for thinking_level', () async {
+      final body = await _captureBody(
+        (repo) => repo
+            .streamChat(
+              _model,
+              messages: [LLMMessage(role: LLMRole.user, content: 'Hi')],
+              options: const LLMChatOptions(
+                think: true,
+                reasoningBudget: 16384, // would derive 'high'
+                reasoningEffort: ReasoningEffort.low,
+              ),
+            )
+            .toList(),
+      );
+
+      final config = body['generation_config'] as Map<String, dynamic>;
+      expect(config['thinking_level'], 'low');
+    });
+
+    test('thinkingLevelForEffort clamps to the API subset', () {
+      expect(
+        GeminiChatRepository.thinkingLevelForEffort(ReasoningEffort.none),
+        'minimal',
+      );
+      expect(
+        GeminiChatRepository.thinkingLevelForEffort(ReasoningEffort.minimal),
+        'minimal',
+      );
+      expect(
+        GeminiChatRepository.thinkingLevelForEffort(ReasoningEffort.medium),
+        'medium',
+      );
+      expect(
+        GeminiChatRepository.thinkingLevelForEffort(ReasoningEffort.xhigh),
+        'high',
+      );
+      expect(
+        GeminiChatRepository.thinkingLevelForEffort(ReasoningEffort.max),
+        'high',
+      );
+    });
+
+    test('backendOptions thinking_level still wins over effort', () async {
+      final body = await _captureBody(
+        (repo) => repo
+            .streamChat(
+              _model,
+              messages: [LLMMessage(role: LLMRole.user, content: 'Hi')],
+              options: const LLMChatOptions(
+                think: true,
+                reasoningEffort: ReasoningEffort.low,
+                backendOptions: {'thinking_level': 'high'},
+              ),
+            )
+            .toList(),
+      );
+
+      final config = body['generation_config'] as Map<String, dynamic>;
+      expect(config['thinking_level'], 'high');
     });
 
     test('backendOptions thinking_level overrides the mapping', () async {
@@ -353,11 +419,11 @@ void main() {
       );
 
       expect(body['response_format'], [
-        {'type': 'json_object'},
+        {'type': 'object'},
       ]);
     });
 
-    test('JsonSchemaFormat forwards the schema unchanged', () async {
+    test('JsonSchemaFormat inlines the schema as the entry', () async {
       const schema = {
         'type': 'object',
         'properties': {
@@ -380,7 +446,12 @@ void main() {
       );
 
       expect(body['response_format'], [
-        {'type': 'json_schema', 'name': 'Answer', 'schema': schema},
+        {
+          'type': 'object',
+          'properties': {
+            'name': {'type': 'string'},
+          },
+        },
       ]);
     });
 
@@ -451,18 +522,22 @@ void main() {
       expect(bodies.length, 2);
       final secondInput = (bodies[1]['input'] as List)
           .cast<Map<String, dynamic>>();
-      expect(secondInput.map((turn) => turn['role']), [
-        'user',
-        'model',
-        'user',
+      expect(secondInput.map((step) => step['type']), [
+        'user_input',
+        'thought',
+        'function_call',
+        'function_result',
       ]);
-      expect((secondInput[1]['content'] as List).first, {
+      // The thought signature captured from the stream is echoed back and
+      // stripped from the ids.
+      expect(secondInput[1]['signature'], 'SIGX');
+      expect(secondInput[2], {
         'type': 'function_call',
         'id': 'call_abc123',
         'name': 'echo',
         'arguments': {'message': 'hi'},
       });
-      expect((secondInput[2]['content'] as List).first, {
+      expect(secondInput[3], {
         'type': 'function_result',
         'call_id': 'call_abc123',
         'name': 'echo',

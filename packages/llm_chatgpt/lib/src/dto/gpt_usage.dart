@@ -17,12 +17,16 @@ class GPTUsage {
     required this.completionTokens,
     required this.totalTokens,
     required this.usageTokenDetails,
+    this.reasoningTokens,
   });
 
   final int promptTokens;
   final int completionTokens;
   final int totalTokens;
   final GPTUsageTokenDetails? usageTokenDetails;
+
+  /// Reasoning tokens from `completion_tokens_details`, when reported.
+  final int? reasoningTokens;
 
   factory GPTUsage.fromJson(Map<String, dynamic> json) => GPTUsage(
     promptTokens: json['prompt_tokens'],
@@ -31,6 +35,10 @@ class GPTUsage {
     usageTokenDetails: json['prompt_tokens_details'] != null
         ? GPTUsageTokenDetails.fromJson(json['prompt_tokens_details'])
         : null,
+    reasoningTokens:
+        (json['completion_tokens_details']
+                as Map<String, dynamic>?)?['reasoning_tokens']
+            as int?,
   );
 
   Map<String, dynamic> toJson() => {
@@ -38,5 +46,7 @@ class GPTUsage {
     'completion_tokens': completionTokens,
     'total_tokens': totalTokens,
     'prompt_tokens_details': usageTokenDetails?.toJson(),
+    if (reasoningTokens != null)
+      'completion_tokens_details': {'reasoning_tokens': reasoningTokens},
   };
 }

@@ -25,6 +25,7 @@ class GPTResponse extends LLMResponse {
            promptTokens: usage.promptTokens,
            completionTokens: usage.completionTokens,
            totalTokens: usage.totalTokens,
+           reasoningTokens: usage.reasoningTokens,
          ),
          providerMetadata: {
            'id': id,

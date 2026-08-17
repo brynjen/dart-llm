@@ -27,6 +27,7 @@ class VLLMChunk extends LLMChunk {
                  promptTokens: vllmUsage.promptTokens,
                  completionTokens: vllmUsage.completionTokens,
                  totalTokens: vllmUsage.totalTokens,
+                 reasoningTokens: vllmUsage.reasoningTokens,
                )
              : null,
          providerMetadata: {

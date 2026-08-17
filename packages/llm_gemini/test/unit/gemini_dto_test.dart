@@ -222,4 +222,26 @@ void main() {
       expect(response.embeddings[0], [1.0, 2.0, 3.0]);
     });
   });
+
+  group('GeminiUsage.toLLMUsage', () {
+    test('surfaces thought tokens as reasoningTokens', () {
+      final usage = GeminiUsage.fromJson(const {
+        'total_tokens': 120,
+        'total_input_tokens': 80,
+        'total_output_tokens': 40,
+        'total_thought_tokens': 12,
+      });
+      expect(usage.toLLMUsage().reasoningTokens, 12);
+    });
+
+    test('reasoningTokens is null when no thinking happened', () {
+      final usage = GeminiUsage.fromJson(const {
+        'total_tokens': 100,
+        'total_input_tokens': 80,
+        'total_output_tokens': 20,
+        'total_thought_tokens': 0,
+      });
+      expect(usage.toLLMUsage().reasoningTokens, isNull);
+    });
+  });
 }

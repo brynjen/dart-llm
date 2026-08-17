@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-08-17
+
+### Added
+- Reasoning-model support: per-model detection (`gptIsReasoningModel`),
+  `reasoningEffort`/`reasoningBudget` mapped to a clamped `reasoning_effort`,
+  and sampling params dropped where the API rejects them.
+- Streaming usage via `stream_options.include_usage`, including
+  `LLMUsage.reasoningTokens`.
+- Reasoning deltas from OpenAI-compatible servers surface as
+  `chunk.message.thinking`.
+
+### Fixed
+- `reasoningBudget` no longer hardcodes `reasoning_effort: 'low'`.
+- Streamed deltas without a `role` (everything after the first delta) were
+  dropped when folding responses and broke tool loops; they now default to
+  the assistant role.
+
 ## [0.2.0] - 2026-08-12
 
 ### Added

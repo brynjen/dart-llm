@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-08-17
+
+### Added
+- `reasoningEffort` support: maps to `output_config.effort` on current models
+  (wins over a budget-derived level) and converts to `budget_tokens` on
+  legacy models via `claudeBudgetForEffort`.
+
 ## [0.2.0] - 2026-08-12
 
 Initial release of the Anthropic Claude backend for the dart-llm ecosystem.

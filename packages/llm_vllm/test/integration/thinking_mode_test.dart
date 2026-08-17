@@ -103,6 +103,73 @@ void main() {
           tags: ['integration'],
           timeout: const Timeout(Duration(minutes: 2)),
         );
+
+        test(
+          'reasoningBudget is enforced or cleanly rejected',
+          () async {
+            final messages = [
+              LLMMessage(
+                role: LLMRole.user,
+                content: 'Think carefully: how many r\'s are in "strawberry"?',
+              ),
+            ];
+
+            try {
+              final chunks = await collectStreamWithTimeout(
+                repo.streamChat(
+                  chatModel,
+                  messages: messages,
+                  options: const LLMChatOptions(
+                    think: true,
+                    reasoningBudget: 256,
+                  ),
+                ),
+                const Duration(seconds: 90),
+              );
+              expect(chunks, isNotEmpty);
+              final thinking = extractThinking(chunks);
+              final content = extractContent(chunks);
+              expect(
+                thinking.isNotEmpty || content.isNotEmpty,
+                isTrue,
+                reason: 'Should receive thinking or content',
+              );
+            } on ThinkingNotSupportedException {
+              // Server runs without --reasoning-parser: the budget cannot be
+              // honored and the library reports that instead of a raw 400.
+            }
+          },
+          tags: ['integration'],
+          timeout: const Timeout(Duration(minutes: 2)),
+        );
+
+        test(
+          'reasoningEffort low succeeds with thinking',
+          () async {
+            final messages = [
+              LLMMessage(role: LLMRole.user, content: 'What is 2+2?'),
+            ];
+
+            final chunks = await collectStreamWithTimeout(
+              repo.streamChat(
+                chatModel,
+                messages: messages,
+                options: const LLMChatOptions(
+                  think: true,
+                  reasoningEffort: ReasoningEffort.low,
+                ),
+              ),
+              const Duration(seconds: 90),
+            );
+
+            expect(chunks, isNotEmpty);
+            final thinking = extractThinking(chunks);
+            final content = extractContent(chunks);
+            expect(thinking.isNotEmpty || content.isNotEmpty, isTrue);
+          },
+          tags: ['integration'],
+          timeout: const Timeout(Duration(minutes: 2)),
+        );
       });
     },
     skip: reasoningTestsEnabled

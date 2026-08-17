@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-08-17
+
+### Changed
+- Version alignment with `llm_core` 0.3.0 (`ReasoningEffort` available through
+  the re-export); no functional changes.
+
 ## [0.2.0] - 2026-08-12
 
 ### Changed

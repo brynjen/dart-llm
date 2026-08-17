@@ -267,6 +267,7 @@ class GeminiChatRepository extends LLMChatRepository
                     maxOutputTokens: merged.maxOutputTokens,
                     stopSequences: merged.stopSequences,
                     reasoningBudget: merged.reasoningBudget,
+                    reasoningEffort: merged.reasoningEffort,
                   ),
                 ),
           );
@@ -409,6 +410,20 @@ class GeminiChatRepository extends LLMChatRepository
     return 'high';
   }
 
+  /// Maps a portable [ReasoningEffort] onto a `thinking_level` value.
+  ///
+  /// The Interactions API accepts minimal/low/medium/high; the portable
+  /// scale's upper levels clamp to `high`.
+  static String thinkingLevelForEffort(ReasoningEffort effort) =>
+      switch (effort) {
+        ReasoningEffort.none || ReasoningEffort.minimal => 'minimal',
+        ReasoningEffort.low => 'low',
+        ReasoningEffort.medium => 'medium',
+        ReasoningEffort.high ||
+        ReasoningEffort.xhigh ||
+        ReasoningEffort.max => 'high',
+      };
+
   Map<String, String> _headers({required String accept}) {
     return {
       'content-type': 'application/json',
@@ -435,14 +450,17 @@ class GeminiChatRepository extends LLMChatRepository
     }
 
     // Thought summaries are the only way thinking text reaches the client.
-    config['thinking_summaries'] = options.think ? 'auto' : 'off';
+    // The live API accepts 'auto' and 'none' — 'off' is a 400.
+    config['thinking_summaries'] = options.think ? 'auto' : 'none';
     final explicitLevel = options.backendOptions['thinking_level'];
     if (explicitLevel != null) {
       config['thinking_level'] = explicitLevel;
     } else if (options.think) {
-      config['thinking_level'] = thinkingLevelForBudget(
-        options.reasoningBudget,
-      );
+      // Effort-native: an explicit reasoningEffort wins over the
+      // budget-derived level.
+      config['thinking_level'] = options.reasoningEffort != null
+          ? thinkingLevelForEffort(options.reasoningEffort!)
+          : thinkingLevelForBudget(options.reasoningBudget);
     }
 
     final extraConfig = options.backendOptions['generation_config'];
@@ -476,17 +494,16 @@ class GeminiChatRepository extends LLMChatRepository
   ) {
     if (format == null) return null;
     switch (format) {
+      // The steps-based API takes the JSON schema itself as the entry —
+      // `json_object`/`json_schema` wrapper types are rejected with a 400
+      // (verified live 2026-08-17). A bare object type is free-form JSON.
       case JsonFormat():
         return [
-          <String, dynamic>{'type': 'json_object'},
+          <String, dynamic>{'type': 'object'},
         ];
-      case JsonSchemaFormat(:final name, :final schema):
+      case JsonSchemaFormat(:final schema):
         return [
-          <String, dynamic>{
-            'type': 'json_schema',
-            'name': name,
-            'schema': schema,
-          },
+          <String, dynamic>{'type': 'object', ...schema},
         ];
     }
   }

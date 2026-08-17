@@ -128,6 +128,53 @@ void main() {
       final body = await capture('claude-opus-5');
       expect(body.containsKey('thinking'), isFalse);
     });
+
+    test('effort wins over budget on modern models (effort-native)', () async {
+      final body = await capture(
+        'claude-opus-5',
+        options: const LLMChatOptions(
+          think: true,
+          reasoningEffort: ReasoningEffort.high,
+          reasoningBudget: 1000, // would derive 'low'
+        ),
+      );
+      expect((body['output_config'] as Map)['effort'], 'high');
+    });
+
+    test('effort clamps below the API floor on modern models', () async {
+      final body = await capture(
+        'claude-opus-5',
+        options: const LLMChatOptions(
+          think: true,
+          reasoningEffort: ReasoningEffort.minimal,
+        ),
+      );
+      expect((body['output_config'] as Map)['effort'], 'low');
+    });
+
+    test('effort alone converts to budget_tokens on legacy models', () async {
+      final body = await capture(
+        'claude-haiku-4-5',
+        options: const LLMChatOptions(
+          think: true,
+          reasoningEffort: ReasoningEffort.medium,
+          maxOutputTokens: 16000, // headroom for the budget < max_tokens clamp
+        ),
+      );
+      expect((body['thinking'] as Map)['budget_tokens'], 8000);
+    });
+
+    test('budget wins over effort on legacy models (budget-native)', () async {
+      final body = await capture(
+        'claude-haiku-4-5',
+        options: const LLMChatOptions(
+          think: true,
+          reasoningBudget: 1500,
+          reasoningEffort: ReasoningEffort.max,
+        ),
+      );
+      expect((body['thinking'] as Map)['budget_tokens'], 1500);
+    });
   });
 
   group('sampling parameters', () {

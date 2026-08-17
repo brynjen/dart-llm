@@ -17,6 +17,8 @@
 /// is finite and enumerated below.
 library;
 
+import 'package:llm_core/llm_core.dart';
+
 /// The request shape a given Claude model expects.
 enum ClaudeRequestShape {
   /// Claude Opus 4.7+, Sonnet 5, Fable 5, Mythos 5.
@@ -108,3 +110,31 @@ String claudeEffortForBudget(int reasoningBudget) {
   if (reasoningBudget <= 24000) return 'high';
   return 'max';
 }
+
+/// Maps a portable [ReasoningEffort] onto an `output_config.effort` value.
+///
+/// The API accepts low/medium/high/xhigh/max (xhigh model-dependent); the
+/// levels below the API's floor clamp to `low`.
+String claudeEffortWireValue(ReasoningEffort effort) => switch (effort) {
+  ReasoningEffort.none ||
+  ReasoningEffort.minimal ||
+  ReasoningEffort.low => 'low',
+  ReasoningEffort.medium => 'medium',
+  ReasoningEffort.high => 'high',
+  ReasoningEffort.xhigh => 'xhigh',
+  ReasoningEffort.max => 'max',
+};
+
+/// Maps a portable [ReasoningEffort] onto a legacy `budget_tokens` value for
+/// models that predate `output_config.effort`.
+///
+/// The inverse of [claudeEffortForBudget]'s thresholds; the API's minimum
+/// accepted budget is 1024.
+int claudeBudgetForEffort(ReasoningEffort effort) => switch (effort) {
+  ReasoningEffort.none || ReasoningEffort.minimal => 1024,
+  ReasoningEffort.low => 2000,
+  ReasoningEffort.medium => 8000,
+  ReasoningEffort.high => 16000,
+  ReasoningEffort.xhigh => 24000,
+  ReasoningEffort.max => 32000,
+};

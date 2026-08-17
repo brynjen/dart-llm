@@ -54,6 +54,7 @@ export 'src/response_cache.dart';
 export 'src/timeout_config.dart';
 
 // Stream chat options
+export 'src/reasoning_effort.dart';
 export 'src/stream_chat_options.dart';
 
 // Structured output
