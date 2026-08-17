@@ -128,7 +128,10 @@ void _handleInferenceRequest(
       // for cases where llama_chat_apply_template's hard-coded fallback drops
       // the leading BOS that the real Jinja template would emit.
       String? modelTemplateStr;
-      final templatePtr = bindings.llama_model_chat_template(model, ffi.nullptr);
+      final templatePtr = bindings.llama_model_chat_template(
+        model,
+        ffi.nullptr,
+      );
       if (templatePtr.address != 0) {
         try {
           modelTemplateStr = templatePtr.cast<Utf8>().toDartString();
@@ -153,7 +156,8 @@ void _handleInferenceRequest(
       final usingChatTemplate =
           request.messages != null && request.messages!.isNotEmpty;
       final addBosByTokenizer = bindings.llama_vocab_get_add_bos(vocab);
-      final templateRefersToBos = modelTemplateStr != null &&
+      final templateRefersToBos =
+          modelTemplateStr != null &&
           (modelTemplateStr.contains('bos_token') ||
               modelTemplateStr.contains('<|begin_of_text|>') ||
               modelTemplateStr.contains('<|startoftext|>'));
@@ -278,9 +282,7 @@ void _handleInferenceRequest(
         );
       } catch (e) {
         // ignore: avoid_print
-        print(
-          '[inference_isolate_handler] Could not preview tokens: $e',
-        );
+        print('[inference_isolate_handler] Could not preview tokens: $e');
       }
 
       final batch = bindings.llama_batch_get_one(tokensPtr, nTokens);
@@ -304,8 +306,7 @@ void _handleInferenceRequest(
       // `<|im_end|>` as an explicit stop string so generation actually stops
       // at the end of the assistant turn instead of running to maxTokens.
       final effectiveStopTokens = <String>[...request.stopTokens];
-      if (prompt.contains('<|im_end|>') ||
-          prompt.contains('<|im_start|>')) {
+      if (prompt.contains('<|im_end|>') || prompt.contains('<|im_start|>')) {
         if (!effectiveStopTokens.contains('<|im_end|>')) {
           effectiveStopTokens.add('<|im_end|>');
           // ignore: avoid_print

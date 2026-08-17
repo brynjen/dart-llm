@@ -32,9 +32,9 @@ void main() {
         packageRoot: dir.uri,
         relativeInputs: const ['lib/abi.dart'],
       );
-      File(p.join(dir.path, 'lib', 'abi.dart')).writeAsStringSync(
-        'class Foo {} class Bar {}\n',
-      );
+      File(
+        p.join(dir.path, 'lib', 'abi.dart'),
+      ).writeAsStringSync('class Foo {} class Bar {}\n');
       final b = computeAbiFingerprintForTesting(
         packageRoot: dir.uri,
         relativeInputs: const ['lib/abi.dart'],
@@ -42,25 +42,22 @@ void main() {
       expect(a, isNot(equals(b)));
     });
 
-    test(
-      'is invariant to CR (line ending differences across OSes)',
-      () {
-        final dirLf = _makePackage({'lib/abi.dart': 'a\nb\nc\n'});
-        addTearDown(() => dirLf.deleteSync(recursive: true));
-        final dirCrlf = _makePackage({'lib/abi.dart': 'a\r\nb\r\nc\r\n'});
-        addTearDown(() => dirCrlf.deleteSync(recursive: true));
+    test('is invariant to CR (line ending differences across OSes)', () {
+      final dirLf = _makePackage({'lib/abi.dart': 'a\nb\nc\n'});
+      addTearDown(() => dirLf.deleteSync(recursive: true));
+      final dirCrlf = _makePackage({'lib/abi.dart': 'a\r\nb\r\nc\r\n'});
+      addTearDown(() => dirCrlf.deleteSync(recursive: true));
 
-        final lf = computeAbiFingerprintForTesting(
-          packageRoot: dirLf.uri,
-          relativeInputs: const ['lib/abi.dart'],
-        );
-        final crlf = computeAbiFingerprintForTesting(
-          packageRoot: dirCrlf.uri,
-          relativeInputs: const ['lib/abi.dart'],
-        );
-        expect(lf, equals(crlf));
-      },
-    );
+      final lf = computeAbiFingerprintForTesting(
+        packageRoot: dirLf.uri,
+        relativeInputs: const ['lib/abi.dart'],
+      );
+      final crlf = computeAbiFingerprintForTesting(
+        packageRoot: dirCrlf.uri,
+        relativeInputs: const ['lib/abi.dart'],
+      );
+      expect(lf, equals(crlf));
+    });
 
     test('changes when ordering of inputs changes', () {
       final dir = _makePackage({

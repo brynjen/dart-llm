@@ -6,6 +6,9 @@ on:
   pull_request:
     branches: [main, develop]
 
+# Dart SDK is pinned to the version shipped with Flutter stable used for
+# development. GitHub Actions `stable` can be newer (e.g. 3.13) and then
+# `dart format --set-exit-if-changed` fails against locally formatted sources.
 jobs:
   analyze:
     name: Analyze Code
@@ -16,7 +19,7 @@ jobs:
       - name: Setup Dart SDK
         uses: dart-lang/setup-dart@v1
         with:
-          sdk: stable
+          sdk: 3.12.2
       
       - name: Install Melos
         run: dart pub global activate melos
@@ -50,7 +53,7 @@ jobs:
       - name: Setup Dart SDK
         uses: dart-lang/setup-dart@v1
         with:
-          sdk: stable
+          sdk: 3.12.2
       
       - name: Install Melos
         run: dart pub global activate melos
@@ -93,7 +96,7 @@ jobs:
       - name: Setup Dart SDK
         uses: dart-lang/setup-dart@v1
         with:
-          sdk: stable
+          sdk: 3.12.2
       
       - name: Install Melos
         run: dart pub global activate melos
@@ -136,7 +139,7 @@ jobs:
       - name: Setup Dart SDK
         uses: dart-lang/setup-dart@v1
         with:
-          sdk: stable
+          sdk: 3.12.2
       
       - name: Install Melos
         run: dart pub global activate melos
@@ -179,7 +182,7 @@ jobs:
       - name: Setup Dart SDK
         uses: dart-lang/setup-dart@v1
         with:
-          sdk: stable
+          sdk: 3.12.2
 
       - name: Install Melos
         run: dart pub global activate melos
@@ -222,7 +225,7 @@ jobs:
       - name: Setup Dart SDK
         uses: dart-lang/setup-dart@v1
         with:
-          sdk: stable
+          sdk: 3.12.2
 
       - name: Install Melos
         run: dart pub global activate melos
@@ -265,7 +268,7 @@ jobs:
       - name: Setup Dart SDK
         uses: dart-lang/setup-dart@v1
         with:
-          sdk: stable
+          sdk: 3.12.2
 
       - name: Install Melos
         run: dart pub global activate melos
@@ -308,7 +311,7 @@ jobs:
       - name: Setup Flutter SDK
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.35.0'
+          flutter-version: '3.44.8'
           channel: 'stable'
       
       - name: Install Melos
@@ -356,7 +359,7 @@ jobs:
       - name: Setup Dart SDK
         uses: dart-lang/setup-dart@v1
         with:
-          sdk: stable
+          sdk: 3.12.2
       
       - name: Install Melos
         run: dart pub global activate melos

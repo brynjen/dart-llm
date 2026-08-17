@@ -81,16 +81,20 @@ class BackendInitializer {
   /// confirm which backends (CPU / Vulkan / etc.) actually came online.
   static void _logRegisteredBackends(ffi.DynamicLibrary lib) {
     try {
-      final ggmlBackendRegCount = lib.lookupFunction<ffi.Size Function(),
-          int Function()>('ggml_backend_reg_count');
-      final ggmlBackendRegGet = lib.lookupFunction<
-          ffi.Pointer<ffi.Void> Function(ffi.Size),
-          ffi.Pointer<ffi.Void> Function(int)>('ggml_backend_reg_get');
-      final ggmlBackendRegName = lib.lookupFunction<
-          ffi.Pointer<ffi.Char> Function(ffi.Pointer<ffi.Void>),
-          ffi.Pointer<ffi.Char> Function(ffi.Pointer<ffi.Void>)>(
-        'ggml_backend_reg_name',
-      );
+      final ggmlBackendRegCount = lib
+          .lookupFunction<ffi.Size Function(), int Function()>(
+            'ggml_backend_reg_count',
+          );
+      final ggmlBackendRegGet = lib
+          .lookupFunction<
+            ffi.Pointer<ffi.Void> Function(ffi.Size),
+            ffi.Pointer<ffi.Void> Function(int)
+          >('ggml_backend_reg_get');
+      final ggmlBackendRegName = lib
+          .lookupFunction<
+            ffi.Pointer<ffi.Char> Function(ffi.Pointer<ffi.Void>),
+            ffi.Pointer<ffi.Char> Function(ffi.Pointer<ffi.Void>)
+          >('ggml_backend_reg_name');
 
       final count = ggmlBackendRegCount();
       final names = <String>[];
@@ -102,15 +106,11 @@ class BackendInitializer {
         names.add(namePtr.cast<Utf8>().toDartString());
       }
       // ignore: avoid_print
-      print(
-        '[llm_llamacpp] Registered backends ($count): ${names.join(', ')}',
-      );
+      print('[llm_llamacpp] Registered backends ($count): ${names.join(', ')}');
     } catch (e) {
       // Older ggml builds may not expose these helpers. Not fatal.
       // ignore: avoid_print
-      print(
-        '[llm_llamacpp] Could not enumerate registered backends: $e',
-      );
+      print('[llm_llamacpp] Could not enumerate registered backends: $e');
     }
   }
 
