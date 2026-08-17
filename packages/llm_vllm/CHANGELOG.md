@@ -47,6 +47,13 @@ and the pool, plus test hardening across all of them.
 
 ### Added
 
+- `VLLMRepository.describe()` — one-call deployment discovery returning
+  `VLLMDeploymentInfo`: served models with their context window
+  (`VLLMModel.maxModelLen`, newly parsed from `/v1/models`), probed
+  capabilities per model, and the server's accepted request parameters. An
+  unreachable server yields `reachable: false` instead of throwing, so
+  sweeping candidate ports degrades gracefully. See
+  `example/discover_example.dart`.
 - `VLLMPool` gains pool-level `responseCache` and `metrics` (via
   `LLMRepositoryFeatures`), a `capabilitiesForModel` override that OR-folds
   what healthy eligible instances offer, `toolAttempts` forwarding, and a

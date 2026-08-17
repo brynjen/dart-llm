@@ -5,6 +5,56 @@ import 'package:llm_core/llm_core.dart';
 import 'package:llm_vllm/src/dto/vllm_model.dart';
 import 'package:llm_vllm/src/vllm_base_url.dart';
 
+/// A point-in-time description of what a vLLM deployment serves and accepts.
+///
+/// Produced by [VLLMRepository.describe]. When [reachable] is `false`, every
+/// other collection is empty and [error] says why.
+class VLLMDeploymentInfo {
+  const VLLMDeploymentInfo({
+    required this.baseUrl,
+    required this.reachable,
+    this.error,
+    this.models = const [],
+    this.capabilities = const {},
+    this.supportedParams,
+  });
+
+  /// The base URL that was probed.
+  final String baseUrl;
+
+  /// Whether the server answered `/v1/models`.
+  final bool reachable;
+
+  /// The failure that made the server unreachable, when [reachable] is false.
+  final String? error;
+
+  /// The models this deployment serves — for vLLM, one per process — with
+  /// the served context window in [VLLMModel.maxModelLen].
+  final List<VLLMModel> models;
+
+  /// Probed capabilities per served model id (see [resolveCapabilities]).
+  final Map<String, LLMCapabilities> capabilities;
+
+  /// The request parameters this server accepts, or `null` when
+  /// `/openapi.json` is unreadable (see [fetchSupportedParams]).
+  final Set<String>? supportedParams;
+
+  @override
+  String toString() {
+    if (!reachable) {
+      return 'VLLMDeploymentInfo($baseUrl: unreachable — $error)';
+    }
+    final described = models
+        .map(
+          (model) =>
+              '${model.id}'
+              '${model.maxModelLen != null ? ' (${model.maxModelLen} ctx)' : ''}',
+        )
+        .join(', ');
+    return 'VLLMDeploymentInfo($baseUrl: $described)';
+  }
+}
+
 /// Repository for vLLM model/server operations.
 class VLLMRepository {
   VLLMRepository({
@@ -30,6 +80,49 @@ class VLLMRepository {
   /// A client passed in by the caller stays open — its owner disposes it.
   void close() {
     if (_ownsHttpClient) httpClient.close();
+  }
+
+  /// Discovers what this deployment serves and accepts, in one call.
+  ///
+  /// Combines the individual probes: [models] (model ids and served context
+  /// window), [resolveCapabilities] per served model, and
+  /// [fetchSupportedParams]. An unreachable server produces a result with
+  /// `reachable: false` rather than throwing, so a sweep across candidate
+  /// ports degrades gracefully.
+  ///
+  /// ```dart
+  /// final info = await VLLMRepository(baseUrl: url).describe();
+  /// if (info.reachable) {
+  ///   final model = info.models.first;
+  ///   final repo = VLLMChatRepository(
+  ///     baseUrl: url,
+  ///     capabilities: info.capabilities[model.id],
+  ///     supportedParams: info.supportedParams,
+  ///   );
+  /// }
+  /// ```
+  Future<VLLMDeploymentInfo> describe() async {
+    final List<VLLMModel> served;
+    try {
+      served = await models();
+    } on Exception catch (e) {
+      return VLLMDeploymentInfo(
+        baseUrl: baseUrl,
+        reachable: false,
+        error: e.toString(),
+      );
+    }
+
+    final capabilities = <String, LLMCapabilities>{
+      for (final model in served) model.id: await resolveCapabilities(model.id),
+    };
+    return VLLMDeploymentInfo(
+      baseUrl: baseUrl,
+      reachable: true,
+      models: served,
+      capabilities: capabilities,
+      supportedParams: await fetchSupportedParams(),
+    );
   }
 
   /// List models served by vLLM.

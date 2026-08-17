@@ -125,6 +125,7 @@ void main() {
         'owned_by': 'vllm',
         'root': 'Qwen/Qwen3-0.6B',
         'parent': null,
+        'max_model_len': 204800,
       };
 
       final model = VLLMModel.fromJson(json);
@@ -133,7 +134,15 @@ void main() {
       expect(model.name, 'Qwen/Qwen3-0.6B');
       expect(model.created, 1700000000);
       expect(model.ownedBy, 'vllm');
+      expect(model.maxModelLen, 204800);
       expect(model.toJson()['id'], 'Qwen/Qwen3-0.6B');
+      expect(model.toJson()['max_model_len'], 204800);
+    });
+
+    test('maxModelLen is optional', () {
+      final model = VLLMModel.fromJson({'id': 'm', 'object': 'model'});
+      expect(model.maxModelLen, isNull);
+      expect(model.toJson().containsKey('max_model_len'), isFalse);
     });
 
     test('parses model list response', () {

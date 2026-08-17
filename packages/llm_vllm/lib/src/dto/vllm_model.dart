@@ -27,6 +27,7 @@ class VLLMModel {
     this.ownedBy,
     this.root,
     this.parent,
+    this.maxModelLen,
     this.permission,
   });
 
@@ -41,6 +42,13 @@ class VLLMModel {
   final String? ownedBy;
   final String? root;
   final String? parent;
+
+  /// The deployment's context window (`--max-model-len`), in tokens.
+  ///
+  /// A vLLM extension to the OpenAI model object; this is the *served*
+  /// limit, which may be smaller than what the model architecture supports.
+  final int? maxModelLen;
+
   final List<dynamic>? permission;
 
   factory VLLMModel.fromJson(Map<String, dynamic> json) {
@@ -50,6 +58,7 @@ class VLLMModel {
       ownedBy: json['owned_by'] as String?,
       root: json['root'] as String?,
       parent: json['parent'] as String?,
+      maxModelLen: json['max_model_len'] as int?,
       permission: json['permission'] as List<dynamic>?,
     );
   }
@@ -61,9 +70,10 @@ class VLLMModel {
     if (ownedBy != null) 'owned_by': ownedBy,
     if (root != null) 'root': root,
     if (parent != null) 'parent': parent,
+    if (maxModelLen != null) 'max_model_len': maxModelLen,
     if (permission != null) 'permission': permission,
   };
 
   @override
-  String toString() => 'VLLMModel(id: $id)';
+  String toString() => 'VLLMModel(id: $id, maxModelLen: $maxModelLen)';
 }
