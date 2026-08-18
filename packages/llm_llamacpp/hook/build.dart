@@ -63,6 +63,30 @@ const List<String> _androidCoreLibraries = [
 /// their absence is not fatal — runtime will simply fall back to CPU.
 const List<String> _androidOptionalBackendLibraries = ['libggml-vulkan.so'];
 
+/// ggml libraries that every non-Android shared-library build must produce.
+///
+/// The CMake configuration below passes `-DBUILD_SHARED_LIBS=ON`, so llama.cpp
+/// links against separate `ggml` shared libraries instead of absorbing them.
+/// Bundling only the primary library therefore ships an app that cannot
+/// resolve its own dependencies at load time.
+///
+/// Named by *stem* (no `lib` prefix, no extension) because Windows drops the
+/// prefix: `ggml` is `libggml.dylib`, `libggml.so`, or `ggml.dll`.
+const List<String> _desktopCoreLibraryStems = ['ggml', 'ggml-base'];
+
+/// Matches the macOS versioned aliases CMake emits next to the plain name,
+/// e.g. `libggml.0.dylib` and `libggml.0.20.1.dylib` beside `libggml.dylib`.
+///
+/// Only the unversioned name is collected: it is a symlink onto the very same
+/// binary, and it is the name the runtime loaders ask for. Flutter rewrites the
+/// Mach-O install names of everything it bundles (it reads the current install
+/// name with `otool -D`), so emitting the unversioned alias still fixes up
+/// dependents that reference the versioned `@rpath/libggml.0.dylib`.
+///
+/// Linux needs no equivalent: its versioned aliases are `libggml.so.0` and
+/// `libggml.so.0.20.1`, which already fail the `.so` extension test.
+final RegExp _versionedLibraryStemSuffix = RegExp(r'\.\d+(?:\.\d+)*$');
+
 void main(List<String> args) async {
   await build(args, (input, output) async {
     final logger = Logger('')
@@ -277,12 +301,11 @@ Future<List<Uri>?> _tryDownloadPrebuilt(
 
   if (_findEntityNamed(extractDir, libraryName) != null) {
     logger.info('Using cached prebuilt binary bundle');
-    return _collectNativeLibraries(
+    return _collectPrebuiltNativeLibraries(
       targetOS: targetOS,
       targetArch: targetArch,
       libraryName: libraryName,
       bundleDirectory: extractDir,
-      outputDirectory: extractDir,
       logger: logger,
     );
   }
@@ -331,14 +354,45 @@ Future<List<Uri>?> _tryDownloadPrebuilt(
     httpClient.close(force: true);
   }
 
-  return _collectNativeLibraries(
+  return _collectPrebuiltNativeLibraries(
     targetOS: targetOS,
     targetArch: targetArch,
     libraryName: libraryName,
     bundleDirectory: extractDir,
-    outputDirectory: extractDir,
     logger: logger,
   );
+}
+
+/// Collects a downloaded bundle, degrading to a source build when it is
+/// incomplete.
+///
+/// A published bundle can predate a change to what we require (the desktop
+/// bundles released before the ggml libraries were collected are exactly that
+/// case). Treating an incomplete bundle as "no prebuilt available" keeps such a
+/// release from bricking the build: the caller just compiles from source.
+Future<List<Uri>?> _collectPrebuiltNativeLibraries({
+  required OS targetOS,
+  required Architecture targetArch,
+  required String libraryName,
+  required Directory bundleDirectory,
+  required Logger logger,
+}) async {
+  try {
+    return await _collectNativeLibraries(
+      targetOS: targetOS,
+      targetArch: targetArch,
+      libraryName: libraryName,
+      bundleDirectory: bundleDirectory,
+      outputDirectory: bundleDirectory,
+      logger: logger,
+    );
+  } on Exception catch (error) {
+    logger.warning(
+      'Prebuilt bundle in ${bundleDirectory.path} is unusable ($error). '
+      'Falling back to a source build.',
+    );
+    return null;
+  }
 }
 
 Future<List<Uri>> _collectNativeLibraries({
@@ -366,7 +420,198 @@ Future<List<Uri>> _collectNativeLibraries({
       'Missing native library $libraryName in ${bundleDirectory.path}',
     );
   }
-  return <Uri>[library.uri];
+
+  if (targetOS == OS.iOS) {
+    // iOS ships a single `llama.framework` rather than loose shared libraries,
+    // so there are no sibling ggml libraries to collect.
+    return <Uri>[library.uri];
+  }
+
+  return _collectDesktopNativeLibraries(
+    targetOS: targetOS,
+    primaryLibrary: library,
+    logger: logger,
+  );
+}
+
+/// Test helper for macOS/Linux/Windows bundle collection.
+///
+/// Non-private for the same reason as
+/// [collectAndroidNativeLibrariesForTesting]: it lets tests exercise the
+/// selection and ordering rules without a network download or a native build.
+Future<List<Uri>> collectDesktopNativeLibrariesForTesting({
+  required OS targetOS,
+  required Uri bundleDirectory,
+  required String libraryName,
+}) async {
+  final library = _findEntityNamed(
+    Directory.fromUri(bundleDirectory),
+    libraryName,
+  );
+  if (library == null) {
+    throw Exception(
+      'Missing native library $libraryName in ${bundleDirectory.toFilePath()}',
+    );
+  }
+  return _collectDesktopNativeLibraries(
+    targetOS: targetOS,
+    primaryLibrary: library,
+    logger: Logger.detached('llm_llamacpp_test'),
+  );
+}
+
+/// Collects the primary library plus the ggml libraries built alongside it.
+///
+/// `-DBUILD_SHARED_LIBS=ON` splits llama.cpp across `libllama` and a family of
+/// `ggml` libraries, and the primary library carries load commands for each of
+/// them. Emitting only the primary one produces an app bundle that fails to
+/// resolve its dependencies the moment it is run anywhere other than the
+/// machine that built it (the build tree's absolute `LC_RPATH` is the only
+/// reason it appears to work locally).
+///
+/// The returned order mirrors [_collectAndroidNativeLibraries]: primary,
+/// core ggml libraries, CPU backends, then remaining backends. It is fully
+/// deterministic so the emitted asset list does not churn between builds.
+Future<List<Uri>> _collectDesktopNativeLibraries({
+  required OS targetOS,
+  required FileSystemEntity primaryLibrary,
+  required Logger logger,
+}) async {
+  // Search only the directory that produced the primary library. A CMake tree
+  // can hold several copies of the same file name (a host-tools sub-build, for
+  // instance), and the siblings of libllama are the ones it is linked against.
+  final searchDirectory = Directory(p.dirname(primaryLibrary.path));
+
+  final librariesByStem = <String, File>{};
+  final entries = searchDirectory.listSync().whereType<File>().toList()
+    ..sort((a, b) => a.path.compareTo(b.path));
+
+  for (final file in entries) {
+    final stem = _sharedLibraryStem(p.basename(file.path), targetOS);
+    if (stem == null) continue;
+    if (_versionedLibraryStemSuffix.hasMatch(stem)) continue;
+    if (stem != 'ggml' && !stem.startsWith('ggml-')) continue;
+    librariesByStem.putIfAbsent(stem, () => file);
+  }
+
+  final missingCoreLibraries = [
+    for (final stem in _desktopCoreLibraryStems)
+      if (!librariesByStem.containsKey(stem))
+        _sharedLibraryFileName(stem, targetOS),
+  ];
+  if (missingCoreLibraries.isNotEmpty) {
+    throw Exception(
+      'Missing required native libraries next to '
+      '${p.basename(primaryLibrary.path)} in ${searchDirectory.path}: '
+      '${missingCoreLibraries.join(', ')}. llama.cpp is configured with '
+      '-DBUILD_SHARED_LIBS=ON, so these are separate files that must be '
+      'bundled with the primary library.',
+    );
+  }
+
+  final cpuBackendStems =
+      librariesByStem.keys
+          .where((stem) => stem == 'ggml-cpu' || stem.startsWith('ggml-cpu-'))
+          .toList()
+        ..sort();
+  if (cpuBackendStems.isEmpty) {
+    throw Exception(
+      'Missing CPU backend library in ${searchDirectory.path}: '
+      'expected at least one ${_sharedLibraryFileName('ggml-cpu*', targetOS)}',
+    );
+  }
+
+  final optionalBackendStems =
+      librariesByStem.keys
+          .where(
+            (stem) =>
+                !_desktopCoreLibraryStems.contains(stem) &&
+                !cpuBackendStems.contains(stem),
+          )
+          .toList()
+        ..sort();
+  for (final stem in optionalBackendStems) {
+    logger.info(
+      'Including optional backend library: '
+      '${_sharedLibraryFileName(stem, targetOS)}',
+    );
+  }
+
+  Uri dependency(String stem) =>
+      _linkerVisibleLibrary(librariesByStem[stem]!, stem, targetOS).uri;
+
+  return <Uri>[
+    // The primary library keeps its plain name: it is the one the runtime
+    // loaders pass to `DynamicLibrary.open`, not one the linker resolves.
+    primaryLibrary.uri,
+    for (final stem in _desktopCoreLibraryStems) dependency(stem),
+    for (final stem in cpuBackendStems) dependency(stem),
+    for (final stem in optionalBackendStems) dependency(stem),
+  ];
+}
+
+/// Returns the alias of [library] that the dynamic linker will actually ask
+/// for when it resolves a dependency on it.
+///
+/// On ELF platforms the dependent records the *soname* (`libggml.so.0`), not
+/// the development name (`libggml.so`), and nothing rewrites it on the way into
+/// the app bundle — so the soname alias is the file that has to be shipped.
+///
+/// Mach-O needs no equivalent: Flutter reads each bundled dylib's current
+/// install name with `otool -D` and rewrites both it and every reference to it,
+/// so the plain name is bundled and dependents are repointed at it. Windows
+/// DLLs are not versioned at all.
+File _linkerVisibleLibrary(File library, String stem, OS os) {
+  if (os != OS.linux) return library;
+
+  final directory = Directory(p.dirname(library.path));
+  final soname = RegExp(
+    '^${RegExp.escape('lib$stem.so')}\\.\\d+(?:\\.\\d+)*\$',
+  );
+  final aliases =
+      directory
+          .listSync()
+          .whereType<File>()
+          .where((file) => soname.hasMatch(p.basename(file.path)))
+          .toList()
+        // Shortest name first: `libggml.so.0` (the soname) sorts ahead of
+        // `libggml.so.0.20.1` (the fully versioned real file).
+        ..sort((a, b) {
+          final byLength = p
+              .basename(a.path)
+              .length
+              .compareTo(p.basename(b.path).length);
+          return byLength != 0 ? byLength : a.path.compareTo(b.path);
+        });
+
+  return aliases.isEmpty ? library : aliases.first;
+}
+
+/// Shared-library file extension for [os], or `null` if [os] does not use
+/// loose shared libraries.
+String? _sharedLibraryExtension(OS os) => switch (os) {
+  OS.android || OS.linux => '.so',
+  OS.macOS => '.dylib',
+  OS.windows => '.dll',
+  _ => null,
+};
+
+/// Shared libraries carry a `lib` prefix everywhere except Windows.
+String _sharedLibraryPrefix(OS os) => os == OS.windows ? '' : 'lib';
+
+String _sharedLibraryFileName(String stem, OS os) =>
+    '${_sharedLibraryPrefix(os)}$stem${_sharedLibraryExtension(os) ?? ''}';
+
+/// Inverse of [_sharedLibraryFileName]: `libggml-cpu.dylib` -> `ggml-cpu`.
+///
+/// Returns `null` when [basename] is not a shared library for [os], which also
+/// filters out the Linux versioned aliases (`libggml.so.0`).
+String? _sharedLibraryStem(String basename, OS os) {
+  final extension = _sharedLibraryExtension(os);
+  if (extension == null || !basename.endsWith(extension)) return null;
+  final prefix = _sharedLibraryPrefix(os);
+  if (!basename.startsWith(prefix)) return null;
+  return basename.substring(prefix.length, basename.length - extension.length);
 }
 
 /// Test helper for Android bundle collection.
@@ -864,8 +1109,14 @@ Future<List<Uri>?> _buildFromSource(
     );
   }
 
-  final library = _findEntityNamed(buildDir, libraryName);
-  return library == null ? null : [library.uri];
+  return _collectNativeLibraries(
+    targetOS: targetOS,
+    targetArch: targetArch,
+    libraryName: libraryName,
+    bundleDirectory: buildDir,
+    outputDirectory: buildDir,
+    logger: logger,
+  );
 }
 
 List<CodeAsset> codeAssetsForNativeLibrariesForTesting(

@@ -25,8 +25,21 @@ DynamicLibrary loadLibrary() {
     // iOS: Framework is linked statically or via xcframework
     return DynamicLibrary.process();
   } else if (Platform.isMacOS) {
-    // macOS: Dylib is bundled in the app
-    return DynamicLibrary.open('libllama.dylib');
+    // macOS: Flutter bundles every code asset as its own framework, stripping
+    // the `lib` prefix and the `.dylib` extension, so `libllama.dylib` is
+    // installed as `llama.framework/llama` with the install name
+    // `@rpath/llama.framework/llama`. There is no `libllama.dylib` in the app
+    // bundle to open by that name.
+    //
+    // The ggml libraries are bundled the same way, and Flutter rewrites
+    // libllama's references to point at them, so dyld pulls them in on its own
+    // and nothing needs pre-loading here (unlike Android, which loads its CPU
+    // backends dynamically).
+    return _openFirst([
+      '@rpath/llama.framework/llama',
+      // Non-Flutter embeddings put the plain dylib on the loader path.
+      'libllama.dylib',
+    ]);
   } else if (Platform.isWindows) {
     // Windows: DLL is bundled with the app
     return DynamicLibrary.open('llama.dll');
@@ -36,6 +49,21 @@ DynamicLibrary loadLibrary() {
   } else {
     throw UnsupportedError('Unsupported platform: ${Platform.operatingSystem}');
   }
+}
+
+/// Opens the first library that loads, reporting every failure if none do.
+DynamicLibrary _openFirst(List<String> candidates) {
+  final failures = <String>[];
+  for (final candidate in candidates) {
+    try {
+      return DynamicLibrary.open(candidate);
+    } catch (e) {
+      failures.add('  $candidate: $e');
+    }
+  }
+  throw StateError(
+    'Failed to load the llama.cpp library. Tried:\n${failures.join('\n')}',
+  );
 }
 
 /// Pre-load ggml dependency libraries on Android.

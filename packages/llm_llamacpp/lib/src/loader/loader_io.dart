@@ -49,6 +49,7 @@ void _loadDependencies(List<String> llamaPaths) {
       ? [
           'libggml-base.so',
           'libggml-cpu.so',
+          'libggml-blas.so', // BLAS CPU backend (optional)
           'libggml-cuda.so', // NVIDIA GPU (optional)
           'libggml-vulkan.so', // Vulkan GPU (optional)
           'libggml.so',
@@ -57,6 +58,7 @@ void _loadDependencies(List<String> llamaPaths) {
       ? [
           'libggml-base.dylib',
           'libggml-cpu.dylib',
+          'libggml-blas.dylib', // Accelerate BLAS backend (optional)
           'libggml-metal.dylib', // Apple Metal GPU (optional)
           'libggml.dylib',
         ]
@@ -64,6 +66,7 @@ void _loadDependencies(List<String> llamaPaths) {
       ? [
           'ggml-base.dll',
           'ggml-cpu.dll',
+          'ggml-blas.dll', // BLAS CPU backend (optional)
           'ggml-cuda.dll', // NVIDIA GPU (optional)
           'ggml-vulkan.dll', // Vulkan GPU (optional)
           'ggml.dll',
