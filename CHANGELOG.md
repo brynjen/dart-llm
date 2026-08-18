@@ -25,7 +25,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - **llm_core** — `HttpClientHelper.sendStreamingRequest` applies a timeout to `send()` by default; it previously did not.
 - **llm_llamacpp** — native-assets toolchain migrated off 1.x (`hooks ^2.0.0`, `code_assets ^1.2.1`, `ffigen ^21.0.0`), submodule updated to current upstream with bindings regenerated, and `LoraManager` reimplemented on upstream's declarative adapter API.
-- **llm_llamacpp** — the prebuilt native bundle's release version now comes from `pubspec.yaml` on both ends (the build hook and `build-release.yaml`), so it cannot drift. `build-release.yaml` also builds on a push to `main` that changes the version or the FFI bindings, skipping the build when the release already carries assets for that ABI fingerprint.
+- **llm_llamacpp** — the prebuilt native bundle's release version now comes from `pubspec.yaml` on both ends (the build hook and `build-release.yaml`), so it cannot drift. Release tags are bare versions (`0.3.1`). `build-release.yaml` also builds on a push to `main` that changes the version or the FFI bindings, skipping the build when the release already carries assets for that ABI fingerprint.
+- **llm_llamacpp** — the Vulkan release builds install SPIRV-Headers, now required by upstream `ggml-vulkan`. Without it the Linux, Windows and Android arm64 jobs failed at CMake configure, which blocked the whole release.
 - Dependency floors raised: Dart SDK `^3.12.0` (was `^3.8.0`), `http ^1.6.0`, `lints ^6.1.0`, `test ^1.31.0`, `melos ^7.8.0`; Flutter `>=3.44.0`.
 - All packages bumped to `0.3.1`; `llm_core` constraint updated to `^0.3.1` across the backends.
 

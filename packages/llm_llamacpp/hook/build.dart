@@ -68,6 +68,15 @@ String _readNativeBinaryVersion(Uri packageRoot, Logger? logger) {
 /// Path to the package's pubspec, relative to the package root.
 const String _pubspecPath = 'pubspec.yaml';
 
+/// Test-only entry point for [_findSpirvHeadersConfigDir].
+String? findSpirvHeadersConfigDirForTesting({
+  required List<String> searchRoots,
+  String? explicitDir,
+}) => _findSpirvHeadersConfigDir(
+  explicitDir: explicitDir,
+  searchRoots: searchRoots,
+);
+
 /// Test-only entry point for [_readNativeBinaryVersion].
 ///
 /// `test/unit/native_binary_version_test.dart` uses this to assert that the
@@ -821,11 +830,93 @@ bool _androidVulkanEnabled(String abi, Logger logger) {
     return false;
   }
 
+  // `ggml-vulkan` also does `find_package(SPIRV-Headers CONFIG REQUIRED)`, and
+  // the NDK toolchain sets CMAKE_FIND_ROOT_PATH_MODE_PACKAGE=ONLY, so a host
+  // install is invisible unless we point CMake straight at the config. Without
+  // this check a machine with glslc but no SPIRV-Headers fails the configure
+  // outright instead of falling back to CPU-only, which is what the policy
+  // above promises.
+  if (_findSpirvHeadersConfigDir() == null) {
+    if (override == true) {
+      throw Exception(
+        'LLM_LLAMACPP_ANDROID_VULKAN=$raw was set but no SPIRV-Headers CMake '
+        'config was found. Install it (e.g. `apt install spirv-headers`, '
+        '`brew install spirv-headers`) or set SPIRV_HEADERS_DIR to the '
+        'directory holding SPIRV-HeadersConfig.cmake.',
+      );
+    }
+    logger.info(
+      'Vulkan backend not enabled: no SPIRV-Headers CMake config found. '
+      'Building CPU-only. Install spirv-headers (or set SPIRV_HEADERS_DIR) and '
+      'rebuild to enable GPU offload.',
+    );
+    return false;
+  }
+
   logger.info(
-    'Vulkan backend enabled (glslc detected on PATH). '
+    'Vulkan backend enabled (glslc and SPIRV-Headers detected). '
     'Set LLM_LLAMACPP_ANDROID_VULKAN=0 to opt out.',
   );
   return true;
+}
+
+/// Locates the directory holding `SPIRV-HeadersConfig.cmake`.
+///
+/// `SPIRV_HEADERS_DIR` wins if set. Otherwise the usual package-manager
+/// locations are probed, plus `VULKAN_SDK` when the Vulkan SDK is installed.
+/// Returns `null` when nothing is found, which the caller treats as "build
+/// CPU-only" rather than an error.
+String? _findSpirvHeadersConfigDir({
+  String? explicitDir,
+  List<String>? searchRoots,
+}) {
+  const configNames = [
+    'SPIRV-HeadersConfig.cmake',
+    'spirv-headers-config.cmake',
+  ];
+
+  final explicit = explicitDir ?? Platform.environment['SPIRV_HEADERS_DIR'];
+  if (explicit != null && explicit.trim().isNotEmpty) {
+    final dir = explicit.trim();
+    for (final name in configNames) {
+      if (File(p.join(dir, name)).existsSync()) return dir;
+    }
+    // Honour the override even if the file is named unexpectedly; CMake will
+    // produce a clearer error than we can.
+    return Directory(dir).existsSync() ? dir : null;
+  }
+
+  final roots =
+      searchRoots ??
+      <String>[
+        '/usr/share/cmake',
+        '/usr/lib/cmake',
+        '/usr/local/share/cmake',
+        '/usr/local/lib/cmake',
+        '/opt/homebrew/share/cmake',
+        '/opt/homebrew/lib/cmake',
+        if (Platform.environment['VULKAN_SDK'] case final sdk?
+            when sdk.trim().isNotEmpty) ...[
+          p.join(sdk.trim(), 'share', 'cmake'),
+          p.join(sdk.trim(), 'lib', 'cmake'),
+        ],
+      ];
+
+  for (final root in roots) {
+    final dir = Directory(root);
+    if (!dir.existsSync()) continue;
+    // The config normally lives one level down, in a SPIRV-Headers/ directory.
+    for (final entity in dir.listSync(followLinks: false)) {
+      if (entity is! Directory) continue;
+      for (final name in configNames) {
+        if (File(p.join(entity.path, name)).existsSync()) return entity.path;
+      }
+    }
+    for (final name in configNames) {
+      if (File(p.join(root, name)).existsSync()) return root;
+    }
+  }
+  return null;
 }
 
 /// Parses `LLM_LLAMACPP_ANDROID_VULKAN`-style flags. Returns:
@@ -1115,7 +1206,14 @@ Future<List<Uri>?> _buildFromSource(
 
     final vulkanEnabled = _androidVulkanEnabled(abi, logger);
     if (vulkanEnabled) {
-      cmakeArgs.addAll(['-DGGML_VULKAN=ON', '-DGGML_VULKAN_RUN_TESTS=OFF']);
+      cmakeArgs.addAll([
+        '-DGGML_VULKAN=ON',
+        '-DGGML_VULKAN_RUN_TESTS=OFF',
+        // The NDK toolchain would otherwise restrict find_package to the NDK
+        // sysroot, where SPIRV-Headers is not present.
+        '-DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=BOTH',
+        '-DSPIRV-Headers_DIR=${_findSpirvHeadersConfigDir()}',
+      ]);
       logger.info(
         'Vulkan backend enabled for Android $abi. '
         'A host build of vulkan-shaders-gen will be produced as part of the build.',
