@@ -315,10 +315,10 @@ void _handleInferenceRequest(
       final effectiveStopTokens = resolveStopTokens(
         requested: request.stopTokens,
         prompt: prompt,
-        // ignore: avoid_print
-        onDiagnostic: (message) => print(
-          '[inference_isolate_handler] $message',
-        ),
+        onDiagnostic: (message) {
+          // ignore: avoid_print
+          print('[inference_isolate_handler] $message');
+        },
       );
 
       final generatedTokens = _generateTokens(

@@ -57,7 +57,13 @@ dart pub global activate melos
    melos bootstrap
    ```
 
-2. **Verify setup**:
+2. **Enable the repo's git hooks** (formats staged Dart files on commit, so CI's
+   formatting check never fails on you):
+   ```bash
+   git config core.hooksPath .githooks
+   ```
+
+3. **Verify setup**:
    ```bash
    # Run all unit tests
    melos run test:unit
@@ -200,6 +206,11 @@ melos run format
 # Check formatting
 melos run format:check
 ```
+
+With `core.hooksPath` set as above, `.githooks/pre-commit` formats the Dart files
+you staged and re-stages them, so a commit is never unformatted. It stops and
+asks you to intervene if a staged file also has unstaged edits, rather than
+sweeping those into the commit.
 
 ### Linting
 

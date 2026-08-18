@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+# Formats staged Dart files before the commit is created, so CI's
+# `dart format --set-exit-if-changed` can never be the thing that fails.
+#
+# Enable once per clone:
+#   git config core.hooksPath .githooks
+#
+# Only staged .dart files are touched. A file that is staged *and* has unstaged
+# edits cannot be reformatted safely -- `dart format` rewrites the whole
+# working-tree file, and re-staging it would drag those unstaged edits into the
+# commit -- so the hook stops and asks you to handle those yourself.
+#
+# Written for bash 3.2 (macOS /bin/bash): no mapfile, no readarray.
+set -euo pipefail
+
+staged=$(mktemp)
+trap 'rm -f "$staged"' EXIT
+
+git diff --cached --name-only --diff-filter=ACMR -z \
+  | tr '\0' '\n' \
+  | grep -E '\.dart$' > "$staged" || true
+
+[ -s "$staged" ] || exit 0
+
+partial=$(while IFS= read -r f; do
+  [ -n "$f" ] || continue
+  git diff --quiet -- "$f" || printf '%s\n' "$f"
+done < "$staged")
+
+if [ -n "$partial" ]; then
+  echo "pre-commit: staged files that also have unstaged changes:" >&2
+  printf '%s\n' "$partial" | sed 's/^/  /' >&2
+  echo "pre-commit: format and stage these yourself, then commit." >&2
+  exit 1
+fi
+
+# Skip anything staged but no longer on disk.
+present=$(while IFS= read -r f; do
+  [ -n "$f" ] && [ -f "$f" ] && printf '%s\n' "$f"
+done < "$staged")
+
+[ -n "$present" ] || exit 0
+
+changed=$(printf '%s\n' "$present" | tr '\n' '\0' \
+  | xargs -0 dart format --output=none --show=changed 2>/dev/null \
+  | grep -v '^Formatted .* files\? ' || true)
+
+printf '%s\n' "$present" | tr '\n' '\0' | xargs -0 dart format > /dev/null
+printf '%s\n' "$present" | tr '\n' '\0' | xargs -0 git add --
+
+if [ -n "$changed" ]; then
+  echo "pre-commit: reformatted and re-staged:"
+  printf '%s\n' "$changed" | sed 's/^/  /'
+fi

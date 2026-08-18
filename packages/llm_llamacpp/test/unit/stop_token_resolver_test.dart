@@ -9,17 +9,15 @@ void main() {
         '<|start_header_id|>user<|end_header_id|>\nHello<|eot_id|>';
 
     test('detects the ChatML turn-end marker from the rendered template', () {
-      expect(
-        resolveStopTokens(requested: const [], prompt: chatMlPrompt),
-        ['<|im_end|>'],
-      );
+      expect(resolveStopTokens(requested: const [], prompt: chatMlPrompt), [
+        '<|im_end|>',
+      ]);
     });
 
     test('detects the Llama-3 turn-end marker', () {
-      expect(
-        resolveStopTokens(requested: const [], prompt: llama3Prompt),
-        ['<|eot_id|>'],
-      );
+      expect(resolveStopTokens(requested: const [], prompt: llama3Prompt), [
+        '<|eot_id|>',
+      ]);
     });
 
     test('adds nothing for a template with no recognised marker', () {
