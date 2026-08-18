@@ -547,6 +547,26 @@ jobs:
           echo "VULKAN_INCLUDE_DIR=$VULKAN_INCLUDE_DIR" >> "$GITHUB_ENV"
           echo "Vulkan headers: $VULKAN_INCLUDE_DIR (v${VULKAN_VERSION})"
 
+          # ggml-vulkan.cpp also includes <spirv/unified1/spirv.hpp>, and unlike
+          # the Vulkan headers it does NOT arrive through a CMake target: the
+          # ggml-vulkan target links Vulkan::Vulkan (so Vulkan_INCLUDE_DIR above
+          # reaches the compile) but nothing links SPIRV-Headers::SPIRV-Headers.
+          # Upstream simply relies on the header sitting on the compiler's
+          # default include path, which holds on Linux and with the Windows SDK
+          # but not inside an NDK sysroot. So put it there ourselves.
+          #
+          # Cloned rather than reusing the host /usr/include, so only spirv/ is
+          # added to a cross-compile instead of the whole host header tree.
+          git clone --depth 1 --branch "vulkan-sdk-${VULKAN_VERSION}.0" \
+            https://github.com/KhronosGroup/SPIRV-Headers.git "$RUNNER_TEMP/spirv-headers-src"
+          SPIRV_INCLUDE_DIR="$RUNNER_TEMP/spirv-headers-src/include"
+          if [[ ! -f "$SPIRV_INCLUDE_DIR/spirv/unified1/spirv.hpp" ]]; then
+            echo "::error::spirv.hpp missing from SPIRV-Headers vulkan-sdk-${VULKAN_VERSION}.0"
+            exit 1
+          fi
+          echo "SPIRV_INCLUDE_DIR=$SPIRV_INCLUDE_DIR" >> "$GITHUB_ENV"
+          echo "SPIR-V headers: $SPIRV_INCLUDE_DIR"
+
       - name: Build llama.cpp for Android arm64
         run: |
           mkdir -p build-android-arm64
@@ -577,7 +597,8 @@ jobs:
             -DGGML_VULKAN_RUN_TESTS=OFF \
             -DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=BOTH \
             -DSPIRV-Headers_DIR="${SPIRV_HEADERS_DIR}" \
-            -DVulkan_INCLUDE_DIR="${VULKAN_INCLUDE_DIR}"
+            -DVulkan_INCLUDE_DIR="${VULKAN_INCLUDE_DIR}" \
+            -DCMAKE_CXX_FLAGS="-isystem ${SPIRV_INCLUDE_DIR}"
           
           cmake --build . --config Release -j$(nproc)
 
