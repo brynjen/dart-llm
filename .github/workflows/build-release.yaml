@@ -58,6 +58,10 @@ on:
 
 env:
   LLAMA_CPP_DIR: packages/llm_llamacpp/llamacpp
+  # Vulkan header line, shared by every job that compiles ggml-vulkan.cpp:
+  # Windows installs this LunarG SDK, Android cross-compiles against the
+  # matching Vulkan-Headers tag. Keeping one value avoids the two drifting.
+  VULKAN_VERSION: 1.4.357
 
 jobs:
   # ============================================
@@ -409,7 +413,7 @@ jobs:
           # REQUIRED)` and ships no SPIRV-Headers CMake config, so the configure
           # step failed even with VULKAN_SDK set. Track the version upstream
           # llama.cpp uses in its own Vulkan CI, and its installer filename.
-          $vulkanVersion = "1.4.357.0"
+          $vulkanVersion = "${env:VULKAN_VERSION}.0"
           $vulkanUrl = "https://sdk.lunarg.com/sdk/download/${vulkanVersion}/windows/vulkansdk-windows-X64-${vulkanVersion}.exe"
 
           Write-Host "Downloading Vulkan SDK ${vulkanVersion}..."
@@ -524,6 +528,25 @@ jobs:
           echo "SPIRV_HEADERS_DIR=$SPIRV_HEADERS_DIR" >> "$GITHUB_ENV"
           echo "SPIRV-Headers CMake config: $SPIRV_HEADERS_DIR"
 
+          # The NDK sysroot ships Vulkan's C headers only (vulkan.h,
+          # vulkan_core.h at VK_HEADER_VERSION 237) and no vulkan.hpp, but
+          # ggml-vulkan.cpp includes the C++ bindings. Supply a complete,
+          # version-matched header set and point FindVulkan at it, so the C and
+          # C++ headers come from the same release rather than being mixed.
+          #
+          # Safe despite being newer than the NDK's loader stub: ggml-vulkan
+          # sets VULKAN_HPP_DISPATCH_LOADER_DYNAMIC, so entry points resolve
+          # through vkGetInstanceProcAddr at runtime instead of being linked.
+          git clone --depth 1 --branch "v${VULKAN_VERSION}" \
+            https://github.com/KhronosGroup/Vulkan-Headers.git "$RUNNER_TEMP/vulkan-headers"
+          VULKAN_INCLUDE_DIR="$RUNNER_TEMP/vulkan-headers/include"
+          if [[ ! -f "$VULKAN_INCLUDE_DIR/vulkan/vulkan.hpp" ]]; then
+            echo "::error::vulkan.hpp missing from Vulkan-Headers v${VULKAN_VERSION}"
+            exit 1
+          fi
+          echo "VULKAN_INCLUDE_DIR=$VULKAN_INCLUDE_DIR" >> "$GITHUB_ENV"
+          echo "Vulkan headers: $VULKAN_INCLUDE_DIR (v${VULKAN_VERSION})"
+
       - name: Build llama.cpp for Android arm64
         run: |
           mkdir -p build-android-arm64
@@ -553,7 +576,8 @@ jobs:
             -DGGML_VULKAN=ON \
             -DGGML_VULKAN_RUN_TESTS=OFF \
             -DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=BOTH \
-            -DSPIRV-Headers_DIR="${SPIRV_HEADERS_DIR}"
+            -DSPIRV-Headers_DIR="${SPIRV_HEADERS_DIR}" \
+            -DVulkan_INCLUDE_DIR="${VULKAN_INCLUDE_DIR}"
           
           cmake --build . --config Release -j$(nproc)
 
