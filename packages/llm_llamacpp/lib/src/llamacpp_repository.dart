@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:http/http.dart' as http;
+import 'package:llm_core/llm_core.dart' show createLLMHttpClient;
 
 import 'package:llm_llamacpp/src/backend_info.dart';
 import 'package:llm_llamacpp/src/bindings/llama_bindings.dart';
@@ -59,9 +60,8 @@ export 'model_loader.dart' show LlamaCppModelLoader;
 /// }
 /// ```
 class LlamaCppRepository {
-  LlamaCppRepository({http.Client? httpClient, String? llamaCppPath})
-    : _httpClient = httpClient ?? http.Client(),
-      _llamaCppPath = llamaCppPath {
+  LlamaCppRepository({http.Client? httpClient, this._llamaCppPath})
+    : _httpClient = httpClient ?? createLLMHttpClient() {
     _loader = LlamaCppModelLoader();
     _discovery = LlamaCppModelDiscovery();
     _hfClient = HuggingFaceClient(

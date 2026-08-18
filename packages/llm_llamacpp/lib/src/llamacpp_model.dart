@@ -11,10 +11,9 @@ import 'package:llm_llamacpp/src/bindings/llama_bindings.dart';
 class LlamaCppModel {
   LlamaCppModel._({
     required this.path,
-    required ffi.Pointer<llama_model> modelPtr,
-    required LlamaBindings bindings,
-  }) : _modelPtr = modelPtr,
-       _bindings = bindings;
+    required this._modelPtr,
+    required this._bindings,
+  });
 
   /// The path to the GGUF model file.
   final String path;
@@ -41,43 +40,43 @@ class LlamaCppModel {
   /// Gets the vocabulary size.
   int get vocabSize {
     _checkNotDisposed();
-    return _bindings.llama_n_vocab(vocab);
+    return _bindings.llama_vocab_n_tokens(vocab);
   }
 
   /// Gets the training context size.
   int get contextSizeTrain {
     _checkNotDisposed();
-    return _bindings.llama_n_ctx_train(_modelPtr);
+    return _bindings.llama_model_n_ctx_train(_modelPtr);
   }
 
   /// Gets the embedding dimension.
   int get embeddingSize {
     _checkNotDisposed();
-    return _bindings.llama_n_embd(_modelPtr);
+    return _bindings.llama_model_n_embd(_modelPtr);
   }
 
   /// Gets the beginning-of-sequence token.
   int get bosToken {
     _checkNotDisposed();
-    return _bindings.llama_token_bos(vocab);
+    return _bindings.llama_vocab_bos(vocab);
   }
 
   /// Gets the end-of-sequence token.
   int get eosToken {
     _checkNotDisposed();
-    return _bindings.llama_token_eos(vocab);
+    return _bindings.llama_vocab_eos(vocab);
   }
 
   /// Gets the newline token.
   int get nlToken {
     _checkNotDisposed();
-    return _bindings.llama_token_nl(vocab);
+    return _bindings.llama_vocab_nl(vocab);
   }
 
   /// Gets the padding token.
   int get padToken {
     _checkNotDisposed();
-    return _bindings.llama_token_pad(vocab);
+    return _bindings.llama_vocab_pad(vocab);
   }
 
   /// Checks if a token is an end-of-generation token.
@@ -95,7 +94,7 @@ class LlamaCppModel {
   /// Releases the model resources.
   void dispose() {
     if (!_disposed) {
-      _bindings.llama_free_model(_modelPtr);
+      _bindings.llama_model_free(_modelPtr);
       _disposed = true;
     }
   }
@@ -150,13 +149,20 @@ class LlamaCppModel {
 
     final params = bindings.llama_model_default_params();
     params.n_gpu_layers = nGpuLayers;
-    params.use_mmap = useMemoryMap;
-    params.use_mlock = useMemoryLock;
+    // Upstream llama.cpp replaced the `use_mmap` / `use_direct_io` / `use_mlock`
+    // booleans with a single `load_mode` enum. Map our (unchanged) public bool
+    // options onto it so callers are unaffected.
+    params.load_mode = switch ((useMemoryMap, useMemoryLock)) {
+      (true, true) => llama_load_mode.LLAMA_LOAD_MODE_MMAP_MLOCK,
+      (true, false) => llama_load_mode.LLAMA_LOAD_MODE_MMAP,
+      (false, true) => llama_load_mode.LLAMA_LOAD_MODE_MLOCK,
+      (false, false) => llama_load_mode.LLAMA_LOAD_MODE_NONE,
+    };
     params.vocab_only = vocabOnly;
 
     final pathPtr = path.toNativeUtf8();
     try {
-      final modelPtr = bindings.llama_load_model_from_file(
+      final modelPtr = bindings.llama_model_load_from_file(
         pathPtr.cast(),
         params,
       );

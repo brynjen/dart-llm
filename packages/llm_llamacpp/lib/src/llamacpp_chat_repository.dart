@@ -52,11 +52,9 @@ class LlamaCppChatRepository extends LLMChatRepository {
     this.threads,
     this.nGpuLayers = 0,
     this.maxToolAttempts = 90,
-    String? loraPath,
-    double loraScale = 1.0,
-  }) : _loraPath = loraPath,
-       _loraScale = loraScale,
-       _ownsModel = true;
+    this._loraPath,
+    this._loraScale = 1.0,
+  }) : _ownsModel = true;
 
   LlamaCppChatRepository.withModel(
     LlamaCppModel model,
@@ -66,13 +64,11 @@ class LlamaCppChatRepository extends LLMChatRepository {
     this.threads,
     this.nGpuLayers = 0,
     this.maxToolAttempts = 90,
-    String? loraPath,
-    double loraScale = 1.0,
+    this._loraPath,
+    this._loraScale = 1.0,
   }) : _model = model,
        _bindings = bindings,
        _backendInitialized = true,
-       _loraPath = loraPath,
-       _loraScale = loraScale,
        _ownsModel = false;
 
   LlamaCppChatRepository.withModelPath(
@@ -82,11 +78,9 @@ class LlamaCppChatRepository extends LLMChatRepository {
     this.threads,
     this.nGpuLayers = 0,
     this.maxToolAttempts = 90,
-    String? loraPath,
-    double loraScale = 1.0,
+    this._loraPath,
+    this._loraScale = 1.0,
   }) : _modelPath = modelPath,
-       _loraPath = loraPath,
-       _loraScale = loraScale,
        _ownsModel = false;
 
   /// The context size (number of tokens).

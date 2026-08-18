@@ -26,11 +26,7 @@ String _textDelta(String text, {int index = 0}) => _sseLine({
 String _completed({Map<String, dynamic>? usage, String status = 'completed'}) =>
     _sseLine({
       'event_type': 'interaction.completed',
-      'interaction': {
-        'id': 'int_1',
-        'status': status,
-        if (usage != null) 'usage': usage,
-      },
+      'interaction': {'id': 'int_1', 'status': status, 'usage': ?usage},
     });
 
 void main() {

@@ -68,6 +68,8 @@ export 'src/llm_metrics.dart';
 
 // HTTP client utilities
 export 'src/http_client_utils.dart';
+export 'src/http_client_factory.dart';
+export 'src/write_gated_http_client.dart';
 
 // Tool execution
 export 'src/tool_executor.dart';

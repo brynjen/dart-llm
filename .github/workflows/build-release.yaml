@@ -129,6 +129,9 @@ jobs:
             -DLLAMA_BUILD_EXAMPLES=OFF \
             -DLLAMA_BUILD_SERVER=OFF \
             -DLLAMA_BUILD_TOOLS=OFF \
+            -DLLAMA_BUILD_APP=OFF \
+            -DLLAMA_BUILD_COMMON=OFF \
+            -DLLAMA_BUILD_UI=OFF \
             -DLLAMA_CURL=OFF \
             -DGGML_CUDA=ON \
             -DGGML_VULKAN=ON
@@ -197,6 +200,9 @@ jobs:
             -DLLAMA_BUILD_EXAMPLES=OFF \
             -DLLAMA_BUILD_SERVER=OFF \
             -DLLAMA_BUILD_TOOLS=OFF \
+            -DLLAMA_BUILD_APP=OFF \
+            -DLLAMA_BUILD_COMMON=OFF \
+            -DLLAMA_BUILD_UI=OFF \
             -DLLAMA_CURL=OFF \
             -DGGML_METAL=ON \
             -DGGML_METAL_EMBED_LIBRARY=ON
@@ -259,6 +265,9 @@ jobs:
             -DLLAMA_BUILD_EXAMPLES=OFF \
             -DLLAMA_BUILD_SERVER=OFF \
             -DLLAMA_BUILD_TOOLS=OFF \
+            -DLLAMA_BUILD_APP=OFF \
+            -DLLAMA_BUILD_COMMON=OFF \
+            -DLLAMA_BUILD_UI=OFF \
             -DLLAMA_CURL=OFF \
             -DGGML_NATIVE=OFF \
             -DGGML_METAL=OFF \
@@ -333,6 +342,9 @@ jobs:
             -DLLAMA_BUILD_EXAMPLES=OFF `
             -DLLAMA_BUILD_SERVER=OFF `
             -DLLAMA_BUILD_TOOLS=OFF `
+            -DLLAMA_BUILD_APP=OFF `
+            -DLLAMA_BUILD_COMMON=OFF `
+            -DLLAMA_BUILD_UI=OFF `
             -DLLAMA_CURL=OFF `
             -DGGML_CUDA=OFF `
             -DGGML_VULKAN=ON
@@ -413,6 +425,9 @@ jobs:
             -DLLAMA_BUILD_EXAMPLES=OFF \
             -DLLAMA_BUILD_SERVER=OFF \
             -DLLAMA_BUILD_TOOLS=OFF \
+            -DLLAMA_BUILD_APP=OFF \
+            -DLLAMA_BUILD_COMMON=OFF \
+            -DLLAMA_BUILD_UI=OFF \
             -DLLAMA_CURL=OFF \
             -DGGML_NATIVE=OFF \
             -DGGML_LLAMAFILE=OFF \
@@ -508,6 +523,9 @@ jobs:
             -DLLAMA_BUILD_EXAMPLES=OFF \
             -DLLAMA_BUILD_SERVER=OFF \
             -DLLAMA_BUILD_TOOLS=OFF \
+            -DLLAMA_BUILD_APP=OFF \
+            -DLLAMA_BUILD_COMMON=OFF \
+            -DLLAMA_BUILD_UI=OFF \
             -DLLAMA_CURL=OFF \
             -DGGML_NATIVE=OFF \
             -DGGML_LLAMAFILE=OFF \
@@ -590,6 +608,9 @@ jobs:
             -DLLAMA_BUILD_EXAMPLES=OFF \
             -DLLAMA_BUILD_SERVER=OFF \
             -DLLAMA_BUILD_TOOLS=OFF \
+            -DLLAMA_BUILD_APP=OFF \
+            -DLLAMA_BUILD_COMMON=OFF \
+            -DLLAMA_BUILD_UI=OFF \
             -DLLAMA_CURL=OFF \
             -DGGML_NATIVE=OFF \
             -DGGML_LLAMAFILE=OFF \
@@ -661,6 +682,9 @@ jobs:
             -DLLAMA_BUILD_EXAMPLES=OFF \
             -DLLAMA_BUILD_SERVER=OFF \
             -DLLAMA_BUILD_TOOLS=OFF \
+            -DLLAMA_BUILD_APP=OFF \
+            -DLLAMA_BUILD_COMMON=OFF \
+            -DLLAMA_BUILD_UI=OFF \
             -DLLAMA_CURL=OFF \
             -DGGML_METAL=ON \
             -DGGML_METAL_EMBED_LIBRARY=ON

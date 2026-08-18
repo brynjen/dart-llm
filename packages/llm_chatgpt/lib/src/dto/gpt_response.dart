@@ -27,11 +27,7 @@ class GPTResponse extends LLMResponse {
            totalTokens: usage.totalTokens,
            reasoningTokens: usage.reasoningTokens,
          ),
-         providerMetadata: {
-           'id': id,
-           if (systemFingerprint != null)
-             'system_fingerprint': systemFingerprint,
-         },
+         providerMetadata: {'id': id, 'system_fingerprint': ?systemFingerprint},
          toolCalls: choices[0].message.toolCalls?.toLLMToolCalls,
        );
 

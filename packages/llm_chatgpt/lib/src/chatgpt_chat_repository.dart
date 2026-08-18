@@ -47,7 +47,8 @@ class ChatGPTChatRepository extends LLMChatRepository
          rateLimiter: rateLimiter,
          responseCache: responseCache,
          metrics: metrics,
-         httpClient: httpClient ?? http.Client(),
+         httpClient:
+             httpClient ?? createLLMHttpClient(timeoutConfig: timeoutConfig),
          ownsHttpClient: httpClient == null,
        );
 
@@ -58,12 +59,11 @@ class ChatGPTChatRepository extends LLMChatRepository
     required this.retryConfig,
     required this.timeoutConfig,
     required this.httpClient,
-    required bool ownsHttpClient,
+    required this._ownsHttpClient,
     RateLimiter? rateLimiter,
     this.responseCache,
     this.metrics,
-  }) : _ownsHttpClient = ownsHttpClient,
-       _rateLimiter = rateLimiter?.enabled == true
+  }) : _rateLimiter = rateLimiter?.enabled == true
            ? TokenBucketRateLimiter(rateLimiter!)
            : null,
        _httpHelper = HttpClientHelper(

@@ -27,11 +27,19 @@ class OllamaStreamConverter {
             .transform(utf8.decoder)
             .timeout(
               readTimeout,
+              // The error must be pushed into the sink, not thrown. `onTimeout`
+              // runs from a timer, outside the stream's own error path, so a
+              // throw here escapes as an unhandled exception and takes the
+              // isolate down instead of failing this one request.
               onTimeout: (sink) {
-                throw TimeoutException(
-                  'Stream read timed out after ${readTimeout.inSeconds} seconds',
-                  readTimeout,
+                sink.addError(
+                  TimeoutException(
+                    'Stream read timed out after ${readTimeout.inSeconds} '
+                    'seconds',
+                    readTimeout,
+                  ),
                 );
+                sink.close();
               },
             )) {
       carryBuffer.write(chunk);

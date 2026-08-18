@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:llm_core/llm_core.dart';
 import 'package:llm_vllm/src/dto/vllm_chunk.dart';
+import 'package:llm_vllm/src/vllm_trace.dart';
 import 'package:llm_vllm/src/dto/vllm_tool_call.dart';
 
 /// Converts vLLM OpenAI-compatible SSE streaming responses to LLM chunks.
@@ -14,6 +15,7 @@ class VLLMStreamConverter {
   static Stream<LLMChunk> toLLMStream(
     http.StreamedResponse response, {
     TimeoutConfig? timeoutConfig,
+    int traceId = 0,
   }) async* {
     final config = timeoutConfig ?? TimeoutConfig.defaultConfig;
     final readTimeout = config.readTimeout;
@@ -34,17 +36,26 @@ class VLLMStreamConverter {
         ? null
         : DateTime.now().add(totalTimeout);
 
+    var traceChunks = 0;
+    vllmTrace(traceId, 'stream.read.begin');
     await for (final chunk
         in response.stream
             .transform(utf8.decoder)
             .timeout(
               readTimeout,
+              // The error must be pushed into the sink, not thrown. `onTimeout`
+              // runs from a timer, outside the stream's own error path, so a
+              // throw here escapes as an unhandled exception and takes the
+              // isolate down instead of failing this one request.
               onTimeout: (sink) {
-                throw TimeoutException(
-                  'Stream read timed out after ${readTimeout.inSeconds} seconds '
-                  'without receiving data',
-                  readTimeout,
+                sink.addError(
+                  TimeoutException(
+                    'Stream read timed out after ${readTimeout.inSeconds} '
+                    'seconds without receiving data',
+                    readTimeout,
+                  ),
                 );
+                sink.close();
               },
             )) {
       if (deadline != null && DateTime.now().isAfter(deadline)) {
@@ -56,6 +67,8 @@ class VLLMStreamConverter {
           totalTimeout,
         );
       }
+      traceChunks++;
+      if (traceChunks == 1) vllmTrace(traceId, 'stream.firstByte');
       lineBuffer.write(chunk);
       final lines = lineBuffer.toString().split('\n');
       lineBuffer
@@ -73,6 +86,7 @@ class VLLMStreamConverter {
           continue;
         }
         if (data == '[DONE]') {
+          vllmTrace(traceId, 'stream.done', 'chunks=$traceChunks');
           final carryChunk = _flushCarry(thinkingSplitter, lastChunk);
           if (carryChunk != null) yield carryChunk;
           return;

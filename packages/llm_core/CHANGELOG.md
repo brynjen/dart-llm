@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Streaming requests are no longer built with `StreamedRequest`. Every caller passes a fully-materialised body, so `sendStreamingRequest` now uses `http.Request` + `bodyBytes`: `package:http` reports the content length and `dart:io` writes the body as part of `send()`, instead of negotiating chunked encoding and then retracting it via a hand-set `content-length` header.
+- `RetryUtil.executeWithRetry` warns on every retry (via `RetryUtil.logger`) and accepts an `onRetry` callback. A request that wedged for a full timeout and then succeeded on retry previously surfaced as latency and nothing else.
+
+### Added
+- `createLLMHttpClient()` — the default HTTP client for all backends. Applies `TimeoutConfig.connectionTimeout` (previously never used anywhere), bounds the pool per host (default 64, configurable via `maxConnectionsPerHost`), and drops the idle timeout to 3s so the client, not the server, retires idle connections. Falls back to a plain `http.Client` on web.
+- `WriteGatedHttpClient` and `createLLMHttpClient(maxConcurrentWrites: ...)` — a counting semaphore bounds how many requests may be in their connect+request-write phase at once (default 4 on macOS/iOS only; excess requests queue, slots release the moment the body reaches the kernel, streaming responses are never limited, no timers involved). Works around a Dart VM defect in the macOS kqueue event handler: sockets opened and written in the same instant can lose their writable event, so the request bytes never leave the process — no error, connection ESTABLISHED on both ends. Root-caused with kernel counters on both ends and a raw-`Socket` repro; Linux is unaffected. Bounded admission matches httpx/aiohttp/LiteLLM practice; a per-request write watchdog additionally aborts any residual stall as a retryable `TimeoutException`. Requires `http >= 1.5.0` (abort support). See `llm_vllm`'s `BUG-concurrent-send-stall.md`.
+
+### Changed
+- Dependency floors raised: Dart SDK `^3.12.0` (was `^3.8.0`), `http ^1.6.0`; dev deps refreshed (`lints ^6.1.0`, `test ^1.31.0`) and new lint findings fixed (null-aware elements, private named initializing formals).
+- **Behaviour change:** `HttpClientHelper.sendStreamingRequest`'s `applyTimeoutToSend` now defaults to `true`. It previously defaulted to `false`, which returned an entirely untimed `send()` — a request that wedged before response headers arrived never recovered.
+
+
 ## [0.3.0] - 2026-08-17
 
 ### Added

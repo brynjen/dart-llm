@@ -13,7 +13,7 @@ void _handleInferenceRequest(
     modelParams.n_gpu_layers = request.nGpuLayers;
 
     final modelPathPtr = request.modelPath.toNativeUtf8();
-    final model = bindings.llama_load_model_from_file(
+    final model = bindings.llama_model_load_from_file(
       modelPathPtr.cast(),
       modelParams,
     );
@@ -38,7 +38,7 @@ void _handleInferenceRequest(
       calloc.free(loraPathPtr);
 
       if (loraAdapter.address == 0) {
-        bindings.llama_free_model(model);
+        bindings.llama_model_free(model);
         mainSendPort.send(
           _IsolateResponse(
             requestId: request.requestId,
@@ -85,12 +85,12 @@ void _handleInferenceRequest(
       ctxParams.n_threads_batch = request.threads!;
     }
 
-    final ctx = bindings.llama_new_context_with_model(model, ctxParams);
+    final ctx = bindings.llama_init_from_model(model, ctxParams);
     if (ctx.address == 0) {
       if (loraAdapter != null) {
         bindings.llama_adapter_lora_free(loraAdapter);
       }
-      bindings.llama_free_model(model);
+      bindings.llama_model_free(model);
       mainSendPort.send(
         _IsolateResponse(
           requestId: request.requestId,
@@ -102,7 +102,8 @@ void _handleInferenceRequest(
     }
 
     if (loraAdapter != null) {
-      final result = bindings.llama_set_adapter_lora(
+      final result = setSingleContextLoraAdapter(
+        bindings,
         ctx,
         loraAdapter,
         request.loraScale,
@@ -110,7 +111,7 @@ void _handleInferenceRequest(
       if (result != 0) {
         bindings.llama_free(ctx);
         bindings.llama_adapter_lora_free(loraAdapter);
-        bindings.llama_free_model(model);
+        bindings.llama_model_free(model);
         mainSendPort.send(
           _IsolateResponse(
             requestId: request.requestId,
@@ -298,7 +299,11 @@ void _handleInferenceRequest(
         return;
       }
 
-      final sampler = _configureSampler(bindings, request.options);
+      final sampler = _configureSampler(
+        bindings,
+        request.options,
+        bindings.llama_vocab_n_tokens(bindings.llama_model_get_vocab(model)),
+      );
 
       // Many models use ChatML-style turn boundaries (`<|im_end|>`) but ship
       // GGUFs where llama_vocab_is_eog only flags the model-level EOS token.
@@ -350,11 +355,11 @@ void _handleInferenceRequest(
       );
     } finally {
       if (loraAdapter != null) {
-        bindings.llama_clear_adapter_lora(ctx);
+        clearContextLoraAdapters(bindings, ctx);
         bindings.llama_adapter_lora_free(loraAdapter);
       }
       bindings.llama_free(ctx);
-      bindings.llama_free_model(model);
+      bindings.llama_model_free(model);
     }
   } catch (e) {
     mainSendPort.send(

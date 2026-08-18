@@ -46,7 +46,8 @@ class OllamaChatRepository extends LLMChatRepository
          rateLimiter: rateLimiter,
          responseCache: responseCache,
          metrics: metrics,
-         httpClient: httpClient ?? http.Client(),
+         httpClient:
+             httpClient ?? createLLMHttpClient(timeoutConfig: timeoutConfig),
          ownsHttpClient: httpClient == null,
        );
 
@@ -56,12 +57,11 @@ class OllamaChatRepository extends LLMChatRepository
     required this.retryConfig,
     required this.timeoutConfig,
     required this.httpClient,
-    required bool ownsHttpClient,
+    required this._ownsHttpClient,
     RateLimiter? rateLimiter,
     this.responseCache,
     this.metrics,
-  }) : _ownsHttpClient = ownsHttpClient,
-       _rateLimiter = rateLimiter?.enabled == true
+  }) : _rateLimiter = rateLimiter?.enabled == true
            ? TokenBucketRateLimiter(rateLimiter!)
            : null,
        _httpHelper = HttpClientHelper(
@@ -178,7 +178,6 @@ class OllamaChatRepository extends LLMChatRepository
           uri: uri,
           headers: {'content-type': 'application/json'},
           body: utf8.encode(json.encode(body)),
-          applyTimeoutToSend: false, // Timeout applied when reading stream
           timeout: merged.timeout,
         ),
         config: effectiveRetryConfig,
@@ -282,7 +281,7 @@ class OllamaChatRepository extends LLMChatRepository
       'model': model,
       'input': messages,
       if (filteredOptions.isNotEmpty) 'options': filteredOptions,
-      if (keepAlive != null) 'keep_alive': keepAlive,
+      'keep_alive': ?keepAlive,
     };
     final response = await RateLimiterUtil.executeWithRateLimit(
       rateLimiter: _rateLimiter,

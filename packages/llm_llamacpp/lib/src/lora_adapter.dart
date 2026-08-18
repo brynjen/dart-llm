@@ -26,10 +26,9 @@ import 'package:llm_llamacpp/src/llamacpp_model.dart';
 class LlamaLoraAdapter {
   LlamaLoraAdapter._({
     required this.path,
-    required Pointer<llama_adapter_lora> pointer,
-    required LlamaBindings bindings,
-  }) : _pointer = pointer,
-       _bindings = bindings;
+    required this._pointer,
+    required this._bindings,
+  });
 
   /// Path to the LoRA adapter file.
   final String path;
@@ -208,6 +207,18 @@ class LoraManager {
   // LoRA pool: path -> (adapter, refCount)
   final Map<String, (LlamaLoraAdapter, int)> _loraPool = {};
 
+  /// The LoRA set currently applied to each context, keyed by context address.
+  ///
+  /// Upstream llama.cpp replaced the incremental `llama_set_adapter_lora` /
+  /// `llama_rm_adapter_lora` / `llama_clear_adapter_lora` trio with a single
+  /// declarative `llama_set_adapters_lora`, which replaces a context's entire
+  /// adapter set on every call. To keep offering incremental add/remove we have
+  /// to track what is applied and re-send the whole list after each mutation.
+  ///
+  /// Insertion order is preserved so adapters are re-applied in the order they
+  /// were added.
+  final Map<int, List<(LlamaLoraAdapter, double)>> _activeLoras = {};
+
   /// Load a LoRA adapter from file.
   ///
   /// [path] - Path to the LoRA GGUF file.
@@ -253,6 +264,36 @@ class LoraManager {
     }
   }
 
+  /// Pushes the tracked adapter set for [ctx] down to llama.cpp.
+  ///
+  /// Returns 0 on success, negative on error.
+  int _syncAdapters(Pointer<llama_context> ctx) {
+    final active = _activeLoras[ctx.address];
+
+    if (active == null || active.isEmpty) {
+      _activeLoras.remove(ctx.address);
+      return _bindings.llama_set_adapters_lora(ctx, nullptr, 0, nullptr);
+    }
+
+    final adapters = calloc<Pointer<llama_adapter_lora>>(active.length);
+    final scales = calloc<Float>(active.length);
+    try {
+      for (var i = 0; i < active.length; i++) {
+        adapters[i] = active[i].$1.pointer;
+        scales[i] = active[i].$2;
+      }
+      return _bindings.llama_set_adapters_lora(
+        ctx,
+        adapters,
+        active.length,
+        scales,
+      );
+    } finally {
+      calloc.free(adapters);
+      calloc.free(scales);
+    }
+  }
+
   /// Apply a LoRA adapter to a context.
   ///
   /// [ctx] - The llama context to apply the LoRA to.
@@ -260,13 +301,23 @@ class LoraManager {
   /// [scale] - Scale factor (0.0 to 1.0+). Default is 1.0.
   ///
   /// Multiple LoRAs can be applied to the same context with different scales.
+  /// Applying an adapter that is already active updates its scale in place
+  /// rather than adding it twice.
+  ///
   /// Returns 0 on success, negative on error.
   int applyLora(
     Pointer<llama_context> ctx,
     LlamaLoraAdapter lora, {
     double scale = 1.0,
   }) {
-    return _bindings.llama_set_adapter_lora(ctx, lora.pointer, scale);
+    final active = _activeLoras.putIfAbsent(ctx.address, () => []);
+    final existing = active.indexWhere((e) => e.$1.path == lora.path);
+    if (existing >= 0) {
+      active[existing] = (lora, scale);
+    } else {
+      active.add((lora, scale));
+    }
+    return _syncAdapters(ctx);
   }
 
   /// Remove a specific LoRA adapter from a context.
@@ -274,22 +325,29 @@ class LoraManager {
   /// [ctx] - The llama context.
   /// [lora] - The LoRA adapter to remove.
   ///
-  /// Returns 0 on success, negative on error.
+  /// Returns 0 on success, negative on error. Removing an adapter that is not
+  /// applied is a no-op and returns 0.
   int removeLora(Pointer<llama_context> ctx, LlamaLoraAdapter lora) {
-    return _bindings.llama_rm_adapter_lora(ctx, lora.pointer);
+    final active = _activeLoras[ctx.address];
+    if (active == null) return 0;
+    final before = active.length;
+    active.removeWhere((e) => e.$1.path == lora.path);
+    if (active.length == before) return 0;
+    return _syncAdapters(ctx);
   }
 
   /// Remove all LoRA adapters from a context.
   ///
   /// [ctx] - The llama context to clear LoRAs from.
   void clearLoras(Pointer<llama_context> ctx) {
-    _bindings.llama_clear_adapter_lora(ctx);
+    _activeLoras.remove(ctx.address);
+    _syncAdapters(ctx);
   }
 
   /// Switch to a different LoRA on a context.
   ///
-  /// This is a convenience method that clears existing LoRAs and applies
-  /// the new one. Pass null to just clear all LoRAs.
+  /// Replaces whatever is currently applied with just [lora]. Pass null to
+  /// clear all LoRAs.
   ///
   /// [ctx] - The llama context.
   /// [lora] - The new LoRA to apply, or null to just clear.
@@ -299,10 +357,31 @@ class LoraManager {
     LlamaLoraAdapter? lora, {
     double scale = 1.0,
   }) {
-    clearLoras(ctx);
-    if (lora != null) {
-      applyLora(ctx, lora, scale: scale);
+    // Applied as a single native call rather than clear-then-apply, so the
+    // context never transiently loses its adapters.
+    if (lora == null) {
+      _activeLoras.remove(ctx.address);
+    } else {
+      _activeLoras[ctx.address] = [(lora, scale)];
     }
+    _syncAdapters(ctx);
+  }
+
+  /// The LoRAs currently applied to [ctx], in application order.
+  List<LoraConfig> activeLoras(Pointer<llama_context> ctx) => [
+    for (final (adapter, scale)
+        in _activeLoras[ctx.address] ?? const <(LlamaLoraAdapter, double)>[])
+      LoraConfig(path: adapter.path, scale: scale),
+  ];
+
+  /// Drop the tracked adapter set for [ctx] without touching the context.
+  ///
+  /// Call this right before freeing a context. Contexts are tracked by pointer
+  /// address, and llama.cpp can hand back a previously freed address for a new
+  /// context; forgetting the old entry stops a stale set from being re-applied
+  /// to an unrelated context.
+  void forgetContext(Pointer<llama_context> ctx) {
+    _activeLoras.remove(ctx.address);
   }
 
   /// Unload a LoRA adapter.
@@ -317,6 +396,12 @@ class LoraManager {
     final (adapter, refCount) = _loraPool[path]!;
 
     if (force || refCount <= 1) {
+      // Drop it from every context's tracked set first: the adapter pointer is
+      // about to become invalid and must never be handed to
+      // `llama_set_adapters_lora` again.
+      for (final active in _activeLoras.values) {
+        active.removeWhere((e) => e.$1.path == path);
+      }
       adapter.dispose();
       _loraPool.remove(path);
     } else {
@@ -326,6 +411,7 @@ class LoraManager {
 
   /// Unload all LoRA adapters.
   void unloadAllLoras() {
+    _activeLoras.clear();
     for (final path in _loraPool.keys.toList()) {
       final (adapter, _) = _loraPool[path]!;
       adapter.dispose();

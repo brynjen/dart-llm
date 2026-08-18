@@ -23,7 +23,7 @@ void runEmbedding(EmbeddingRequest request) {
     modelParams.n_gpu_layers = request.nGpuLayers;
 
     final modelPathPtr = request.modelPath.toNativeUtf8();
-    final model = bindings.llama_load_model_from_file(
+    final model = bindings.llama_model_load_from_file(
       modelPathPtr.cast(),
       modelParams,
     );
@@ -46,9 +46,9 @@ void runEmbedding(EmbeddingRequest request) {
       ctxParams.n_threads_batch = request.threads!;
     }
 
-    final ctx = bindings.llama_new_context_with_model(model, ctxParams);
+    final ctx = bindings.llama_init_from_model(model, ctxParams);
     if (ctx.address == 0) {
-      bindings.llama_free_model(model);
+      bindings.llama_model_free(model);
       request.sendPort.send(EmbeddingError('Failed to create context'));
       return;
     }
@@ -143,7 +143,7 @@ void runEmbedding(EmbeddingRequest request) {
       request.sendPort.send(EmbeddingComplete());
     } finally {
       bindings.llama_free(ctx);
-      bindings.llama_free_model(model);
+      bindings.llama_model_free(model);
       bindings.llama_backend_free();
     }
   } catch (e) {

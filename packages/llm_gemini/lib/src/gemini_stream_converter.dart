@@ -176,8 +176,8 @@ class GeminiStreamConverter {
           }
 
           final metadata = <String, dynamic>{
-            if (interactionId != null) 'interaction_id': interactionId,
-            if (interactionStatus != null) 'status': interactionStatus,
+            'interaction_id': ?interactionId,
+            'status': ?interactionStatus,
             if (thoughtSignatures.isNotEmpty)
               'thought_signatures': <String, String>{
                 for (final entry in thoughtSignatures.entries)

@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- The default HTTP client is now `createLLMHttpClient()`, which applies `TimeoutConfig.connectionTimeout` and bounds the connection pool.
+- `hook/build.dart` now declares the FFI bindings as a hook dependency (`output.dependencies`). Without it the hooks runner reused its cached output, so regenerating the bindings never recomputed the ABI fingerprint — silently defeating the prebuilt-invalidation scheme it exists to drive.
+- Prebuilt bundles are cached under `outputDirectoryShared` instead of the per-config `outputDirectory`, so a bundle is downloaded once rather than once per target OS/architecture.
+- CMake configuration disables `LLAMA_BUILD_APP`, `LLAMA_BUILD_COMMON` and `LLAMA_BUILD_UI`. Upstream's new unified `app` target is not gated behind `LLAMA_BUILD_COMMON` and broke the source build on generated headers it never received.
+- `ffigen.yaml` no longer carries a hardcoded absolute include path from another machine; `compiler-opts` is now package-relative.
+
+### Changed
+- Native-assets toolchain migrated off 1.x: `hooks ^2.0.0`, `code_assets ^1.2.1`, `ffigen ^21.0.0`. The hooks 2.0 break (`ProtocolExtension` becoming a base class) only affects asset-type packages, so the build hook needed no API changes.
+- `llamacpp` submodule updated to current upstream, the vendored `src/include/` headers re-synced from it, and the FFI bindings regenerated with ffigen 21. The vendored headers had drifted *ahead* of the pinned submodule, so the bindings described an ABI newer than the library actually built. Removed the third, stale `src/llama.h` copy.
+- Migrated off deprecated llama.cpp entry points (`llama_load_model_from_file`, `llama_free_model`, `llama_new_context_with_model`, `llama_n_vocab`, `llama_token_bos`/`_eos`/`_nl`/`_pad`, and the `llama_n_*` model getters) to their modern equivalents.
+- `LoraManager` is reimplemented on upstream's declarative `llama_set_adapters_lora`, which replaced the incremental `llama_set_adapter_lora`/`llama_rm_adapter_lora`/`llama_clear_adapter_lora` calls. `applyLora`, `removeLora`, `clearLoras` and `switchLora` keep their signatures and behavior; the manager now tracks the applied set per context and re-sends it after each change. Added `activeLoras(ctx)` and `forgetContext(ctx)` — call the latter before freeing a context, since contexts are tracked by pointer address and llama.cpp can reuse a freed address.
+- `ModelLoadOptions.useMemoryMap` / `useMemoryLock` are unchanged, but now map onto upstream's new `load_mode` enum, which replaced the `use_mmap`/`use_direct_io`/`use_mlock` booleans.
+- Dependency floors raised: Dart SDK `^3.12.0` (was `^3.8.0`), `http ^1.6.0`; dev deps refreshed (`lints ^6.1.0`, `test ^1.31.0`) and new lint findings fixed (null-aware elements, private named initializing formals). Flutter floor raised to `>=3.44.0` to match the Dart floor.
+
+
 ## [0.3.0] - 2026-08-17
 
 ### Changed

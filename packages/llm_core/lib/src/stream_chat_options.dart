@@ -64,8 +64,8 @@ class LLMChatOptions {
     required this.backendOptions,
     required this.useCache,
     required this.recordMetrics,
-    required bool toolsProvided,
-    required bool backendOptionsProvided,
+    required this._toolsProvided,
+    required this._backendOptionsProvided,
     this.extra,
     this.toolAttempts,
     this.timeout,
@@ -79,8 +79,7 @@ class LLMChatOptions {
     this.reasoningBudget,
     this.reasoningEffort,
     this.cacheTtl,
-  }) : _toolsProvided = toolsProvided,
-       _backendOptionsProvided = backendOptionsProvided;
+  });
 
   /// Whether to request thinking/reasoning output (if supported).
   final bool think;

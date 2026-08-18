@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- A stream read timeout no longer kills the isolate. `OllamaStreamConverter` threw from `Stream.timeout`'s `onTimeout` callback, which runs from a timer outside the stream's error path, so the exception escaped as an unhandled error instead of failing the request.
+- `streamChat` now applies a timeout to the send operation. It previously opted out, so a request that wedged before response headers arrived never recovered.
+- `OllamaRepository.pullModel` builds its request with `http.Request` instead of `StreamedRequest` + a hand-set `content-length`.
+
+### Changed
+- Dependency floors raised: Dart SDK `^3.12.0` (was `^3.8.0`), `http ^1.6.0`; dev deps refreshed (`lints ^6.1.0`, `test ^1.31.0`) and new lint findings fixed (null-aware elements, private named initializing formals).
+
+
 ## [0.3.0] - 2026-08-17
 
 ### Added

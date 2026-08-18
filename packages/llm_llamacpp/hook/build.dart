@@ -88,6 +88,15 @@ void main(List<String> args) async {
       '(derived from ${_abiFingerprintInputs.join(', ')})',
     );
 
+    // Declare the fingerprint inputs as hook dependencies. Without this the
+    // hooks runner reuses the cached output whenever nothing else changed, so
+    // regenerating the bindings would *not* re-run this hook and the ABI
+    // fingerprint would never be recomputed -- silently defeating the whole
+    // invalidation scheme above.
+    for (final relative in _abiFingerprintInputs) {
+      output.dependencies.add(input.packageRoot.resolve(relative));
+    }
+
     final prebuiltLibraries = await _tryDownloadPrebuilt(
       targetOS,
       targetArch,
@@ -241,7 +250,14 @@ Future<List<Uri>?> _tryDownloadPrebuilt(
 
   logger.info('Checking for prebuilt at: $downloadUrl');
 
-  final cacheDir = Directory.fromUri(input.outputDirectory.resolve('.cache/'));
+  // The download cache lives in `outputDirectoryShared`, not `outputDirectory`:
+  // the latter is per-config (nested inside the shared directory under a
+  // config-derived checksum), so caching there would re-download the bundle for
+  // every target OS/architecture. The cache key below already carries the
+  // os/arch discriminators needed to share one directory safely.
+  final cacheDir = Directory.fromUri(
+    input.outputDirectoryShared.resolve('.cache/'),
+  );
   if (!cacheDir.existsSync()) {
     cacheDir.createSync(recursive: true);
   }
@@ -756,6 +772,18 @@ Future<List<Uri>?> _buildFromSource(
     '-DLLAMA_BUILD_EXAMPLES=OFF',
     '-DLLAMA_BUILD_SERVER=OFF',
     '-DLLAMA_BUILD_TOOLS=OFF',
+    // `app` is the unified `llama` binary. Unlike examples/tools/server it is
+    // NOT gated behind LLAMA_BUILD_COMMON upstream, so it builds even with
+    // everything else off and then fails on generated headers it never got
+    // (`build-info.h`, `arg.h`). We only want the shared libraries.
+    '-DLLAMA_BUILD_APP=OFF',
+    // The `common` helper library only exists to serve examples/tools/app, all
+    // of which are off. Skipping it saves a large chunk of build time.
+    '-DLLAMA_BUILD_COMMON=OFF',
+    // Embedded web UI for the server; defaults ON independently of
+    // LLAMA_BUILD_SERVER and can reach out to Hugging Face for a prebuilt
+    // bundle. Neither is wanted from inside a build hook.
+    '-DLLAMA_BUILD_UI=OFF',
     '-DLLAMA_CURL=OFF',
     '-DBUILD_SHARED_LIBS=ON',
   ];

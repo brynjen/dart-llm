@@ -5,6 +5,7 @@ import 'package:ffi/ffi.dart';
 import 'package:llm_llamacpp/src/backend_initializer.dart';
 import 'package:llm_llamacpp/src/bindings/llama_bindings.dart';
 import 'package:llm_llamacpp/src/isolate_messages.dart';
+import 'package:llm_llamacpp/src/lora_context_adapters.dart';
 import 'package:llm_llamacpp/src/streaming_utf8_decoder.dart';
 
 /// Runs inference in an isolate.
@@ -36,7 +37,7 @@ void runInference(InferenceRequest request) {
     // ignore: avoid_print
     print('[inference_isolate] Loading model from: ${request.modelPath}');
     final modelPathPtr = request.modelPath.toNativeUtf8();
-    final model = bindings.llama_load_model_from_file(
+    final model = bindings.llama_model_load_from_file(
       modelPathPtr.cast(),
       modelParams,
     );
@@ -58,7 +59,7 @@ void runInference(InferenceRequest request) {
       calloc.free(loraPathPtr);
 
       if (loraAdapter.address == 0) {
-        bindings.llama_free_model(model);
+        bindings.llama_model_free(model);
         request.sendPort.send(
           InferenceError('Failed to load LoRA adapter: ${request.loraPath}'),
         );
@@ -90,7 +91,7 @@ void runInference(InferenceRequest request) {
 
     // ignore: avoid_print
     print('[inference_isolate] Creating context...');
-    final ctx = bindings.llama_new_context_with_model(model, ctxParams);
+    final ctx = bindings.llama_init_from_model(model, ctxParams);
     // ignore: avoid_print
     print('[inference_isolate] Context created, address: ${ctx.address}');
 
@@ -98,7 +99,7 @@ void runInference(InferenceRequest request) {
       if (loraAdapter != null) {
         bindings.llama_adapter_lora_free(loraAdapter);
       }
-      bindings.llama_free_model(model);
+      bindings.llama_model_free(model);
       final errorMsg =
           'Failed to create context (contextSize: ${request.contextSize}, batchSize: ${request.batchSize})';
       request.sendPort.send(InferenceError(errorMsg));
@@ -107,7 +108,8 @@ void runInference(InferenceRequest request) {
 
     // Apply LoRA adapter to context if loaded
     if (loraAdapter != null) {
-      final result = bindings.llama_set_adapter_lora(
+      final result = setSingleContextLoraAdapter(
+        bindings,
         ctx,
         loraAdapter,
         request.loraScale,
@@ -115,7 +117,7 @@ void runInference(InferenceRequest request) {
       if (result != 0) {
         bindings.llama_free(ctx);
         bindings.llama_adapter_lora_free(loraAdapter);
-        bindings.llama_free_model(model);
+        bindings.llama_model_free(model);
         request.sendPort.send(InferenceError('Failed to apply LoRA adapter'));
         return;
       }
@@ -195,6 +197,7 @@ void runInference(InferenceRequest request) {
         bindings.llama_sampler_chain_add(
           sampler,
           bindings.llama_sampler_init_penalties(
+            bindings.llama_vocab_n_tokens(vocab), // n_vocab
             64, // penalty_last_n: look at last 64 tokens
             repeatPenalty,
             freqPenalty,
@@ -311,11 +314,11 @@ void runInference(InferenceRequest request) {
     } finally {
       // Clear LoRA from context before freeing
       if (loraAdapter != null) {
-        bindings.llama_clear_adapter_lora(ctx);
+        clearContextLoraAdapters(bindings, ctx);
         bindings.llama_adapter_lora_free(loraAdapter);
       }
       bindings.llama_free(ctx);
-      bindings.llama_free_model(model);
+      bindings.llama_model_free(model);
       bindings.llama_backend_free();
     }
   } catch (e) {

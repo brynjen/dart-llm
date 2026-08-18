@@ -30,11 +30,7 @@ class VLLMChunk extends LLMChunk {
                  reasoningTokens: vllmUsage.reasoningTokens,
                )
              : null,
-         providerMetadata: {
-           'id': id,
-           if (systemFingerprint != null)
-             'system_fingerprint': systemFingerprint,
-         },
+         providerMetadata: {'id': id, 'system_fingerprint': ?systemFingerprint},
          message: choices.isEmpty
              ? null
              : LLMChunkMessage(

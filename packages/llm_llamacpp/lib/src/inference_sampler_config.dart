@@ -4,6 +4,9 @@ part of 'persistent_inference_isolate.dart';
 ffi.Pointer<llama_sampler> _configureSampler(
   LlamaBindings bindings,
   GenerationOptions options,
+  // Upstream llama_sampler_init_penalties gained a leading `n_vocab`
+  // parameter, so the caller has to supply the vocabulary size.
+  int nVocab,
 ) {
   final samplerParams = bindings.llama_sampler_chain_default_params();
   final sampler = bindings.llama_sampler_chain_init(samplerParams);
@@ -39,6 +42,7 @@ ffi.Pointer<llama_sampler> _configureSampler(
     bindings.llama_sampler_chain_add(
       sampler,
       bindings.llama_sampler_init_penalties(
+        nVocab,
         64,
         repeatPenalty,
         freqPenalty,

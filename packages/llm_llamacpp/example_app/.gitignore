@@ -43,3 +43,7 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Flutter native-assets build output. Contains machine-local absolute paths.
+**/Flutter/ephemeral/Packages/
+**/Flutter/ephemeral/flutter_native_integration.env

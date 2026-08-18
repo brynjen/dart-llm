@@ -1,7 +1,7 @@
-import 'dart:async' show unawaited;
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
+import 'package:llm_core/llm_core.dart' show createLLMHttpClient;
 
 import 'package:llm_ollama/src/dto/ollama_model.dart';
 
@@ -21,7 +21,7 @@ class OllamaRepository {
   OllamaRepository({
     this.baseUrl = 'http://localhost:11434',
     http.Client? httpClient,
-  }) : httpClient = httpClient ?? http.Client();
+  }) : httpClient = httpClient ?? createLLMHttpClient();
 
   /// The base URL of the Ollama server.
   final String baseUrl;
@@ -60,18 +60,12 @@ class OllamaRepository {
   ///
   /// Returns a stream of progress updates.
   Stream<OllamaPullProgress> pullModel(String modelName) async* {
-    final request = http.StreamedRequest(
-      'POST',
-      Uri.parse('$baseUrl/api/pull'),
-    );
-    request.headers['content-type'] = 'application/json';
-    final bodyBytes = utf8.encode(json.encode({'model': modelName}));
-    request.headers['content-length'] = bodyBytes.length.toString();
-    request.sink.add(bodyBytes);
-    // Do NOT await sink.close() - it may not complete until after the request is sent
-    // This would create a deadlock. Use unawaited() instead.
-    // See: https://pub.dev/documentation/http/latest/http/StreamedRequest-class.html
-    unawaited(request.sink.close());
+    // A plain Request: the body is fully in memory, so package:http can derive
+    // `content-length` and write it as part of send(). send() still returns a
+    // StreamedResponse, which is what the progress loop below reads.
+    final request = http.Request('POST', Uri.parse('$baseUrl/api/pull'))
+      ..headers['content-type'] = 'application/json'
+      ..bodyBytes = utf8.encode(json.encode({'model': modelName}));
 
     final response = await httpClient.send(request);
 

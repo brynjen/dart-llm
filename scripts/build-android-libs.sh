@@ -205,6 +205,9 @@ build_for_abi() {
         -DLLAMA_BUILD_EXAMPLES=OFF
         -DLLAMA_BUILD_SERVER=OFF
         -DLLAMA_BUILD_TOOLS=OFF
+        -DLLAMA_BUILD_APP=OFF
+        -DLLAMA_BUILD_COMMON=OFF
+        -DLLAMA_BUILD_UI=OFF
         -DLLAMA_CURL=OFF
         
         # Build as shared libraries

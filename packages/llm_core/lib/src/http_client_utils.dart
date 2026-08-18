@@ -1,4 +1,4 @@
-import 'dart:async' show TimeoutException, unawaited;
+import 'dart:async' show TimeoutException;
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
@@ -27,7 +27,10 @@ class HttpClientHelper {
   /// [headers] - Request headers (backend-specific)
   /// [body] - Request body as bytes (optional)
   /// [applyTimeoutToSend] - Whether to apply timeout to the send operation
-  ///   (default: false, timeout is typically applied when reading the stream)
+  ///   (default: true). Leaving this off returns an entirely untimed
+  ///   `send()`, so a request that wedges before response headers arrive
+  ///   never recovers — the stream timeouts only start once there is a
+  ///   stream to read.
   ///
   /// Returns a [StreamedResponse] that should have timeout applied when reading.
   Future<http.StreamedResponse> sendStreamingRequest({
@@ -35,21 +38,20 @@ class HttpClientHelper {
     required Uri uri,
     required Map<String, String> headers,
     List<int>? body,
-    bool applyTimeoutToSend = false,
+    bool applyTimeoutToSend = true,
     Duration? timeout,
   }) async {
-    final request = http.StreamedRequest(method, uri);
+    // A plain Request, not a StreamedRequest: every caller passes a
+    // fully-materialised body, so there is nothing to stream. package:http
+    // derives `content-length` from [bodyBytes] and dart:io writes the body as
+    // part of send(). Setting the header by hand on a StreamedRequest instead
+    // made IOClient negotiate chunked encoding and then undo it, and left the
+    // body behind an unawaited sink close.
+    final request = http.Request(method, uri);
     request.headers.addAll(headers);
-
     if (body != null) {
-      request.headers['content-length'] = body.length.toString();
-      request.sink.add(body);
+      request.bodyBytes = body;
     }
-
-    // Do NOT await sink.close() - it may not complete until after the request is sent
-    // This would create a deadlock. Use unawaited() instead.
-    // See: https://pub.dev/documentation/http/latest/http/StreamedRequest-class.html
-    unawaited(request.sink.close());
 
     final config = timeoutConfig ?? TimeoutConfig.defaultConfig;
     final payloadSize = body?.length ?? 0;

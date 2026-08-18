@@ -61,7 +61,7 @@ class VLLMRepository {
     this.baseUrl = 'http://localhost:8000',
     this.apiKey,
     http.Client? httpClient,
-  }) : httpClient = httpClient ?? http.Client(),
+  }) : httpClient = httpClient ?? createLLMHttpClient(),
        _ownsHttpClient = httpClient == null;
 
   /// The base URL of the vLLM server.

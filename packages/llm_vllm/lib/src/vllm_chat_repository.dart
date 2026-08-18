@@ -6,6 +6,7 @@ import 'package:llm_core/llm_core.dart';
 import 'package:llm_vllm/src/dto/vllm_embedding_response.dart';
 import 'package:llm_vllm/src/vllm_error_handler.dart';
 import 'package:llm_vllm/src/vllm_base_url.dart';
+import 'package:llm_vllm/src/vllm_trace.dart';
 import 'package:llm_vllm/src/vllm_chat_repository_builder.dart';
 import 'package:llm_vllm/src/vllm_params.dart';
 import 'package:llm_vllm/src/vllm_stream_converter.dart';
@@ -48,7 +49,8 @@ class VLLMChatRepository extends LLMChatRepository with LLMRepositoryFeatures {
          rateLimiter: rateLimiter,
          responseCache: responseCache,
          metrics: metrics,
-         httpClient: httpClient ?? http.Client(),
+         httpClient:
+             httpClient ?? createLLMHttpClient(timeoutConfig: timeoutConfig),
          ownsHttpClient: httpClient == null,
        );
 
@@ -59,14 +61,13 @@ class VLLMChatRepository extends LLMChatRepository with LLMRepositoryFeatures {
     required this.retryConfig,
     required this.timeoutConfig,
     required this.httpClient,
-    required bool ownsHttpClient,
+    required this._ownsHttpClient,
     this.supportedParams,
     this.capabilities,
     RateLimiter? rateLimiter,
     this.responseCache,
     this.metrics,
-  }) : _ownsHttpClient = ownsHttpClient,
-       _rateLimiter = rateLimiter?.enabled == true
+  }) : _rateLimiter = rateLimiter?.enabled == true
            ? TokenBucketRateLimiter(rateLimiter!)
            : null,
        _httpHelper = HttpClientHelper(
@@ -224,11 +225,15 @@ class VLLMChatRepository extends LLMChatRepository with LLMRepositoryFeatures {
     _applyBackendOptions(body, backendOptions);
     _applyResponseFormat(body, merged.responseFormat);
 
+    final traceId = vllmNextRequestId();
+    vllmTrace(traceId, 'request.build', 'model=$model uri=$uri');
+
     Future<http.StreamedResponse>
     send() => RateLimiterUtil.executeWithRateLimit(
       rateLimiter: _rateLimiter,
       operation: () => RetryUtil.executeWithRetry(
         operation: () async {
+          vllmTrace(traceId, 'send.begin');
           final res = await _httpHelper.sendStreamingRequest(
             method: 'POST',
             uri: uri,
@@ -245,6 +250,7 @@ class VLLMChatRepository extends LLMChatRepository with LLMRepositoryFeatures {
           //
           // Non-retryable statuses are returned untouched so the switch below
           // can map them to the specific exception types.
+          vllmTrace(traceId, 'send.headers', 'status=${res.statusCode}');
           if (effectiveRetryConfig.shouldRetryForStatusCode(res.statusCode)) {
             throw LLMApiException(
               'vLLM API error',
@@ -261,6 +267,7 @@ class VLLMChatRepository extends LLMChatRepository with LLMRepositoryFeatures {
     );
 
     var response = await send();
+    vllmTrace(traceId, 'send.done', 'status=${response.statusCode}');
 
     // Each served model validates `reasoning_effort` against its own
     // vocabulary (Qwen3.8: low/medium/xhigh), discoverable only through the
@@ -286,9 +293,11 @@ class VLLMChatRepository extends LLMChatRepository with LLMRepositoryFeatures {
 
     switch (response.statusCode) {
       case 200:
+        vllmTrace(traceId, 'stream.open');
         final chunkStream = VLLMStreamConverter.toLLMStream(
           response,
           timeoutConfig: timeoutConfig,
+          traceId: traceId,
         );
         if (merged.tools.isNotEmpty && merged.autoExecuteTools) {
           final executor = StreamToolExecutor(

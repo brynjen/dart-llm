@@ -4,7 +4,7 @@ version: 0.0.0
 publish_to: none
 
 environment:
-  sdk: ^3.8.0
+  sdk: ^3.12.0
 
 workspace:
   - packages/llm_core
@@ -16,7 +16,7 @@ workspace:
   - packages/llm_gemini
 
 dev_dependencies:
-  melos: ^7.0.0
+  melos: ^7.8.0
   args: ^2.5.0
 
 melos:

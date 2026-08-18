@@ -203,11 +203,9 @@ class ClaudeStreamConverter {
               ),
               finishReason: LLMFinishReason.fromProvider(stopReason),
               providerMetadata: {
-                if (stopReason != null) 'stop_reason': stopReason,
-                if (cacheCreationTokens != null)
-                  'cache_creation_input_tokens': cacheCreationTokens,
-                if (cacheReadTokens != null)
-                  'cache_read_input_tokens': cacheReadTokens,
+                'stop_reason': ?stopReason,
+                'cache_creation_input_tokens': ?cacheCreationTokens,
+                'cache_read_input_tokens': ?cacheReadTokens,
                 if (thinkingSignatures.isNotEmpty)
                   'thinking_signatures': Map<String, String>.fromEntries(
                     thinkingSignatures.entries.map(
