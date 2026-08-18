@@ -139,12 +139,28 @@ const List<String> _desktopCoreLibraryStems = ['ggml', 'ggml-base'];
 /// `libggml.so.0.20.1`, which already fail the `.so` extension test.
 final RegExp _versionedLibraryStemSuffix = RegExp(r'\.\d+(?:\.\d+)*$');
 
-void main(List<String> args) async {
+Future<void> main(List<String> args) async {
   await build(args, (input, output) async {
     final logger = Logger('')
       ..level = Level.ALL
       // ignore: avoid_print
       ..onRecord.listen((record) => print(record.message));
+
+    // The hooks runner invokes build hooks for whichever asset kinds the
+    // current build asks for, and that set is not always code assets: a
+    // `flutter run -d macos --debug` session re-invokes this hook with code
+    // assets absent from `buildAssetTypes` once the app is up. Touching
+    // `input.config.code` in that invocation throws
+    // `Bad state: HookConfig.code should only be accessed when building code
+    // assets`, which the runner reports as "Building native assets failed".
+    // This package has nothing but code assets to contribute, so bail out with
+    // an empty output before reading anything off `config.code`.
+    if (!input.config.buildCodeAssets) {
+      logger.info(
+        'Code assets not requested for this build; emitting no assets.',
+      );
+      return;
+    }
 
     final targetOS = input.config.code.targetOS;
     final targetArch = input.config.code.targetArchitecture;
