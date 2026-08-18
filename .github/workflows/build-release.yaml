@@ -1,22 +1,31 @@
 name: Build and Release llm_llamacpp
 
+# Native release builds are driven by changes to llm_llamacpp landing on main —
+# not by tags, and not by unrelated pushes. Pushing a tag does nothing; the
+# release job creates the tag itself once a build succeeds.
+#
+# The paths below are deliberately narrow. They are the only things that change
+# what the published native bundle is, or where the build hook looks for it:
+#
+#   pubspec.yaml            the version, which names the GitHub release
+#   llama_bindings.dart     the FFI surface, which names the asset via its ABI
+#                           fingerprint
+#   hook/build.dart         how the bundle is built and located
+#   llamacpp                the vendored llama.cpp submodule pointer
+#
+# Everything else under packages/llm_llamacpp (README, CHANGELOG, tests, Dart
+# sources) leaves the native bundle byte-identical, so it must not spend an
+# 8-platform build. Changes to this pipeline do not trigger one either — use
+# "Run workflow" on the Actions tab after editing it.
 on:
   push:
-    tags:
-      # Release tags are bare versions, e.g. `0.3.1` or `0.3.1-beta.1`. The
-      # legacy `v*` form is still matched so an old tag can be rebuilt.
-      - '[0-9]+.[0-9]+.[0-9]+*'
-      - 'v*'
     branches:
       - main
-    # A push to main only builds when something that invalidates the published
-    # native bundle changes: the package version (which names the release) or
-    # the FFI binding surface (which names the asset, via the ABI fingerprint).
     paths:
       - 'packages/llm_llamacpp/pubspec.yaml'
       - 'packages/llm_llamacpp/lib/src/bindings/llama_bindings.dart'
       - 'packages/llm_llamacpp/hook/build.dart'
-      - '.github/workflows/build-release.yaml'
+      - 'packages/llm_llamacpp/llamacpp'
   workflow_dispatch:
     inputs:
       version:
@@ -100,10 +109,9 @@ jobs:
         run: |
           set -euo pipefail
           # Single source of truth: `version:` in the package's pubspec, which is
-          # also what hook/build.dart reads to build the download URL. A tag push
-          # wins so an explicit `1.2.3` tag always builds `1.2.3`, and a manual
-          # run may override. A leading `v` is stripped for tolerance of the
-          # legacy tag form; release tags are bare versions.
+          # also what hook/build.dart reads to build the download URL. A manual
+          # run may override it; a leading `v` is stripped either way, since
+          # release tags are bare versions.
           PUBSPEC_VERSION=$(sed -n 's/^version:[[:space:]]*\([^[:space:]]*\)[[:space:]]*$/\1/p' \
             packages/llm_llamacpp/pubspec.yaml | head -n1)
           if [[ -z "$PUBSPEC_VERSION" ]]; then
@@ -111,17 +119,12 @@ jobs:
             exit 1
           fi
 
-          if [[ "${{ github.ref_type }}" == "tag" ]]; then
-            VERSION="${{ github.ref_name }}"
-            VERSION="${VERSION#v}"
-            if [[ "$VERSION" != "$PUBSPEC_VERSION" ]]; then
-              echo "::warning::Tag $VERSION does not match pubspec version $PUBSPEC_VERSION. Building $VERSION, but hook/build.dart will request assets from release $PUBSPEC_VERSION and will not find them."
-            fi
-          elif [[ -n "${{ github.event.inputs.version }}" ]]; then
-            VERSION="${{ github.event.inputs.version }}"
-            VERSION="${VERSION#v}"
-          else
+          VERSION="${{ github.event.inputs.version }}"
+          VERSION="${VERSION#v}"
+          if [[ -z "$VERSION" ]]; then
             VERSION="$PUBSPEC_VERSION"
+          elif [[ "$VERSION" != "$PUBSPEC_VERSION" ]]; then
+            echo "::warning::Requested version $VERSION does not match pubspec version $PUBSPEC_VERSION. Building $VERSION, but hook/build.dart will request assets from release $PUBSPEC_VERSION and will not find them."
           fi
 
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
@@ -877,16 +880,15 @@ jobs:
           echo "version=${TAG}" >> "$GITHUB_OUTPUT"
           echo "Releasing as tag: ${TAG}"
 
+      # Nothing triggers on tags, so the tag is always ours to create. A rebuild
+      # of the same version moves it to the current commit.
       - name: Create or move tag to this commit
-        if: ${{ github.ref_type != 'tag' }}
         run: |
           set -euo pipefail
           TAG="${{ steps.version.outputs.version }}"
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          # Delete existing tag if present (local and remote) so a rebuild of the
-          # same version points the release at the current commit.
           git tag -d "${TAG}" 2>/dev/null || true
           git push origin ":refs/tags/${TAG}" 2>/dev/null || true
 
