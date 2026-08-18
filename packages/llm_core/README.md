@@ -6,7 +6,7 @@ Core abstractions for LLM (Large Language Model) interactions in Dart.
 
 Available on [pub.dev](https://pub.dev/packages/llm_core).
 
-This package provides the foundational interfaces and models used by LLM backend implementations such as `llm_ollama`, `llm_chatgpt`, `llm_claude`, `llm_gemini`, and `llm_llamacpp`.
+This package provides the foundational interfaces and models used by LLM backend implementations: `llm_ollama`, `llm_vllm`, `llm_chatgpt`, `llm_claude`, `llm_gemini`, and `llm_llamacpp`.
 
 ## Important: interfaces only
 
@@ -15,6 +15,7 @@ This package provides the foundational interfaces and models used by LLM backend
 To actually run chat/embeddings you must use a backend implementation, for example:
 
 - `llm_ollama` (talks to a local/remote Ollama server)
+- `llm_vllm` (talks to a self-hosted vLLM OpenAI-compatible server)
 - `llm_chatgpt` (talks to OpenAI / ChatGPT-compatible APIs)
 - `llm_claude` (talks to Anthropic Claude API)
 - `llm_gemini` (talks to Google Gemini API)
@@ -26,14 +27,14 @@ Most users should depend on a backend implementation (it re-exports `llm_core` t
 
 ```yaml
 dependencies:
-  llm_ollama: ^0.2.0
+  llm_ollama: ^0.3.1
 ```
 
 If you're implementing your own backend, depend on `llm_core` directly:
 
 ```yaml
 dependencies:
-  llm_core: ^0.2.0
+  llm_core: ^0.3.1
 ```
 
 ## Core Types
@@ -60,8 +61,15 @@ final multimodal = LLMMessage(
 
 ### Repository Interface
 
+Only `streamChat` is abstract. `capabilitiesForModel`, `chatResponse`,
+`embed` and `batchEmbed` ship with working defaults — `chatResponse` collects
+`streamChat` and drives the tool loop, `batchEmbed` falls back to `embed` — so a
+new backend can start by implementing `streamChat` alone and override the rest
+where the provider offers something better.
+
 ```dart
 abstract class LLMChatRepository {
+  // Abstract: the one member a backend must implement.
   Stream<LLMChunk> streamChat(
     String model, {
     required List<LLMMessage> messages,
@@ -70,6 +78,10 @@ abstract class LLMChatRepository {
     dynamic extra,
     LLMChatOptions? options, // Optional: encapsulates all options
   });
+
+  // What this model/deployment actually supports. Defaults to all-false;
+  // backends override it.
+  LLMCapabilities capabilitiesForModel(String model);
 
   Future<LLMResponse> chatResponse(
     String model, {
@@ -207,10 +219,11 @@ final instruction = switch (format) {
 Backend behaviour:
 | Backend | `JsonFormat` | `JsonSchemaFormat` |
 |---|---|---|
-| `llm_chatgpt` | `response_format: {type: "json_object"}` | `response_format: {type: "json_schema", ...}` |
-| `llm_gemini` | `generationConfig.responseMimeType` | + `generationConfig.responseSchema` |
-| `llm_ollama` | `format: "json"` | `format: {schema}` |
-| `llm_claude` | system-message injection | system-message injection with schema |
+| `llm_chatgpt` | `response_format: {type: "json_object"}` | `response_format: {type: "json_schema", ...}` with `strict` |
+| `llm_vllm` | `response_format: {type: "json_object"}` | `response_format: {type: "json_schema", ...}`; also vLLM-native `structured_outputs` for regex / choice / grammar via `VLLMStructuredOutputs` |
+| `llm_gemini` | `response_format` (Interactions API) | `response_format` with the schema inline |
+| `llm_ollama` | `format: "json"` | `format: {schema}`; schema requires model support |
+| `llm_claude` | system-message injection | native `output_config.format` on Opus 4.6+, Sonnet 4.6+, Fable 5 and Mythos 5; injection on older models |
 | `llm_llamacpp` | system-message injection | system-message injection with schema |
 
 ### Retry Configuration
@@ -231,8 +244,13 @@ await RetryUtil.executeWithRetry(
   operation: () async => someOperation(),
   config: retryConfig,
   isRetryable: (error) => error is TimeoutException,
+  onRetry: (attempt, error, delay) => print('retry $attempt in $delay: $error'),
 );
 ```
+
+Passing `config: null` runs the operation exactly once. Only `llm_vllm` supplies
+a default `RetryConfig` (a vLLM server answers `503` while loading weights); on
+every other backend retries are off until you configure them.
 
 ### Timeout Configuration
 
@@ -261,12 +279,14 @@ final metrics = DefaultLLMMetrics();
 // Metrics are automatically recorded by repositories
 // Access collected metrics:
 final stats = metrics.getMetrics();
-print('Total requests: ${stats['model.total_requests']}');
-print('Successful: ${stats['model.successful_requests']}');
-print('Failed: ${stats['model.failed_requests']}');
-print('Avg latency: ${stats['model.avg_latency_ms']}ms');
-print('P95 latency: ${stats['model.p95_latency_ms']}ms');
-print('Total tokens: ${stats['model.total_generated_tokens']}');
+// Every key is prefixed with the model id the request was made against:
+const model = 'qwen3:0.6b';
+print('Total requests: ${stats['$model.total_requests']}');
+print('Successful: ${stats['$model.successful_requests']}');
+print('Failed: ${stats['$model.failed_requests']}');
+print('Avg latency: ${stats['$model.avg_latency_ms']}ms');
+print('P95 latency: ${stats['$model.p95_latency_ms']}ms');
+print('Total tokens: ${stats['$model.total_generated_tokens']}');
 
 // Reset metrics
 metrics.reset();
@@ -303,11 +323,85 @@ Validation.validateToolArguments(
 
 ### Exceptions
 
+Every one implements `Exception` directly — there is no shared base, so catch
+the specific type you care about.
+
 - `ThinkingNotSupportedException` - Model doesn't support thinking
 - `ToolsNotSupportedException` - Model doesn't support tools
 - `VisionNotSupportedException` - Model doesn't support vision
-- `LLMApiException` - API request failed
+- `ToolLoopIncompleteException` - `chatResponse` hit `maxToolAttempts` without a final answer
+- `LLMApiException` - API request failed (carries `statusCode`)
 - `ModelLoadException` - Model loading failed
+
+`ThinkingNotAllowed`, `ToolsNotAllowed` and `VisionNotAllowed` remain as
+deprecated aliases for the first three.
+
+## Capabilities
+
+Ask a repository what a model supports before sending a request that would
+otherwise fail:
+
+```dart
+final caps = repo.capabilitiesForModel('qwen3:0.6b');
+if (caps.thinking) { /* safe to pass think: true */ }
+if (caps.tools) { /* safe to pass tools: [...] */ }
+if (caps.vision) { /* safe to attach images */ }
+```
+
+Backends that can probe a live deployment do so — see
+`VLLMRepository.resolveCapabilities()` and `OllamaRepository.supportsVision()`.
+
+## HTTP Client
+
+Every backend defaults to `createLLMHttpClient()`, which is worth knowing about
+if you supply your own client:
+
+```dart
+final client = createLLMHttpClient(
+  timeoutConfig: TimeoutConfig.defaultConfig,
+  maxConnectionsPerHost: kLLMMaxConnectionsPerHost, // 64
+  // Leave null for the platform default: kLLMMaxConcurrentWrites (4) on
+  // macOS/iOS, unlimited elsewhere. Pass 0 to disable the gate outright.
+  maxConcurrentWrites: null,
+);
+
+final repo = OllamaChatRepository(httpClient: client);
+```
+
+It bounds the connection pool per host, applies
+`TimeoutConfig.connectionTimeout`, and drops the idle timeout to 3s so the
+client retires idle connections before a server with a shorter keep-alive does
+it mid-request. On macOS and iOS it wraps the client in `WriteGatedHttpClient`,
+a counting semaphore that admits `kLLMMaxConcurrentWrites` (4) requests into
+their connect+write phase at a time; other platforms are unlimited. This works around a Dart VM defect in the macOS
+kqueue event handler where sockets opened and written in the same instant can
+lose their writable event, leaving the request bytes unsent with no error.
+Streaming *responses* are never gated. Pass `maxConcurrentWrites: 0` to disable.
+Full investigation: `docs/concurrent-send-stall.md`.
+
+On web, `createLLMHttpClient()` returns a plain `http.Client`.
+
+## Cross-Cutting Concerns
+
+All optional, all wired through any backend's builder or constructor:
+
+- `RateLimiter` — client-side request pacing configuration (`maxRequests` per `windowDuration`, plus `burstSize`); `TokenBucketRateLimiter` is the implementation the repositories build from it
+- `ResponseCache` / `MemoryResponseCache` — response caching keyed by
+  `CacheKeyGenerator`, with `CacheStats`
+- `LLMMetrics` / `DefaultLLMMetrics` — request counts, latency percentiles, tokens
+- `LLMLogger` / `DefaultLLMLogger` — logging through `package:logging`; emits
+  nothing until you subscribe to the `logging` stream
+- `StreamToolExecutor` — the tool-execution loop `chatResponse` uses; call it
+  directly if you drive the loop yourself
+- `ChatRepositoryBuilderBase` — the shared builder surface every backend
+  inherits: `.maxToolAttempts()` (default 90), `.retryConfig()`,
+  `.timeoutConfig()`, `.rateLimiter()`, `.responseCache()`, `.metrics()`,
+  `.httpClient()`
+
+## Example
+
+A provider-agnostic example lives in [example/](example/) — it programs against
+`LLMChatRepository` so the same code runs on any backend.
 
 ## Usage with Backends
 

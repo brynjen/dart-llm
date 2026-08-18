@@ -10,14 +10,17 @@ Available on [pub.dev](https://pub.dev/packages/llm_chatgpt).
 
 - Streaming chat responses
 - Tool/function calling
+- Vision (image) support
 - Embeddings
-- Compatible with Azure OpenAI
+- Reasoning models: per-model detection, `reasoning_effort` mapping, and streaming usage
+- Structured output (`json_object` and native `json_schema` with `strict`)
+- Configurable base URL for OpenAI-compatible servers
 
 ## Installation
 
 ```yaml
 dependencies:
-  llm_chatgpt: ^0.2.0
+  llm_chatgpt: ^0.3.1
 ```
 
 ## Prerequisites
@@ -150,14 +153,40 @@ final options = LLMChatOptions(reasoningEffort: ReasoningEffort.high);
 final stream = repo.streamChat('gpt-5.4', messages: messages, options: options);
 ```
 
-### Using with Azure OpenAI
+### Vision
+
+Attach images to a message; they are sent as OpenAI `image_url` content parts:
+
+```dart
+final stream = repo.streamChat(
+  'gpt-5.4-nano',
+  messages: [
+    LLMMessage(
+      role: LLMRole.user,
+      content: 'What is in this image?',
+      images: [base64EncodedImage],
+    ),
+  ],
+);
+```
+
+### OpenAI-compatible servers
+
+`baseUrl` points the client at any server exposing OpenAI's
+`/v1/chat/completions` with `Authorization: Bearer`:
 
 ```dart
 final repo = ChatGPTChatRepository(
-  apiKey: 'your-azure-api-key',
-  baseUrl: 'https://your-resource.openai.azure.com',
+  apiKey: 'your-key',
+  baseUrl: 'https://my-openai-compatible-host',
 );
 ```
+
+**Azure OpenAI is not supported.** It needs a
+`/openai/deployments/{deployment}/chat/completions?api-version=...` path and an
+`api-key` header; this package always builds `$baseUrl/v1/chat/completions` with
+a bearer token. For a self-hosted OpenAI-compatible server, `llm_vllm` is
+usually the better fit — it probes the deployment's real capabilities.
 
 ## Advanced Configuration
 
@@ -185,10 +214,10 @@ final repo = ChatGPTChatRepository.builder()
   ))
   .build();
 
-// Azure OpenAI
-final azureRepo = ChatGPTChatRepository.builder()
-  .apiKey('your-azure-api-key')
-  .baseUrl('https://your-resource.openai.azure.com')
+// An OpenAI-compatible server
+final compatRepo = ChatGPTChatRepository.builder()
+  .apiKey('your-key')
+  .baseUrl('https://my-openai-compatible-host')
   .maxToolAttempts(10)
   .retryConfig(RetryConfig(maxAttempts: 3))
   .timeoutConfig(TimeoutConfig(readTimeout: Duration(minutes: 5)))

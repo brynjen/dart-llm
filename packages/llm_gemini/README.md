@@ -12,6 +12,7 @@ Available on [pub.dev](https://pub.dev/packages/llm_gemini).
 - Tool/function calling with automatic multi-turn tool-loop execution
 - Thinking mode with thought summaries surfaced separately from content
 - Native structured output via `response_format` (`JsonFormat`, `JsonSchemaFormat`)
+- Vision input, plus generated images surfaced on `chunk.message.images`
 - Embeddings (single and batch)
 - Builder pattern for fluent configuration
 - Configurable retry and timeout policies
@@ -42,7 +43,7 @@ Embeddings still use the `embedContent` / `batchEmbedContents` endpoints.
 
 ```yaml
 dependencies:
-  llm_gemini: ^0.2.0
+  llm_gemini: ^0.3.1
 ```
 
 ## Prerequisites
@@ -216,15 +217,20 @@ print(response.content);
 final options = LLMChatOptions(
   tools: [WeatherTool()],
   toolAttempts: 5,
-  backendOptions: {
-    'temperature': 0.7,
-    'maxOutputTokens': 2048,
-    'topP': 0.95,
-  },
+  // Portable fields are the easy path: `temperature` and `maxOutputTokens` are
+  // mapped into generation_config for you.
+  temperature: 0.7,
+  maxOutputTokens: 2048,
 );
 
 final stream = repo.streamChat('gemini-3.5-flash-lite', messages: messages, options: options);
 ```
+
+`backendOptions` keys are **snake_case**, matching the wire format. A camelCase
+key such as `maxOutputTokens` is not recognised as a generation-config field and
+is written to the top level of the request body instead — where the API either
+rejects it or ignores it. See
+[Generation Config via backendOptions](#generation-config-via-backendoptions).
 
 ## Advanced Configuration
 
@@ -309,5 +315,14 @@ See [Gemini Models](https://ai.google.dev/gemini-api/docs/models/gemini) for ava
 - `gemini-3.5-flash-lite` — Low-cost current Gemini chat model used by live tests
 - `gemini-embedding-001` — Embeddings used by live tests
 
-> The defaults previously referenced `gemini-3.1-flash-lite`, which does not
-> appear in Google's published model list; they now use `gemini-3.5-flash-lite`.
+## Notes
+
+- `embed` with more than one input delegates to `batchEmbed`.
+- `providerMetadata` carries `interaction_id`, `status`, `thought_signatures`,
+  `total_tokens`, `total_thought_tokens`, `total_cached_tokens` and
+  `total_tool_use_tokens`.
+- Retries are off unless you pass a `RetryConfig`.
+
+## Example
+
+A runnable CLI lives in [example/](example/).

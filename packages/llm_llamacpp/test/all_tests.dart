@@ -1,27 +1,33 @@
-/// Comprehensive integration test suite for llm_llamacpp.
+/// Integration test suite for llm_llamacpp. Unit tests live in `test/unit/`
+/// and are picked up by a plain `dart test`.
 ///
-/// Run all tests:
+/// These tests load a real GGUF model through the native library, so they need
+/// both a model and a resolvable library. The build hook puts the library under
+/// `.dart_tool/`, so point the loader at it with `LLM_LLAMACPP_LIB_DIR`:
+///
 /// ```bash
 /// cd packages/llm_llamacpp
-/// LD_LIBRARY_PATH=linux/libs dart test test/all_tests.dart
+/// export LLM_LLAMACPP_LIB_DIR=$(dirname $(find .dart_tool/hooks_runner \
+///   -name 'libllama.*' -o -name 'llama.dll' | head -1))
+/// dart test test/all_tests.dart
 /// ```
 ///
-/// Run only integration tests:
+/// Run only unit tests (no model or native library needed):
 /// ```bash
-/// dart test test/integration
+/// dart test test/unit
 /// ```
 ///
-/// Run with specific model:
+/// Run with a specific model:
 /// ```bash
 /// LLAMA_TEST_MODEL=/path/to/model.gguf \
 /// LLAMA_TEST_VISION_MODEL=/path/to/vision-model.gguf \
 /// LLAMA_TEST_GPU_LAYERS=99 \
-/// LD_LIBRARY_PATH=linux/libs dart test test/all_tests.dart
+/// dart test test/all_tests.dart
 /// ```
 ///
-/// Run specific test file:
+/// Run a specific test file:
 /// ```bash
-/// LD_LIBRARY_PATH=linux/libs dart test test/integration/model_loading_test.dart
+/// dart test test/integration/model_loading_test.dart
 /// ```
 library;
 

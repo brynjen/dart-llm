@@ -34,6 +34,24 @@ final vllmRepo = VLLMRepository(baseUrl: 'http://localhost:8000');
 final models = await vllmRepo.models();
 ```
 
+## Other programs in this directory
+
+| File | Purpose |
+|---|---|
+| `cli_example.dart` | Interactive streaming chat (above) |
+| `discover_example.dart` | Probes a deployment: models, capabilities, supported parameters |
+| `pool_load_example.dart` | Drives a `VLLMPool` across several instances and prints routing stats |
+
+The rest are diagnostic harnesses kept alongside
+`docs/concurrent-send-stall.md`, not usage examples:
+
+| File | Purpose |
+|---|---|
+| `concurrency_stall_repro.dart` | Concurrency soak; fails when a request exceeds 4x the run median |
+| `raw_socket_burst_probe.dart` | Raw `Socket` repro of the macOS write-event loss |
+| `dart_io_stall_probe.dart` | Same shape of traffic through `dart:io`'s `HttpClient` |
+| `long_context_probe.dart` | Behaviour at large context sizes |
+
 ## Integration Environment
 
 ```bash

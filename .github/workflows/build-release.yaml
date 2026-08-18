@@ -3,13 +3,29 @@ name: Build and Release llm_llamacpp
 on:
   push:
     tags:
+      # Release tags are bare versions, e.g. `0.3.1` or `0.3.1-beta.1`. The
+      # legacy `v*` form is still matched so an old tag can be rebuilt.
+      - '[0-9]+.[0-9]+.[0-9]+*'
       - 'v*'
+    branches:
+      - main
+    # A push to main only builds when something that invalidates the published
+    # native bundle changes: the package version (which names the release) or
+    # the FFI binding surface (which names the asset, via the ABI fingerprint).
+    paths:
+      - 'packages/llm_llamacpp/pubspec.yaml'
+      - 'packages/llm_llamacpp/lib/src/bindings/llama_bindings.dart'
+      - 'packages/llm_llamacpp/hook/build.dart'
+      - '.github/workflows/build-release.yaml'
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version to build (e.g., 0.1.0)'
-        required: true
-        default: '0.1.0'
+        description: 'Version to build (default: version from packages/llm_llamacpp/pubspec.yaml)'
+        required: false
+      force:
+        description: 'Rebuild even if the release already has matching assets'
+        type: boolean
+        default: false
       skip_linux:
         description: 'Skip Linux build'
         type: boolean
@@ -40,8 +56,12 @@ jobs:
   # ============================================
   abi-fingerprint:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     outputs:
       fingerprint: ${{ steps.compute.outputs.fingerprint }}
+      version: ${{ steps.resolve.outputs.version }}
+      should_build: ${{ steps.decide.outputs.should_build }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -75,13 +95,76 @@ jobs:
           echo "fingerprint=$fingerprint" >> "$GITHUB_OUTPUT"
           echo "ABI fingerprint: $fingerprint"
 
+      - name: Resolve version
+        id: resolve
+        run: |
+          set -euo pipefail
+          # Single source of truth: `version:` in the package's pubspec, which is
+          # also what hook/build.dart reads to build the download URL. A tag push
+          # wins so an explicit `1.2.3` tag always builds `1.2.3`, and a manual
+          # run may override. A leading `v` is stripped for tolerance of the
+          # legacy tag form; release tags are bare versions.
+          PUBSPEC_VERSION=$(sed -n 's/^version:[[:space:]]*\([^[:space:]]*\)[[:space:]]*$/\1/p' \
+            packages/llm_llamacpp/pubspec.yaml | head -n1)
+          if [[ -z "$PUBSPEC_VERSION" ]]; then
+            echo "::error::No top-level 'version:' found in packages/llm_llamacpp/pubspec.yaml"
+            exit 1
+          fi
+
+          if [[ "${{ github.ref_type }}" == "tag" ]]; then
+            VERSION="${{ github.ref_name }}"
+            VERSION="${VERSION#v}"
+            if [[ "$VERSION" != "$PUBSPEC_VERSION" ]]; then
+              echo "::warning::Tag $VERSION does not match pubspec version $PUBSPEC_VERSION. Building $VERSION, but hook/build.dart will request assets from release $PUBSPEC_VERSION and will not find them."
+            fi
+          elif [[ -n "${{ github.event.inputs.version }}" ]]; then
+            VERSION="${{ github.event.inputs.version }}"
+            VERSION="${VERSION#v}"
+          else
+            VERSION="$PUBSPEC_VERSION"
+          fi
+
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Building native artifacts for version: $VERSION"
+
+      - name: Decide whether a build is needed
+        id: decide
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          VERSION="${{ steps.resolve.outputs.version }}"
+          ABI_FP="${{ steps.compute.outputs.fingerprint }}"
+
+          if [[ "${{ github.event.inputs.force }}" == "true" ]]; then
+            echo "should_build=true" >> "$GITHUB_OUTPUT"
+            echo "Forced rebuild requested."
+            exit 0
+          fi
+
+          # Rebuild only when the release for this version does not already carry
+          # assets for this exact ABI fingerprint. That covers both cases the
+          # hook cares about: a new version, and regenerated bindings under an
+          # existing version.
+          EXPECTED="llm_llamacpp-v${VERSION}-abi${ABI_FP}-linux-x64.zip"
+          if gh release view "${VERSION}" --json assets \
+               --jq '.assets[].name' 2>/dev/null | grep -qx "$EXPECTED"; then
+            echo "should_build=false" >> "$GITHUB_OUTPUT"
+            echo "Release ${VERSION} already has $EXPECTED; nothing to build."
+          else
+            echo "should_build=true" >> "$GITHUB_OUTPUT"
+            echo "Release ${VERSION} is missing $EXPECTED; building."
+          fi
+
   # ============================================
   # Linux x64 Build (with CUDA and Vulkan)
   # ============================================
   build-linux-x64:
-    if: ${{ !inputs.skip_linux }}
     runs-on: ubuntu-24.04
     needs: abi-fingerprint
+    if: >-
+      ${{ needs.abi-fingerprint.outputs.should_build == 'true'
+          && !inputs.skip_linux }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -140,8 +223,7 @@ jobs:
 
       - name: Package artifacts
         run: |
-          VERSION="${{ github.event.inputs.version || github.ref_name }}"
-          VERSION="${VERSION#v}"  # Remove 'v' prefix if present
+          VERSION="${{ needs.abi-fingerprint.outputs.version }}"
           
           mkdir -p dist
           
@@ -173,9 +255,11 @@ jobs:
   # macOS arm64 Build (with Metal)
   # ============================================
   build-macos-arm64:
-    if: ${{ !inputs.skip_macos }}
     runs-on: macos-14  # M1/M2 runner
     needs: abi-fingerprint
+    if: >-
+      ${{ needs.abi-fingerprint.outputs.should_build == 'true'
+          && !inputs.skip_macos }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -211,8 +295,7 @@ jobs:
 
       - name: Package artifacts
         run: |
-          VERSION="${{ github.event.inputs.version || github.ref_name }}"
-          VERSION="${VERSION#v}"
+          VERSION="${{ needs.abi-fingerprint.outputs.version }}"
           
           mkdir -p dist
           
@@ -236,9 +319,11 @@ jobs:
   # macOS x64 Build (with Metal, cross-compiled from ARM)
   # ============================================
   build-macos-x64:
-    if: ${{ !inputs.skip_macos }}
     runs-on: macos-14  # Use free ARM runner, cross-compile to x64
     needs: abi-fingerprint
+    if: >-
+      ${{ needs.abi-fingerprint.outputs.should_build == 'true'
+          && !inputs.skip_macos }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -278,8 +363,7 @@ jobs:
 
       - name: Package artifacts
         run: |
-          VERSION="${{ github.event.inputs.version || github.ref_name }}"
-          VERSION="${VERSION#v}"
+          VERSION="${{ needs.abi-fingerprint.outputs.version }}"
           
           mkdir -p dist
           find build-macos-x64 -name "*.dylib" -exec cp {} dist/ \;
@@ -300,9 +384,11 @@ jobs:
   # Users needing CUDA can build from source
   # ============================================
   build-windows-x64:
-    if: ${{ !inputs.skip_windows }}
     runs-on: windows-latest
     needs: abi-fingerprint
+    if: >-
+      ${{ needs.abi-fingerprint.outputs.should_build == 'true'
+          && !inputs.skip_windows }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -354,8 +440,7 @@ jobs:
       - name: Package artifacts
         shell: pwsh
         run: |
-          $version = "${{ github.event.inputs.version || github.ref_name }}"
-          $version = $version -replace '^v', ''
+          $version = "${{ needs.abi-fingerprint.outputs.version }}"
           
           New-Item -ItemType Directory -Force -Path dist
           
@@ -376,9 +461,11 @@ jobs:
   # Android arm64-v8a Build (CPU with KleidiAI + Vulkan GPU)
   # ============================================
   build-android-arm64:
-    if: ${{ !inputs.skip_android }}
     runs-on: ubuntu-latest
     needs: abi-fingerprint
+    if: >-
+      ${{ needs.abi-fingerprint.outputs.should_build == 'true'
+          && !inputs.skip_android }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -442,8 +529,7 @@ jobs:
 
       - name: Package artifacts
         run: |
-          VERSION="${{ github.event.inputs.version || github.ref_name }}"
-          VERSION="${VERSION#v}"
+          VERSION="${{ needs.abi-fingerprint.outputs.version }}"
           
           mkdir -p dist
           
@@ -483,9 +569,11 @@ jobs:
   # Android armeabi-v7a Build (32-bit ARM)
   # ============================================
   build-android-arm:
-    if: ${{ !inputs.skip_android }}
     runs-on: ubuntu-latest
     needs: abi-fingerprint
+    if: >-
+      ${{ needs.abi-fingerprint.outputs.should_build == 'true'
+          && !inputs.skip_android }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -537,8 +625,7 @@ jobs:
 
       - name: Package artifacts
         run: |
-          VERSION="${{ github.event.inputs.version || github.ref_name }}"
-          VERSION="${VERSION#v}"
+          VERSION="${{ needs.abi-fingerprint.outputs.version }}"
           
           mkdir -p dist
           find build-android-arm -name "*.so" -exec cp {} dist/ \;
@@ -568,9 +655,11 @@ jobs:
   # Android x86_64 Build (for emulator)
   # ============================================
   build-android-x86_64:
-    if: ${{ !inputs.skip_android }}
     runs-on: ubuntu-latest
     needs: abi-fingerprint
+    if: >-
+      ${{ needs.abi-fingerprint.outputs.should_build == 'true'
+          && !inputs.skip_android }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -622,8 +711,7 @@ jobs:
 
       - name: Package artifacts
         run: |
-          VERSION="${{ github.event.inputs.version || github.ref_name }}"
-          VERSION="${VERSION#v}"
+          VERSION="${{ needs.abi-fingerprint.outputs.version }}"
           
           mkdir -p dist
           find build-android-x86_64 -name "*.so" -exec cp {} dist/ \;
@@ -653,9 +741,11 @@ jobs:
   # iOS Build (xcframework with Metal)
   # ============================================
   build-ios:
-    if: ${{ !inputs.skip_ios }}
     runs-on: macos-14
     needs: abi-fingerprint
+    if: >-
+      ${{ needs.abi-fingerprint.outputs.should_build == 'true'
+          && !inputs.skip_ios }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -693,8 +783,7 @@ jobs:
 
       - name: Create xcframework
         run: |
-          VERSION="${{ github.event.inputs.version || github.ref_name }}"
-          VERSION="${VERSION#v}"
+          VERSION="${{ needs.abi-fingerprint.outputs.version }}"
           
           mkdir -p dist
           
@@ -718,6 +807,7 @@ jobs:
   # ============================================
   release:
     needs:
+      - abi-fingerprint
       - build-linux-x64
       - build-macos-arm64
       - build-macos-x64
@@ -726,8 +816,13 @@ jobs:
       - build-android-arm
       - build-android-x86_64
       - build-ios
-    # Run even if some jobs were skipped, but not if any failed
-    if: ${{ always() && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') }}
+    # Run even if some platform jobs were skipped, but not if any failed, and
+    # not at all when the release already carries assets for this ABI.
+    if: >-
+      ${{ always()
+          && needs.abi-fingerprint.outputs.should_build == 'true'
+          && !contains(needs.*.result, 'failure')
+          && !contains(needs.*.result, 'cancelled') }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -745,33 +840,32 @@ jobs:
           echo "Downloaded artifacts:"
           find artifacts -type f -name "*.zip" | sort
 
-      - name: Determine version and tag
+      # The release tag is the bare version — no `v` prefix — because that is
+      # the tag `hook/build.dart` builds its download URL from.
+      - name: Determine tag
         id: version
         run: |
-          # Use tag name if triggered by tag, otherwise use input version
-          if [[ "${{ github.ref_type }}" == "tag" ]]; then
-            VERSION="${{ github.ref_name }}"
-          else
-            VERSION="v${{ github.event.inputs.version }}"
-          fi
-          echo "version=${VERSION}" >> $GITHUB_OUTPUT
-          echo "Using version: ${VERSION}"
+          set -euo pipefail
+          TAG="${{ needs.abi-fingerprint.outputs.version }}"
+          echo "version=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "Releasing as tag: ${TAG}"
 
-      - name: Create or update tag for manual runs
+      - name: Create or move tag to this commit
         if: ${{ github.ref_type != 'tag' }}
         run: |
-          VERSION="${{ steps.version.outputs.version }}"
+          set -euo pipefail
+          TAG="${{ steps.version.outputs.version }}"
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          
-          # Delete existing tag if present (local and remote)
-          git tag -d "${VERSION}" 2>/dev/null || true
-          git push origin ":refs/tags/${VERSION}" 2>/dev/null || true
-          
-          # Create new tag
-          git tag "${VERSION}"
-          git push origin "${VERSION}"
-          echo "Created tag: ${VERSION}"
+
+          # Delete existing tag if present (local and remote) so a rebuild of the
+          # same version points the release at the current commit.
+          git tag -d "${TAG}" 2>/dev/null || true
+          git push origin ":refs/tags/${TAG}" 2>/dev/null || true
+
+          git tag "${TAG}"
+          git push origin "${TAG}"
+          echo "Tagged: ${TAG}"
 
       - name: Create Release
         uses: softprops/action-gh-release@v2

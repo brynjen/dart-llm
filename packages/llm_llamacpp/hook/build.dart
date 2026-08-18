@@ -22,16 +22,59 @@ import 'package:path/path.dart' as p;
 const String _githubOwner = 'brynjen';
 const String _githubRepo = 'dart-llm';
 
-/// GitHub release native artifact version.
+/// Fallback native artifact version, used only if `pubspec.yaml` cannot be
+/// read or parsed. The real value comes from [_readNativeBinaryVersion].
+const String _fallbackNativeBinaryVersion = '0.3.1';
+
+/// The GitHub release that carries this package's prebuilt native bundles.
 ///
-/// This usually matches the Dart package version, but it names the downloaded
-/// binary bundle rather than the Dart package itself.
+/// Read straight from `version:` in the package's own `pubspec.yaml`, so it can
+/// never drift from the published package version. The hook requests
+/// `.../releases/download/<version>/llm_llamacpp-v<version>-abi<fp>-...zip`,
+/// so a release tagged `<version>` — no `v` prefix — must carry assets built
+/// from these bindings. `.github/workflows/build-release.yaml` reads the same field, which
+/// is what keeps the two ends in agreement: bumping the package version is all
+/// it takes to get a matching release built and to point this hook at it.
+///
+/// A published package does not carry the `llamacpp/` submodule, so for pub.dev
+/// consumers the prebuilt is the only path — a missing release means a hard
+/// build failure, not a slow from-source fallback.
 ///
 /// Note: prebuilt asset filenames also include an ABI fingerprint (see
 /// [_computeAbiFingerprint]) so that updates to the FFI binding surface
 /// automatically invalidate incompatible prebuilt bundles even without a
 /// version bump.
-const String _nativeBinaryVersion = '0.4.0';
+String _readNativeBinaryVersion(Uri packageRoot, Logger? logger) {
+  final pubspec = File.fromUri(packageRoot.resolve(_pubspecPath));
+  if (!pubspec.existsSync()) {
+    logger?.warning(
+      'Could not read ${pubspec.path}; falling back to native artifact '
+      'version $_fallbackNativeBinaryVersion.',
+    );
+    return _fallbackNativeBinaryVersion;
+  }
+  // Top-level `version:` only — a nested or commented occurrence must not win.
+  for (final line in pubspec.readAsLinesSync()) {
+    final match = RegExp(r'^version:\s*(\S+)\s*$').firstMatch(line);
+    if (match != null) return match.group(1)!;
+  }
+  logger?.warning(
+    'No top-level `version:` in ${pubspec.path}; falling back to native '
+    'artifact version $_fallbackNativeBinaryVersion.',
+  );
+  return _fallbackNativeBinaryVersion;
+}
+
+/// Path to the package's pubspec, relative to the package root.
+const String _pubspecPath = 'pubspec.yaml';
+
+/// Test-only entry point for [_readNativeBinaryVersion].
+///
+/// `test/unit/native_binary_version_test.dart` uses this to assert that the
+/// version the hook requests prebuilts for is exactly the package version, and
+/// that `.github/workflows/build-release.yaml` would resolve the same string.
+String readNativeBinaryVersionForTesting(Uri packageRoot) =>
+    _readNativeBinaryVersion(packageRoot, null);
 
 /// Files whose hash defines the FFI ABI contract we expect from the loaded
 /// native library at runtime. If any of these change (e.g. because the
@@ -107,17 +150,23 @@ void main(List<String> args) async {
     }
 
     final abiFingerprint = _computeAbiFingerprint(input.packageRoot);
+    final nativeBinaryVersion = _readNativeBinaryVersion(
+      input.packageRoot,
+      logger,
+    );
     logger.info(
       'ABI fingerprint: $abiFingerprint '
-      '(derived from ${_abiFingerprintInputs.join(', ')})',
+      '(derived from ${_abiFingerprintInputs.join(', ')}); '
+      'native artifact version: $nativeBinaryVersion',
     );
 
     // Declare the fingerprint inputs as hook dependencies. Without this the
     // hooks runner reuses the cached output whenever nothing else changed, so
     // regenerating the bindings would *not* re-run this hook and the ABI
     // fingerprint would never be recomputed -- silently defeating the whole
-    // invalidation scheme above.
-    for (final relative in _abiFingerprintInputs) {
+    // invalidation scheme above. `pubspec.yaml` is declared for the same
+    // reason: it now supplies the release version the prebuilt is fetched from.
+    for (final relative in [..._abiFingerprintInputs, _pubspecPath]) {
       output.dependencies.add(input.packageRoot.resolve(relative));
     }
 
@@ -128,6 +177,7 @@ void main(List<String> args) async {
       input,
       logger,
       abiFingerprint,
+      nativeBinaryVersion,
     );
 
     if (prebuiltLibraries != null) {
@@ -252,6 +302,7 @@ Future<List<Uri>?> _tryDownloadPrebuilt(
   BuildInput input,
   Logger logger,
   String abiFingerprint,
+  String nativeBinaryVersion,
 ) async {
   if (targetArch == null) {
     logger.warning('Target architecture unknown, cannot download prebuilt');
@@ -265,11 +316,12 @@ Future<List<Uri>?> _tryDownloadPrebuilt(
   // is invalidated the moment the FFI bindings change. A 404 cleanly falls
   // through to the from-source build path below.
   final assetName =
-      'llm_llamacpp-v$_nativeBinaryVersion-abi$abiFingerprint'
+      'llm_llamacpp-v$nativeBinaryVersion-abi$abiFingerprint'
       '-$osString-$archString.zip';
   final downloadUrl = Uri.parse(
+    // The release tag is the bare version, with no `v` prefix.
     'https://github.com/$_githubOwner/$_githubRepo/releases/download/'
-    'v$_nativeBinaryVersion/$assetName',
+    '$nativeBinaryVersion/$assetName',
   );
 
   logger.info('Checking for prebuilt at: $downloadUrl');
@@ -295,7 +347,7 @@ Future<List<Uri>?> _tryDownloadPrebuilt(
   // gibberish" output instead of a hard crash.
   final extractDir = Directory.fromUri(
     cacheDir.uri.resolve(
-      'v$_nativeBinaryVersion-abi$abiFingerprint-$osString-$archString/',
+      'v$nativeBinaryVersion-abi$abiFingerprint-$osString-$archString/',
     ),
   );
 

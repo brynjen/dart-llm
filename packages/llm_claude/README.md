@@ -10,8 +10,9 @@ Available on [pub.dev](https://pub.dev/packages/llm_claude).
 
 - Streaming chat responses via the Anthropic Messages API
 - Tool/function calling with automatic multi-turn tool-loop execution
+- Vision (image) support
 - Thinking mode (extended reasoning) support
-- Structured output via system-message injection (`JsonFormat`, `JsonSchemaFormat`)
+- Structured output (`JsonSchemaFormat` via native `output_config.format`; `JsonFormat` via system-message injection)
 - Builder pattern for fluent configuration
 - Configurable retry and timeout policies
 
@@ -19,7 +20,7 @@ Available on [pub.dev](https://pub.dev/packages/llm_claude).
 
 ```yaml
 dependencies:
-  llm_claude: ^0.2.0
+  llm_claude: ^0.3.1
 ```
 
 ## Prerequisites
@@ -90,7 +91,17 @@ final stream = repo.streamChat(
 
 ### Structured Output
 
-Claude has no native `response_format` parameter, so structured output is implemented by injecting a schema instruction into the system field — appended after any user-defined system content.
+Which mechanism is used depends on the format and the model:
+
+| | Modern & transitional models | Legacy models |
+|---|---|---|
+| `JsonSchemaFormat` | native `output_config.format` with `type: json_schema` | system-message injection |
+| `JsonFormat` | system-message injection | system-message injection |
+
+There is no native bare-JSON mode in the Anthropic API, so `JsonFormat` always
+injects — it appends a JSON instruction after any user-defined system content.
+Legacy here means Opus/Sonnet 4.5 and earlier, Haiku 4.5 and earlier, and the
+Claude 3 family; see [Models](#models).
 
 ```dart
 import 'package:llm_core/llm_core.dart';
@@ -131,7 +142,13 @@ final stream = repo.streamChat(
   messages: [LLMMessage(role: LLMRole.user, content: 'Solve this step by step: ...')],
   think: true,
   options: const LLMChatOptions(
-    backendOptions: {'thinking_budget': 16000},
+    backendOptions: {
+      // haiku-4-5 is a legacy model, so thinking uses a token budget — and the
+      // budget is clamped to `max_tokens - 1`. Raise max_tokens alongside it or
+      // the effective budget is 4095, not 16000.
+      'max_tokens': 24000,
+      'thinking_budget': 16000,
+    },
   ),
 );
 
@@ -158,6 +175,8 @@ print(response.content);
 ### Using LLMChatOptions
 
 ```dart
+// `thinking_budget` is only read when `think: true` is set; without it the
+// key is dropped.
 final options = LLMChatOptions(
   tools: [WeatherTool()],
   toolAttempts: 5,
@@ -252,5 +271,13 @@ Claude works without a library update.
 ## Notes
 
 - Claude does not support embeddings. `embed()` and `batchEmbed()` throw `UnsupportedError`.
-- Structured output is implemented via system-message injection (no native `response_format` API).
+- `JsonSchemaFormat` constrains decoding natively via `output_config.format` on
+  models that support it; `JsonFormat` always falls back to system-message
+  injection, because the API has no bare-JSON mode.
 - `max_tokens` defaults to 4096; override via `backendOptions['max_tokens']`.
+- A thinking budget is clamped to `max_tokens - 1` on legacy models. Raise
+  `max_tokens` alongside `thinking_budget` or the budget you asked for is not
+  the budget you get.
+- `tool_choice` accepts the shorthands `'auto'`, `'any'`, `'required'`, `'none'`
+  and a bare tool name, in addition to the API's own object form.
+- Retries are off unless you pass a `RetryConfig`.

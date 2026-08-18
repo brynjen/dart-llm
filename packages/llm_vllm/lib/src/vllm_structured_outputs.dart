@@ -20,8 +20,8 @@
 /// returns unconstrained output with a 200 status. A request built with the old
 /// names therefore looks like it worked while silently producing free-form
 /// text. [VLLMStructuredOutputs] emits the current field names, and
-/// [assertNoLegacyGuidedKeys] rejects the old ones outright rather than letting
-/// them fail silently.
+/// [validateVllmParams] rejects the old ones (see [legacyGuidedKeys]) outright
+/// rather than letting them fail silently.
 ///
 /// These parameters go at the **top level** of the request body. `extra_body`
 /// is an OpenAI Python SDK concept, not a wire field; vLLM ignores it.

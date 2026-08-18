@@ -1,18 +1,39 @@
-# llm_llamacpp Integration Tests
+# llm_llamacpp Tests
 
-Comprehensive test suite for the llm_llamacpp package covering model loading, text generation, vision models, and tool use.
+Two suites:
+
+- **`test/unit/`** — pure Dart. No model, no native library, no network. Covers
+  the build hook (ABI fingerprint, native artifact version, desktop and Android
+  bundle collection), tool-call parsing and injection, the streaming UTF-8
+  decoder, and response-format injection.
+- **`test/integration/`** — loads a real GGUF model through the native library.
+  Tagged `integration` and skipped automatically when no model is available.
 
 ## Quick Start
 
 ```bash
 cd packages/llm_llamacpp
 
-# Run all tests (with models in /tmp/)
-LD_LIBRARY_PATH=linux/libs dart test test/all_tests.dart
-
-# Run specific test file
-LD_LIBRARY_PATH=linux/libs dart test test/integration/model_loading_test.dart
+# Unit tests only — nothing to set up
+dart test test/unit
 ```
+
+Integration tests need a model and a resolvable native library. The build hook
+places the library under `.dart_tool/`, so point the loader at it with
+`LLM_LLAMACPP_LIB_DIR` (there is no `linux/libs` directory — that path is from an
+older, manual build layout):
+
+```bash
+export LLM_LLAMACPP_LIB_DIR=$(dirname $(find .dart_tool/hooks_runner \
+  \( -name 'libllama.*' -o -name 'llama.dll' \) | head -1))
+export LLAMA_TEST_MODEL=/path/to/model.gguf
+
+dart test test/all_tests.dart
+dart test test/integration/model_loading_test.dart
+```
+
+Under Flutter the library is bundled in the app and no override is needed; this
+only applies to pure-Dart runs.
 
 ## Test Configuration
 
@@ -38,13 +59,32 @@ Alternatively, place models in `test/models/`:
 LLAMA_TEST_MODEL=/tmp/qwen2.5-0.5b-q4.gguf \
 LLAMA_TEST_VISION_MODEL=/tmp/qwen3-vl-8b-q4km.gguf \
 LLAMA_TEST_GPU_LAYERS=99 \
-LD_LIBRARY_PATH=linux/libs:/usr/local/cuda/lib64 \
+LLM_LLAMACPP_LIB_DIR=/path/to/build/bin \
 dart test test/all_tests.dart
 ```
 
 ## Test Files
 
-All integration tests are located in `test/integration/`:
+### Unit tests — `test/unit/`
+
+| File | Covers |
+|---|---|
+| `abi_fingerprint_test.dart` | Fingerprint stability, CR invariance, input ordering |
+| `native_binary_version_test.dart` | The prebuilt release version matches `pubspec.yaml` |
+| `desktop_native_bundle_test.dart` | macOS/Linux/Windows collect `ggml*` alongside `libllama` |
+| `android_native_bundle_test.dart` | Android JNI library collection |
+| `tool_call_parser_test.dart` | Delimiter-first parsing, dedup, string-aware JSON scanning |
+| `tool_call_stream_handler_test.dart` | Tool markup never leaks into visible text |
+| `tool_definition_injector_test.dart` | Per-family tool definition formatting |
+| `response_format_injection_test.dart` | Structured-output system-message injection |
+| `streaming_utf8_decoder_test.dart` | Multi-byte characters split across tokens |
+
+### Integration tests — `test/integration/`
+
+`model_loading_test.dart`, `text_generation_test.dart`, `streaming_test.dart`,
+`chat_history_test.dart`, `tool_use_test.dart`, `embeddings_test.dart`,
+`vision_model_test.dart`, `error_handling_test.dart`, `edge_cases_test.dart`,
+and the `integration_test.dart` aggregate. The main ones in detail:
 
 ### `integration/model_loading_test.dart`
 - Model loading and unloading
@@ -58,7 +98,7 @@ All integration tests are located in `test/integration/`:
 - Streaming token output
 - System prompts
 - Multi-turn conversations
-- Prompt templates (ChatML, Llama3, etc.)
+- Chat templates applied from the GGUF itself
 - Performance metrics
 
 ### `integration/vision_model_test.dart`
@@ -102,7 +142,7 @@ wget -O /tmp/llama-3.2-1b-q4.gguf \
 ```bash
 # Ensure CUDA is in path
 export PATH=/usr/local/cuda/bin:$PATH
-export LD_LIBRARY_PATH=linux/libs:/usr/local/cuda/lib64:$LD_LIBRARY_PATH
+export LD_LIBRARY_PATH=/usr/local/cuda/lib64:$LD_LIBRARY_PATH
 
 # Run with GPU
 LLAMA_TEST_GPU_LAYERS=99 dart test test/all_tests.dart
@@ -153,9 +193,13 @@ Skipped tests print informative messages about how to enable them.
 ## Troubleshooting
 
 ### "Library not found"
+
+The loader searches `LLM_LLAMACPP_LIB_DIR` first, then the working directory and
+the usual system locations. Point it at the hook's build output:
+
 ```bash
-# Ensure LD_LIBRARY_PATH includes the libs directory
-export LD_LIBRARY_PATH=linux/libs:$LD_LIBRARY_PATH
+export LLM_LLAMACPP_LIB_DIR=$(dirname $(find .dart_tool/hooks_runner \
+  \( -name 'libllama.*' -o -name 'llama.dll' \) | head -1))
 ```
 
 ### "No model available"

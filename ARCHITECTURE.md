@@ -43,9 +43,14 @@ The project uses the Repository pattern to abstract LLM interactions:
 
 ```dart
 abstract class LLMChatRepository {
+  // The one member every backend must implement.
   Stream<LLMChunk> streamChat(...);
-  Future<LLMResponse> chatResponse(...);
+
+  // Provided with working defaults; override where the backend can do better.
+  LLMCapabilities capabilitiesForModel(String model);
+  Future<LLMResponse> chatResponse(...);   // collects streamChat, runs the tool loop
   Future<List<LLMEmbedding>> embed(...);
+  Future<List<LLMEmbedding>> batchEmbed(...);
 }
 ```
 
@@ -77,7 +82,12 @@ abstract class LLMTool {
   String get name;
   String get description;
   List<LLMToolParam> get parameters;
-  Future<String> execute(Map<String, dynamic> args, {dynamic extra});
+  Future<dynamic> execute(Map<String, dynamic> args, {dynamic extra});
+
+  // Provided: a system-message line describing the tool, and the JSON schema
+  // sent to the provider. Override `llmDescription` for custom phrasing.
+  String get llmDescription;
+  Map<String, dynamic> get toJson;
 }
 ```
 
@@ -123,7 +133,7 @@ final class JsonSchemaFormat extends LLMResponseFormat {
 
 **Usage**:
 ```dart
-final options = StreamChatOptions(
+final options = LLMChatOptions(
   responseFormat: JsonSchemaFormat(
     name: 'person',
     schema: {
@@ -146,10 +156,10 @@ final options = StreamChatOptions(
 | `llm_vllm` | Native OpenAI-compatible `response_format` field | `json_object` or `json_schema` with `strict`; vLLM-native `structured_outputs` (regex / choice / grammar) via `VLLMStructuredOutputs` |
 | `llm_gemini` | Native `response_format` (Interactions API) | Chat uses `POST /v1beta/interactions`; the legacy `generateContent` endpoint is deprecated by Google |
 | `llm_ollama` | Native `format` field | `"json"` string or schema object; schema requires model support |
-| `llm_claude` | Native `output_config.format` | `json_schema` on Opus 4.6+ / Sonnet 5 / Fable 5; system-message injection on older models |
+| `llm_claude` | Native `output_config.format` | `json_schema` on Opus 4.6+, Sonnet 4.6+, Fable 5 and Mythos 5; system-message injection on Opus/Sonnet 4.5 and earlier, Haiku 4.5, and the Claude 3 family. `JsonFormat` always uses injection |
 | `llm_llamacpp` | System message injection | Instruction prepended/appended to system message |
 
-**Tool-Loop Propagation**: All backends forward `responseFormat` in the `StreamChatOptions` used for recursive tool-call rounds, ensuring the constraint is preserved across all iterations.
+**Tool-Loop Propagation**: All backends forward `responseFormat` in the `LLMChatOptions` used for recursive tool-call rounds, ensuring the constraint is preserved across all iterations.
 
 ## Package Details
 
@@ -169,7 +179,7 @@ final options = StreamChatOptions(
 8. **Validation**: Input validation utilities
 9. **RetryConfig**: Retry logic configuration
 10. **TimeoutConfig**: Timeout configuration
-11. **StreamChatOptions**: Encapsulates all streaming options (including `responseFormat`)
+11. **LLMChatOptions**: Encapsulates all streaming options (including `responseFormat`)
 
 **Design Principles**:
 - **No Backend Dependencies**: Core doesn't know about specific backends
@@ -188,6 +198,7 @@ final options = StreamChatOptions(
 - Embeddings
 - Model management
 - Structured output (JSON mode and JSON Schema)
+- Multi-instance pooling with health checks and per-model routing
 
 **Implementation Details**:
 - Uses HTTP client for API communication
@@ -203,14 +214,17 @@ final options = StreamChatOptions(
 **Features**:
 - Streaming chat
 - Tool/function calling
+- Vision (image) support
 - Embeddings
-- Azure OpenAI compatibility
+- Reasoning models: per-model detection and `reasoning_effort` mapping
 - Native structured output (`json_object` and `json_schema` modes)
 
 **Implementation Details**:
 - Uses HTTP client for API communication
 - Supports OpenAI API format
 - Handles streaming responses
+- `gpt_model_features.dart` decides per model whether to send `reasoning_effort`
+  and whether sampling parameters must be dropped
 
 ### llm_vllm
 
@@ -241,8 +255,8 @@ final options = StreamChatOptions(
 **Features**:
 - GGUF model support
 - Streaming generation
-- Multiple prompt templates
-- Tool calling via prompt convention
+- Chat templates read from the model file, applied by llama.cpp itself
+- Model-aware tool calling parsed out of the raw token stream
 - GPU acceleration support
 - Isolate-based inference
 - Structured output via system message injection
@@ -251,7 +265,11 @@ final options = StreamChatOptions(
 - Uses FFI to call native llama.cpp libraries
 - Supports multiple platforms (Linux, macOS, Windows, Android, iOS)
 - Handles model loading and context management
-- Implements prompt templates for different model families
+- Applies the GGUF's own chat template via `llama_chat_apply_template()`; the
+  package ships no template classes of its own
+- Detects the model's tool-call family from that template, falling back to a
+  tokenizer-vocabulary probe, then injects tool definitions in that family's
+  format and parses calls back out delimiter-first
 - `injectResponseFormat()` pure function prepends/appends to system message
 
 ### llm_claude
@@ -268,7 +286,8 @@ final options = StreamChatOptions(
 **Implementation Details**:
 - Uses HTTP client for Anthropic Messages API
 - Handles streaming SSE responses
-- Structured output achieved by appending schema instructions to the system prompt
+- Structured output uses native `output_config.format` on models that support it
+  and falls back to system-prompt injection on legacy models
 - No native embeddings API (throws `UnsupportedError`)
 - Implements retry logic with exponential backoff
 
@@ -319,13 +338,20 @@ final repo = OllamaChatRepository.builder()
 Options classes encapsulate related parameters:
 
 ```dart
-final options = StreamChatOptions(
+final options = LLMChatOptions(
   think: true,
   tools: [CalculatorTool()],
   toolAttempts: 5,
   timeout: Duration(minutes: 5),
   retryConfig: RetryConfig(maxAttempts: 3),
-  responseFormat: JsonSchemaFormat(name: 'result', schema: {...}),
+  responseFormat: JsonSchemaFormat(
+    name: 'result',
+    schema: {
+      'type': 'object',
+      'properties': {'answer': {'type': 'string'}},
+      'required': ['answer'],
+    },
+  ),
 );
 ```
 
@@ -342,13 +368,15 @@ Different backends implement the same interface:
 // Can swap backends without changing application code
 LLMChatRepository repo = OllamaChatRepository(...);
 // or
-LLMChatRepository repo = ChatGPTChatRepository(...);
+LLMChatRepository repo = VLLMChatRepository(...);
 // or
-LLMChatRepository repo = LlamaCppChatRepository(...);
+LLMChatRepository repo = ChatGPTChatRepository(...);
 // or
 LLMChatRepository repo = ClaudeChatRepository(...);
 // or
 LLMChatRepository repo = GeminiChatRepository(...);
+// or
+LLMChatRepository repo = LlamaCppChatRepository(...);
 ```
 
 ## Extension Points
@@ -359,7 +387,7 @@ LLMChatRepository repo = GeminiChatRepository(...);
 2. **Add dependency** on `llm_core` (workspace resolution):
    ```yaml
    dependencies:
-     llm_core: ^0.2.0
+     llm_core: ^0.3.1
    ```
 3. **Implement LLMChatRepository**:
    ```dart
@@ -386,7 +414,7 @@ LLMChatRepository repo = GeminiChatRepository(...);
    Validation.validateMessages(messages);
    ```
 5. **Handle structured output** if the API supports it natively, otherwise inject via system message
-6. **Propagate responseFormat** in tool-loop `StreamChatOptions` construction
+6. **Propagate responseFormat** in tool-loop `LLMChatOptions` construction
 7. **Handle tool execution** if supported
 8. **Export** the repository in `lib/my_backend.dart`
 
@@ -434,19 +462,27 @@ class MyCustomTool extends LLMTool {
 
 ### Exception Hierarchy
 
+Every `llm_core` exception implements `Exception` directly — there is no
+inheritance between them, so catch the specific type you care about:
+
 ```
 Exception
-  ├── LLMApiException (base for API errors)
-  │   ├── ThinkingNotSupportedException
-  │   ├── ToolsNotSupportedException
-  │   └── VisionNotSupportedException
-  └── (Backend-specific exceptions)
+  ├── LLMApiException              — non-2xx or malformed provider response (carries statusCode)
+  ├── ThinkingNotSupportedException — think: true against a model without it
+  ├── ToolsNotSupportedException    — tools passed to a model without tool support
+  ├── VisionNotSupportedException   — images passed to a non-vision model
+  ├── ToolLoopIncompleteException   — chatResponse exhausted maxToolAttempts
+  └── ModelLoadException            — local model failed to load (llm_llamacpp)
 ```
+
+`ThinkingNotAllowed`, `ToolsNotAllowed` and `VisionNotAllowed` remain as
+deprecated aliases for the three capability exceptions.
 
 **Design**:
 - **Specific Exceptions**: Each error type has its own exception
+- **Flat Hierarchy**: No shared base beyond `Exception`, so `on LLMApiException`
+  never accidentally swallows a capability error
 - **Context**: Exceptions include relevant context (model, message, etc.)
-- **Recovery**: Exceptions provide enough information for recovery
 
 ### Retry Logic
 
@@ -483,9 +519,10 @@ final retryConfig = RetryConfig(
 
 ### Test Utilities
 
-- `MockLLMChatRepository`: Mock implementation for testing
-- Test fixtures for common scenarios
-- Helper functions for assertions
+Each package carries its own test helpers; none are exported to consumers.
+`llm_core/test/unit/mock_llm_chat_repository.dart` holds a mock repository used
+across `llm_core`'s own suites, and each backend has a
+`test/integration/test_helpers.dart` that reads its `.env`.
 
 ## Performance Considerations
 
@@ -495,17 +532,33 @@ final retryConfig = RetryConfig(
 - **User Experience**: Progressive rendering
 - **Cancellation**: Support stream cancellation
 
-### Connection Pooling
+### HTTP Client
 
-- HTTP clients can be shared across repository instances
-- Reduces connection overhead
-- Configurable via builder pattern
+Every backend defaults to `llm_core`'s `createLLMHttpClient()`:
+
+- Bounded connection pool per host (64 by default), so a burst cannot open an
+  unbounded number of sockets
+- 3s idle timeout, so the client retires idle connections before a server with a
+  shorter keep-alive does it mid-request
+- `TimeoutConfig.connectionTimeout` actually applied
+- On macOS and iOS, wrapped in `WriteGatedHttpClient`: a counting semaphore
+  admits 4 requests at a time into their connect+write phase, working around a
+  Dart VM kqueue defect that loses writable events under a simultaneous burst.
+  Streaming *responses* are never gated. See `docs/concurrent-send-stall.md`.
+
+A custom client can be passed to any repository constructor or builder, and one
+client may be shared across repository instances.
 
 ### Native Libraries (llm_llamacpp)
 
 - Uses isolates for non-blocking inference
 - GPU acceleration support
 - Memory mapping for large models
+- Native libraries are resolved by `hook/build.dart` at build time: an ABI
+  fingerprint over the generated FFI bindings selects a prebuilt bundle from
+  GitHub Releases, falling back to a from-source CMake build when the
+  `llamacpp/` submodule is present. The primary library and every `ggml*`
+  library it links against are bundled together.
 
 ## Security Considerations
 
@@ -523,19 +576,23 @@ final retryConfig = RetryConfig(
 
 ### Network Security
 
-- Always use HTTPS
-- Validate SSL certificates
-- Support custom certificate validation
+- Always use HTTPS for hosted providers
+- SSL certificates are validated by `dart:io`'s defaults; the packages add no
+  certificate pinning or custom trust hooks
+- Self-hosted backends (Ollama, vLLM) are commonly plain HTTP on a trusted
+  network — treat the network boundary as the security boundary there
 
 ## Future Considerations
 
 ### Potential Extensions
 
-1. **Caching Layer**: Response caching for cost reduction
-2. **Rate Limiting**: Built-in rate limiting
-3. **Observability**: Enhanced metrics and tracing
-4. **Batch Processing**: Batch API support
-5. **Additional Backends**: Other LLM providers as they mature
+1. **Batch Processing**: Provider batch-API support (currently `batchEmbed`
+   only batches embeddings, and only where the provider offers it)
+2. **Additional Backends**: Other LLM providers as they mature
+
+Response caching (`ResponseCache`), rate limiting (`RateLimiter`) and metrics
+(`LLMMetrics`) were on this list and are now implemented and exported from
+`llm_core`; wire them up through any repository's builder.
 
 ### Breaking Changes
 

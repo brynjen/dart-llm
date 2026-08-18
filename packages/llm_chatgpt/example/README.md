@@ -59,12 +59,12 @@ final repo = ChatGPTChatRepository.builder()
   .build();
 ```
 
-### Azure OpenAI
+### OpenAI-compatible server
 
 ```dart
 final repo = ChatGPTChatRepository.builder()
-  .apiKey('your-azure-api-key')
-  .baseUrl('https://your-resource.openai.azure.com')
+  .apiKey('your-key')
+  .baseUrl('https://my-openai-compatible-host')
   .build();
 ```
 
@@ -118,8 +118,8 @@ final stream = repo.streamChat(
 
 ```dart
 final embeddings = await repo.embed(
-  'text-embedding-3-small',
-  ['Hello, world!', 'How are you?'],
+  model: 'text-embedding-3-small',
+  messages: ['Hello, world!', 'How are you?'],
 );
 
 for (final embedding in embeddings) {
@@ -147,14 +147,18 @@ dart run example/cli_example.dart
 
 ### Custom Base URL
 
-For Azure OpenAI or custom endpoints:
+For any server exposing OpenAI's `/v1/chat/completions` with a bearer token:
 
 ```dart
 final repo = ChatGPTChatRepository.builder()
   .apiKey('your-key')
-  .baseUrl('https://your-resource.openai.azure.com')
+  .baseUrl('https://my-openai-compatible-host')
   .build();
 ```
+
+Azure OpenAI is **not** supported — it uses a different URL layout
+(`/openai/deployments/{deployment}/chat/completions?api-version=...`) and an
+`api-key` header rather than a bearer token.
 
 ## Available Models
 
@@ -187,8 +191,8 @@ final repo = ChatGPTChatRepository.builder()
 - Verify firewall/proxy settings
 - Ensure OpenAI API is accessible from your network
 
-### Azure OpenAI
+### Custom base URL returns 404
 
-- Use the correct base URL format: `https://<resource>.openai.azure.com`
-- Ensure API version is compatible
-- Check Azure resource permissions
+Check that the host serves `POST <baseUrl>/v1/chat/completions` and accepts
+`Authorization: Bearer <key>`. Azure OpenAI does neither and is not supported by
+this package.

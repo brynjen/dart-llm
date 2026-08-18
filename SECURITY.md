@@ -6,7 +6,8 @@ We currently support the following versions with security updates:
 
 | Version | Supported          |
 | ------- | ------------------ |
-| 0.2.x   | :white_check_mark: |
+| 0.3.x   | :white_check_mark: |
+| 0.2.x   | :x:                |
 | 0.1.x   | :x:                |
 
 ## Reporting a Vulnerability
@@ -109,6 +110,18 @@ When using local models via `llm_llamacpp`:
 - Use authentication if available
 - Be cautious with remote Ollama instances
 
+### vLLM (`llm_vllm`)
+
+- Self-hosted and typically plain HTTP on a trusted network — treat the network
+  boundary as the security boundary
+- Authentication is optional: a server started with `--api-key` expects a bearer
+  token, which `VLLMChatRepository(apiKey: ...)` supplies. A server started
+  without one accepts every request
+- `VLLMRepository.models()` and `fetchSupportedParams()` read the server's
+  configuration; do not expose those results to untrusted callers
+- Prompts and completions stay on your infrastructure, but the server logs them
+  by default
+
 ### llama.cpp (`llm_llamacpp`)
 
 - Local execution reduces data privacy concerns
@@ -121,7 +134,7 @@ When using local models via `llm_llamacpp`:
 Security vulnerabilities in the following areas are considered valid:
 
 - Core package (`llm_core`) - interfaces and abstractions
-- Backend implementations (`llm_ollama`, `llm_chatgpt`, `llm_llamacpp`, `llm_claude`, `llm_gemini`)
+- Backend implementations (`llm_ollama`, `llm_vllm`, `llm_chatgpt`, `llm_claude`, `llm_gemini`, `llm_llamacpp`)
 - Authentication and credential handling
 - Network communication and API interactions
 - Input validation and sanitization
@@ -140,7 +153,7 @@ The following are **not** considered security vulnerabilities:
 ## Security Updates
 
 Security updates will be:
-- Released as patch versions (e.g., 0.1.0 → 0.1.1)
+- Released as patch versions (e.g., 0.3.0 → 0.3.1)
 - Documented in CHANGELOG.md
 - Announced via GitHub releases
 - Backported to supported versions when possible

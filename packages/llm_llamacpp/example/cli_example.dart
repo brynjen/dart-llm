@@ -9,7 +9,9 @@ import 'package:llm_llamacpp/llm_llamacpp.dart';
 ///
 /// Requirements:
 ///   - A GGUF model file (e.g., from Hugging Face)
-///   - Native llama.cpp library in the system path or current directory
+///   - The native library, resolved automatically by `hook/build.dart`. For a
+///     pure-Dart run, set `LLM_LLAMACPP_LIB_DIR` to the hook's output directory
+///     if the loader cannot find it.
 Future<void> main(List<String> args) async {
   if (args.isEmpty) {
     print('Usage: dart run example/cli_example.dart <model.gguf>');

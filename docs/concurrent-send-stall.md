@@ -11,12 +11,14 @@ released when the request body reaches the kernel — default 4 slots on
 macOS/iOS, no timers involved).
 **Found:** 2026-08-17, `llm_vllm` 0.3.0 + `llm_core` 0.3.0
 **Fixed in:** `llm_core` (`lib/src/http_client_utils.dart`,
-`lib/src/http_client_factory.dart`, `lib/src/paced_http_client.dart`),
+`lib/src/http_client_factory.dart`, `lib/src/write_gated_http_client_io.dart`),
 `llm_vllm` and `llm_ollama` stream converters
 
-> The defective code was in **`llm_core`**, not in `llm_vllm`. This note lives
-> here because `llm_vllm` is where it was found and where the reproduction
-> runs. Every backend calling `sendStreamingRequest` was affected.
+> The defective code was in **`llm_core`**. `llm_vllm` is where it was found
+> and where the reproduction harnesses live
+> (`packages/llm_vllm/example/concurrency_stall_repro.dart`,
+> `dart_io_stall_probe.dart`, `raw_socket_burst_probe.dart`). Every backend
+> calling `sendStreamingRequest` was affected.
 
 ---
 

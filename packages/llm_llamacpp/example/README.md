@@ -9,9 +9,10 @@
    - `tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf` (~700MB)
    - `phi-2.Q4_K_M.gguf` (~1.6GB)
 
-2. **Native Library**: The llama.cpp shared library must be available:
-   - Run the GitHub Actions workflow to build libraries
-   - Or build llama.cpp manually and place the library in your path
+2. **Native library**: nothing to do. `hook/build.dart` downloads a prebuilt
+   bundle (or builds from the vendored submodule) during `dart pub get`. For a
+   pure-Dart run the loader may need pointing at the hook's output — see
+   [Troubleshooting](#library-not-found).
 
 ## CLI Example
 
@@ -26,54 +27,61 @@ dart run example/cli_example.dart /path/to/your/model.gguf
 
 ### Basic Usage
 
+`LlamaCppRepository` owns model management; `LlamaCppChatRepository` chats.
+
 ```dart
 import 'package:llm_llamacpp/llm_llamacpp.dart';
 
 Future<void> main() async {
-  final repo = LlamaCppChatRepository(
-    contextSize: 2048,
-    nGpuLayers: 0, // Increase for GPU acceleration
-  );
+  const modelPath = '/path/to/model.gguf';
+  final modelRepo = LlamaCppRepository();
 
   try {
-    // Load model
-    await repo.loadModel('/path/to/model.gguf');
+    final model = await modelRepo.loadModel(modelPath);
 
-    // Chat
-    final stream = repo.streamChat('model', messages: [
-      LLMMessage(role: LLMRole.system, content: 'You are helpful.'),
-      LLMMessage(role: LLMRole.user, content: 'Hello!'),
-    ]);
+    final chatRepo = LlamaCppChatRepository.withModel(
+      model,
+      modelRepo.bindings,
+      contextSize: 2048,
+      nGpuLayers: 0, // Increase for GPU acceleration
+    );
 
-    await for (final chunk in stream) {
-      print(chunk.message?.content ?? '');
+    try {
+      final stream = chatRepo.streamChat(modelPath, messages: [
+        LLMMessage(role: LLMRole.system, content: 'You are helpful.'),
+        LLMMessage(role: LLMRole.user, content: 'Hello!'),
+      ]);
+
+      await for (final chunk in stream) {
+        print(chunk.message?.content ?? '');
+      }
+    } finally {
+      chatRepo.dispose();
     }
   } finally {
-    repo.dispose();
+    modelRepo.dispose();
   }
 }
 ```
 
-### Custom Prompt Templates
+### Chat templates
 
-```dart
-// Use a specific template
-repo.template = Llama3Template();
-
-// Or let it auto-detect from model name
-repo.template = getTemplateForModel('llama-3-8b');
-```
+Nothing to configure — the GGUF's own chat template is applied by llama.cpp. The
+template classes this package once exposed were removed in 0.1.5.
 
 ### GPU Acceleration
 
 ```dart
-final repo = LlamaCppChatRepository(
-  nGpuLayers: 35, // Offload 35 layers to GPU
+final model = await modelRepo.loadModel(
+  modelPath,
+  options: const ModelLoadOptions(nGpuLayers: 35),
 );
 
-await repo.loadModel('/path/to/model.gguf', options: ModelLoadOptions(
-  nGpuLayers: 35,
-));
+final chatRepo = LlamaCppChatRepository.withModel(
+  model,
+  modelRepo.bindings,
+  nGpuLayers: 35, // Offload 35 layers to GPU
+);
 ```
 
 ## Supported Platforms
@@ -91,10 +99,16 @@ await repo.loadModel('/path/to/model.gguf', options: ModelLoadOptions(
 
 ### Library not found
 
-Make sure the native library is in one of these locations:
-- Current working directory
-- Next to your executable
-- System library path (`/usr/local/lib`, etc.)
+For a pure-Dart run, point the loader at the build hook's output:
+
+```bash
+export LLM_LLAMACPP_LIB_DIR=$(dirname $(find .dart_tool/hooks_runner \
+  \( -name 'libllama.*' -o -name 'llama.dll' \) | head -1))
+```
+
+Without the override the loader also checks the current working directory, next
+to the executable, and the system library path. Under Flutter the library is
+bundled in the app and no override is needed.
 
 ### Model loading fails
 

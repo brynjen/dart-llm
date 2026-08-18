@@ -37,7 +37,7 @@ import 'package:llm_core/src/http_client_factory_stub.dart'
 /// same instant, silently stranding requests that are never transmitted at
 /// all. Queueing the write phases eliminates the collision without limiting
 /// concurrent streaming responses and without adding any fixed delay. Pass
-/// `0` to disable the gate. See `llm_vllm`'s `BUG-concurrent-send-stall.md`
+/// `0` to disable the gate. See `docs/concurrent-send-stall.md`
 /// for the investigation that pinned this down with kernel evidence on both
 /// ends of the wire.
 http.Client createLLMHttpClient({

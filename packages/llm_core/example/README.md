@@ -16,7 +16,9 @@ Future<String> summarize(LLMChatRepository repo, String model, String text) asyn
   final response = await repo.chatResponse(model, messages: [
     LLMMessage(role: LLMRole.user, content: 'Summarize:\n\n$text'),
   ]);
-  return response.content;
+  // `content` is nullable: a refusal or filtered response arrives as a
+  // successful response with no content.
+  return response.content ?? '';
 }
 ```
 
@@ -47,12 +49,12 @@ empty or partial content:
 ```dart
 switch (response.finishReason) {
   case LLMFinishReason.refusal:
-    // Provider safety classifiers declined the request.
+    throw StateError('Provider safety classifiers declined the request.');
   case LLMFinishReason.length:
-    // Truncated — raise maxOutputTokens.
+    throw StateError('Truncated — raise maxOutputTokens.');
   case LLMFinishReason.contentFilter:
-    // Output was filtered.
+    throw StateError('Output was filtered.');
   default:
-    // Use response.content.
+    print(response.content ?? '');
 }
 ```

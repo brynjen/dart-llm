@@ -1,6 +1,6 @@
 /// Minimal reproduction for the concurrent-`send()` stall.
 ///
-/// See `BUG-concurrent-send-stall.md` in this package.
+/// See `docs/concurrent-send-stall.md` at the repository root.
 ///
 /// Fires batches of concurrent `chatResponse` calls through a **single shared**
 /// [VLLMChatRepository] — the shared client is required to trigger the bug; one

@@ -7,17 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Fixed
-- A stream read timeout no longer kills the isolate. `VLLMStreamConverter` threw from `Stream.timeout`'s `onTimeout` callback, which runs from a timer outside the stream's error path, so the exception escaped as an unhandled error instead of failing the request. It is now pushed into the sink.
-- Sustained concurrent requests through one shared repository no longer stall permanently: a wedged send now times out and retries, and a stream read timeout no longer kills the process. The remaining stall was root-caused to the Dart VM's macOS socket event handler losing writable events under a simultaneous burst of large request writes (not to vLLM, as an earlier revision of the bug note claimed) and is fixed by `llm_core`'s write gate (bounded connect+write concurrency, on by default on macOS/iOS). Full investigation in `BUG-concurrent-send-stall.md`.
+## [0.3.1] - 2026-08-18
 
 ### Added
-- `example/concurrency_stall_repro.dart` — concurrency soak harness that fails when any request exceeds 4x the run median, plus opt-in request tracing via `LLM_VLLM_TRACE=1`.
-- `example/raw_socket_burst_probe.dart` — minimal raw-`Socket` repro of the macOS write-event loss; reports which sockets never complete `flush()`, with a stagger argument that demonstrates the fix.
+- `example/concurrency_stall_repro.dart` — concurrency soak harness that fails when a request exceeds 4x the run median, with request tracing via `LLM_VLLM_TRACE=1`.
+- `example/raw_socket_burst_probe.dart` — raw-`Socket` repro of the macOS write-event loss.
+
+### Fixed
+- A stream read timeout no longer kills the isolate. It is pushed into the sink instead of escaping from `Stream.timeout`'s callback.
+- Sustained concurrent requests through one shared repository no longer stall permanently, via `llm_core`'s write gate. Full investigation in `docs/concurrent-send-stall.md`.
 
 ### Changed
-- Dependency floors raised: Dart SDK `^3.12.0` (was `^3.8.0`), `http ^1.6.0`; dev deps refreshed (`lints ^6.1.0`, `test ^1.31.0`) and new lint findings fixed (null-aware elements, private named initializing formals).
-
+- Dependency floors raised: Dart SDK `^3.12.0` (was `^3.8.0`), `http ^1.6.0`, `lints ^6.1.0`, `test ^1.31.0`.
 
 ## [0.3.0] - 2026-08-13
 

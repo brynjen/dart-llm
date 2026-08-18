@@ -4,6 +4,10 @@
 
 vLLM OpenAI-compatible backend implementation for LLM interactions in Dart.
 
+Available on [pub.dev](https://pub.dev/packages/llm_vllm).
+
+Part of the [dart-llm](https://github.com/brynjen/dart-llm) ecosystem.
+
 ## Features
 
 - Streaming chat responses via `/v1/chat/completions`
@@ -20,7 +24,7 @@ vLLM OpenAI-compatible backend implementation for LLM interactions in Dart.
 
 ```yaml
 dependencies:
-  llm_vllm: ^0.2.0
+  llm_vllm: ^0.3.1
 ```
 
 ## Prerequisites
@@ -390,6 +394,53 @@ VLLMChatRepository(baseUrl: 'http://localhost:8000');     // ✓
 VLLMChatRepository(baseUrl: 'http://localhost:8000/');    // ✓
 VLLMChatRepository(baseUrl: 'http://localhost:8000/v1');  // ✓
 VLLMChatRepository(baseUrl: 'http://localhost:8000/v1/'); // ✓
+```
+
+## Deployment discovery
+
+`VLLMRepository` inspects a running server so you can adapt to it rather than
+guess:
+
+```dart
+final probe = VLLMRepository(baseUrl: 'http://localhost:8000');
+const model = 'Qwen/Qwen3-0.6B';
+
+final info = await probe.describe();   // VLLMDeploymentInfo: models + capabilities
+final models = await probe.models();
+final caps = await probe.resolveCapabilities(model);
+
+if (await probe.supportsToolCalling(model)) { /* --enable-auto-tool-choice is set */ }
+if (await probe.supportsReasoningParser(model)) { /* --reasoning-parser is set */ }
+if (await probe.supportsEmbeddings(model)) { /* /v1/embeddings answers */ }
+
+probe.close();
+```
+
+## Tracing
+
+Set `LLM_VLLM_TRACE=1` to log every request's lifecycle — useful when
+diagnosing latency or a stalled stream:
+
+```bash
+LLM_VLLM_TRACE=1 dart run your_app.dart
+```
+
+## Cross-cutting concerns
+
+`rateLimiter`, `responseCache` and `metrics` are accepted by
+`VLLMChatRepository` directly, not just by the pool:
+
+```dart
+final repo = VLLMChatRepository(
+  baseUrl: 'http://localhost:8000',
+  // `RateLimiter` is the configuration; the repository builds the token bucket.
+  rateLimiter: const RateLimiter(
+    maxRequests: 60,
+    windowDuration: Duration(minutes: 1),
+  ),
+  responseCache: MemoryResponseCache(),
+  metrics: DefaultLLMMetrics(),
+);
 ```
 
 ## Pool

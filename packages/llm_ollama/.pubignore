@@ -23,3 +23,7 @@ doc/api/
 *.bak
 *.swp
 *~
+
+# Scratch/debug files
+_*.dart
+BUG-*.md

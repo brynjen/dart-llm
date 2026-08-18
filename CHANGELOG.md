@@ -7,19 +7,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-08-18
+
 ### Added
-- **llm_core** — `LLMChunkMessage.rawContent` carries an assistant turn exactly as the model emitted it, including tool-call markup stripped from `content`. Only local-inference backends set it; callers keeping their own history need it to replay a tool exchange faithfully.
-- **llm_llamacpp** — model-aware tool calling. Tool definitions are advertised in the format the loaded model's family expects and tool calls are parsed back out of the raw token stream (LFM2/LFM2.5 Pythonic, Hermes/Qwen, Mistral, Llama 3.x, plus bare Pythonic and JSON). The family is detected from the GGUF chat template, falling back to a tokenizer-vocabulary probe — necessary because GGUF conversions often ship a template with the `tools` branch stripped. Previously the package accepted `tools` without ever telling the model about them, and streamed any tool call to the UI as raw markup. See the package CHANGELOG.
+- **llm_core** — `createLLMHttpClient()` is the default HTTP client for every backend: bounded pool per host, `TimeoutConfig.connectionTimeout` applied, idle connections retired after 3s.
+- **llm_core** — `WriteGatedHttpClient` bounds concurrent connect+write phases (4 slots on macOS/iOS) to work around a Dart VM kqueue defect that loses writable events.
+- **llm_core** — `LLMChunkMessage.rawContent` carries the assistant turn as the model emitted it, tool-call markup intact.
+- **llm_llamacpp** — model-aware tool calling: definitions advertised in the loaded model's own format, calls parsed back out of the raw token stream (LFM2/LFM2.5, Hermes/Qwen, Mistral, Llama 3.x, bare Pythonic, bare JSON).
+- **llm_gemini** — an `example/` directory, so all seven packages have one.
 
 ### Fixed
-- **All backends** — sustained concurrent streaming through one long-lived repository periodically stalled, then silently recovered on retry with no error surfaced. Four defects, all in the shared HTTP path (see `packages/llm_vllm/BUG-concurrent-send-stall.md`): a stream read timeout that escaped as an unhandled exception and killed the isolate (**llm_vllm**, **llm_ollama**); `applyTimeoutToSend` defaulting to `false`, which left **llm_claude**, **llm_gemini** and **llm_ollama** with an entirely untimed `send()` and therefore a permanent rather than recoverable stall; `StreamedRequest` plus a hand-set `content-length` for a body that was already in memory; and a bare `http.Client()` whose pool was unbounded and whose 15s idle timeout outlived the server's 5s keep-alive. `llm_core` now exposes `createLLMHttpClient()` as the default client, and `RetryUtil` no longer retries silently.
-- **All backends, macOS/iOS** — the remaining burst stall was root-caused to the Dart VM's macOS (kqueue) event handler: several sockets opened and given large bodies in the same instant can lose their writable event, and the request is never transmitted at all — connection ESTABLISHED on both ends, `Send-Q` 0, no error, no matching upstream report (nearest: dart-lang/sdk#30434). Verified with kernel counters on both ends, a raw-`Socket` repro, and a clean Linux control. `llm_core`'s new `WriteGatedHttpClient` bounds concurrent connect+write phases with a semaphore released when the body reaches the kernel — 4 slots on macOS/iOS by default (`createLLMHttpClient(maxConcurrentWrites: ...)` to override), queueing instead of delaying, with a write watchdog that turns any residual stall into a retryable `TimeoutException`. Eliminates the loss (80/80 vs 2–5 wedged of 16 per round ungated).
-- **llm_vllm** — correctness sweep (0.3.0): camelCase `toolChoice` and other aliased keys now reliably reach the wire (`backendOptions` is normalized once after validation); caller-supplied `chat_template_kwargs` merge with `enable_thinking` instead of clobbering it, so `think:` is always honored; `tool_choice` without tools is applied (`none`/`auto`) or rejected with a clear error (`required`/named); malformed 200 bodies from `/v1/embeddings` and `/v1/models` raise `LLMApiException` instead of `TypeError`; the stream converter flushes partial `<think>` carries at end of stream and stamps in-stream error codes as `statusCode`; `embed` options are validated like chat options.
+- **All backends** — sustained concurrent streaming through one repository periodically stalled and silently recovered on retry. Four defects in the shared HTTP path, all fixed; full investigation in `docs/concurrent-send-stall.md`.
+- **All backends, macOS/iOS** — the residual burst stall was root-caused to the Dart VM's macOS kqueue event handler, not to any server. Bounded write admission eliminates it.
+- **llm_llamacpp** — tool calling stopped working after the first conversation turn, tool-call markup leaked into user-visible text, and desktop builds shipped `libllama` without the `ggml` libraries it links against.
+- **Documentation** — the whole doc set was brought back in line with the code: `llm_vllm` was missing from `llm_core`, `ARCHITECTURE.md` and `SECURITY.md`; `llm_llamacpp` documented a build process and a prompt-template API that no longer exist; `llm_chatgpt` advertised Azure OpenAI support it never had; several snippets did not compile.
 
 ### Changed
-- Dependency floors raised: Dart SDK `^3.12.0` (was `^3.8.0`), `http ^1.6.0`; dev deps refreshed (`lints ^6.1.0`, `test ^1.31.0`) and new lint findings fixed (null-aware elements, private named initializing formals). Root workspace: `melos ^7.8.0`.
-- **llm_llamacpp** — native-assets toolchain migrated off 1.x (`hooks ^2.0.0`, `code_assets ^1.2.1`, `ffigen ^21.0.0`), the `llamacpp` submodule updated to current upstream with the vendored headers re-synced and the FFI bindings regenerated, and all call sites moved off deprecated llama.cpp entry points. `LoraManager` was reimplemented on upstream's declarative `llama_set_adapters_lora` while keeping its public signatures. The build hook now declares the bindings as a dependency, without which regenerated bindings never invalidated the prebuilt cache. See the package CHANGELOG.
-- **llm_vllm** — `VLLMPool` mixes in `LLMRepositoryFeatures` (pool-level `responseCache`/`metrics`), reports aggregated `capabilitiesForModel`, forwards `toolAttempts` and per-instance `rateLimiter`/`supportedParams`/`capabilities`/`httpClient`, batches `batchEmbed` through the selected instance, and enforces `maxQueueDepth` race-free. Dead non-streaming DTOs (`VLLMResponse`, `VLLMChoice`, `VLLMMessage`) and the unreachable builder extension were removed (breaking; see the package CHANGELOG). Package version bumped to 0.3.0.
+- **llm_core** — `HttpClientHelper.sendStreamingRequest` applies a timeout to `send()` by default; it previously did not.
+- **llm_llamacpp** — native-assets toolchain migrated off 1.x (`hooks ^2.0.0`, `code_assets ^1.2.1`, `ffigen ^21.0.0`), submodule updated to current upstream with bindings regenerated, and `LoraManager` reimplemented on upstream's declarative adapter API.
+- **llm_llamacpp** — the prebuilt native bundle's release version now comes from `pubspec.yaml` on both ends (the build hook and `build-release.yaml`), so it cannot drift. `build-release.yaml` also builds on a push to `main` that changes the version or the FFI bindings, skipping the build when the release already carries assets for that ABI fingerprint.
+- Dependency floors raised: Dart SDK `^3.12.0` (was `^3.8.0`), `http ^1.6.0`, `lints ^6.1.0`, `test ^1.31.0`, `melos ^7.8.0`; Flutter `>=3.44.0`.
+- All packages bumped to `0.3.1`; `llm_core` constraint updated to `^0.3.1` across the backends.
+
+### Removed
+- `packages/llm_vllm/_mc.dart`, `_probe.dart` and `_tok.dart` — scratch socket probes that shipped to pub.dev. The equivalent documented harnesses live in `packages/llm_vllm/example/`.
+- `scripts/build-android-libs.sh`, `scripts/build-android-docker.sh` and `scripts/Dockerfile.android-build` — superseded by `packages/llm_llamacpp/hook/build.dart`.
+
+## [0.3.0] - 2026-08-17
+
+### Added
+- **llm_core** — `ReasoningEffort` enum (`none`…`max`) and `LLMChatOptions.reasoningEffort`, a portable reasoning-depth knob alongside `reasoningBudget`; `LLMUsage.reasoningTokens`.
+- **llm_chatgpt** — reasoning-model support: per-model detection, `reasoning_effort` mapping, sampling params dropped where the API rejects them, and streaming usage via `stream_options.include_usage`.
+- **llm_claude** — `reasoningEffort` maps to `output_config.effort` on current models and to `budget_tokens` on legacy ones.
+- **llm_gemini** — `reasoningEffort` maps to `thinking_level`; thought-token usage surfaced.
+- **llm_ollama** — `think` accepts Ollama's level strings (`low`/`medium`/`high`/`max`).
+
+### Fixed
+- **llm_gemini** — migrated to the Interactions API's steps-based input format; the old turn-based format is now rejected by the live API. Tool loops echo the model's thought signature.
+- **llm_vllm** — correctness sweep over parameter handling, the stream converter, embeddings and the pool. See the package CHANGELOG.
+
+### Changed
+- All packages bumped to `0.3.0`; `llm_core` constraint updated to `^0.3.0`.
 
 ## [0.2.0] - 2026-08-12
 

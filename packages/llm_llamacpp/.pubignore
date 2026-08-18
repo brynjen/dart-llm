@@ -32,3 +32,7 @@ example_app/.gradle/
 
 # Exclude Windows libs folder
 windows/libs/
+
+# Scratch/debug files
+_*.dart
+BUG-*.md

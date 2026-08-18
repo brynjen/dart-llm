@@ -12,9 +12,9 @@ A Dart monorepo for interacting with Large Language Models (LLMs). Supports mult
 | [llm_ollama](packages/llm_ollama/) | Ollama backend | [![pub.dev](https://img.shields.io/pub/v/llm_ollama)](https://pub.dev/packages/llm_ollama) |
 | [llm_vllm](packages/llm_vllm/) | vLLM OpenAI-compatible backend | [![pub.dev](https://img.shields.io/pub/v/llm_vllm)](https://pub.dev/packages/llm_vllm) |
 | [llm_chatgpt](packages/llm_chatgpt/) | OpenAI/ChatGPT backend | [![pub.dev](https://img.shields.io/pub/v/llm_chatgpt)](https://pub.dev/packages/llm_chatgpt) |
-| [llm_llamacpp](packages/llm_llamacpp/) | Local inference via llama.cpp | [![pub.dev](https://img.shields.io/pub/v/llm_llamacpp)](https://pub.dev/packages/llm_llamacpp) |
 | [llm_claude](packages/llm_claude/) | Anthropic Claude backend | [![pub.dev](https://img.shields.io/pub/v/llm_claude)](https://pub.dev/packages/llm_claude) |
 | [llm_gemini](packages/llm_gemini/) | Google Gemini backend | [![pub.dev](https://img.shields.io/pub/v/llm_gemini)](https://pub.dev/packages/llm_gemini) |
+| [llm_llamacpp](packages/llm_llamacpp/) | Local inference via llama.cpp | [![pub.dev](https://img.shields.io/pub/v/llm_llamacpp)](https://pub.dev/packages/llm_llamacpp) |
 
 ## Features
 
@@ -23,6 +23,7 @@ A Dart monorepo for interacting with Large Language Models (LLMs). Supports mult
 * 🖼️ **Image support** - Send images in chat messages (vision models)
 * 🤖 **Multiple backends** - Ollama, vLLM, ChatGPT, Claude, Gemini, and local llama.cpp
 * 💭 **Thinking support** - Support for extended reasoning / thinking tokens
+* 📐 **Embeddings** - Single and batched embedding generation
 * 📋 **Structured output** - Force JSON responses conforming to a schema
 * 📦 **Easy to use** - Simple and intuitive API
 * 📱 **Cross-platform** - Works on mobile (Android/iOS) and desktop
@@ -128,23 +129,33 @@ Future<void> main() async {
 import 'package:llm_llamacpp/llm_llamacpp.dart';
 
 Future<void> main() async {
-  final repo = LlamaCppChatRepository(
-    contextSize: 2048,
-    nGpuLayers: 0, // Set > 0 for GPU acceleration
-  );
-  
+  // LlamaCppRepository owns model management; LlamaCppChatRepository chats.
+  final modelRepo = LlamaCppRepository();
+  const modelPath = '/path/to/model.gguf';
+
   try {
-    await repo.loadModel('/path/to/model.gguf');
-    
-    final stream = repo.streamChat('model', messages: [
-      LLMMessage(role: LLMRole.user, content: 'Hello!'),
-    ]);
-    
-    await for (final chunk in stream) {
-      print(chunk.message?.content ?? '');
+    final model = await modelRepo.loadModel(modelPath);
+
+    final chatRepo = LlamaCppChatRepository.withModel(
+      model,
+      modelRepo.bindings,
+      contextSize: 2048,
+      nGpuLayers: 0, // Set > 0 for GPU acceleration
+    );
+
+    try {
+      final stream = chatRepo.streamChat(modelPath, messages: [
+        LLMMessage(role: LLMRole.user, content: 'Hello!'),
+      ]);
+
+      await for (final chunk in stream) {
+        print(chunk.message?.content ?? '');
+      }
+    } finally {
+      chatRepo.dispose();
     }
   } finally {
-    repo.dispose();
+    modelRepo.dispose();
   }
 }
 ```
@@ -156,22 +167,30 @@ Add the package(s) you need to your `pubspec.yaml`:
 ```yaml
 dependencies:
   # For Ollama backend
-  llm_ollama: ^0.2.0
+  llm_ollama: ^0.3.1
 
   # For vLLM OpenAI-compatible servers
-  llm_vllm: ^0.2.0
+  llm_vllm: ^0.3.1
 
   # For ChatGPT/OpenAI backend
-  llm_chatgpt: ^0.2.0
+  llm_chatgpt: ^0.3.1
 
   # For Anthropic Claude backend
-  llm_claude: ^0.2.0
+  llm_claude: ^0.3.1
 
   # For Google Gemini backend
-  llm_gemini: ^0.2.0
+  llm_gemini: ^0.3.1
 
   # For local llama.cpp inference
-  llm_llamacpp: ^0.2.0
+  llm_llamacpp: ^0.3.1
+```
+
+Each backend depends on `llm_core`, so you only need it directly when writing
+your own backend or programming against the abstractions:
+
+```yaml
+dependencies:
+  llm_core: ^0.3.1
 ```
 
 ## Package Details
@@ -188,7 +207,10 @@ Core abstractions shared by all backends:
 - `LLMResponse`, `LLMUsage`, `LLMFinishReason` - Response metadata, usage, and finish details
 - `LLMResponseFormat` - Structured output: `JsonFormat`, `JsonSchemaFormat`
 - `LLMChatOptions` - Per-request generation, reasoning, tool, structured output, timeout, retry, cache, metrics, and provider-specific options
-- Exceptions: `ThinkingNotSupportedException`, `ToolsNotSupportedException`, `VisionNotSupportedException`, `LLMApiException`
+- `LLMCapabilities` + `LLMChatRepository.capabilitiesForModel` - What a model/deployment actually supports
+- `createLLMHttpClient()`, `WriteGatedHttpClient` - The shared HTTP client used by every backend
+- `RateLimiter`, `ResponseCache`, `LLMMetrics`, `LLMLogger` - Optional cross-cutting concerns
+- Exceptions: `ThinkingNotSupportedException`, `ToolsNotSupportedException`, `VisionNotSupportedException`, `ToolLoopIncompleteException`, `ModelLoadException`, `LLMApiException`
 
 ### llm_ollama
 
@@ -200,6 +222,7 @@ Ollama backend features:
 - Embeddings
 - Model management (list, pull, show, version)
 - Structured output (JSON mode and JSON Schema via native `format` field)
+- Multi-instance pooling with health checks and per-model routing (`OllamaPool`)
 
 ### llm_vllm
 
@@ -211,7 +234,10 @@ vLLM backend features:
 - Vision payloads through OpenAI-compatible message content
 - Embeddings through `/v1/embeddings`
 - Model listing through `/v1/models`
-- Structured output via OpenAI-compatible `response_format`
+- Structured output via OpenAI-compatible `response_format` plus vLLM-native `structured_outputs` guided decoding (regex, choice, grammar)
+- Reasoning/thinking through `chat_template_kwargs.enable_thinking`, surfaced separately from content
+- Multi-instance pooling with health checks and per-model routing (`VLLMPool`)
+- Server-capability probing (`VLLMRepository.resolveCapabilities`, `supportsToolCalling`, `supportsReasoningParser`)
 
 ### llm_chatgpt
 
@@ -219,9 +245,11 @@ OpenAI/ChatGPT backend features:
 
 - Streaming chat
 - Tool/function calling
+- Vision (image) support
 - Embeddings
-- Compatible with Azure OpenAI (configure `baseUrl`)
+- Reasoning models: per-model detection, `reasoning_effort` mapping, and streaming usage
 - Native structured output (`json_object` and `json_schema` modes)
+- Configurable base URL for OpenAI-compatible servers
 
 ### llm_claude
 
@@ -229,9 +257,11 @@ Anthropic Claude backend features:
 
 - Streaming chat
 - Tool/function calling, including `tool_choice`
+- Vision (image) support
 - Model-aware thinking: adaptive reasoning on current models, token budget on older ones
-- Native structured output via `output_config.format`
+- Native structured output via `output_config.format` on current models; system-message injection on legacy ones
 - Configurable base URL (custom endpoints)
+- No embeddings — the Anthropic API offers none, so `embed` throws `UnsupportedError`
 
 ### llm_gemini
 
@@ -241,20 +271,21 @@ Google Gemini backend features:
 - Tool/function calling
 - Thinking with thought summaries surfaced separately from content
 - Native structured output (`response_format`)
-- Embeddings
+- Vision input, plus generated images surfaced on `chunk.message.images`
+- Embeddings (single and batched)
 - API key sent as the `x-goog-api-key` header, never in the URL
 
 ### llm_llamacpp
 
 Local llama.cpp inference:
 
-- GGUF model support
+- GGUF model support, with chat templates read from the model file itself
 - Streaming generation
-- Multiple prompt templates (ChatML, Llama2, Llama3, Alpaca, Vicuna, Phi-3)
-- Tool calling via prompt convention
+- Model-aware tool calling: definitions advertised in the format the loaded model's family expects, calls parsed back out of the raw token stream
 - GPU acceleration support
 - Isolate-based inference (non-blocking)
 - Structured output via system message injection
+- Native libraries resolved automatically by the build hook (prebuilt download, source build as fallback)
 
 Supported platforms:
 - Linux (x86_64)
@@ -265,7 +296,11 @@ Supported platforms:
 
 ## Tool/Function Calling
 
-All backends support tool calling:
+Every backend can call tools, with two caveats worth knowing before you rely
+on it: vLLM needs the server started with `--enable-auto-tool-choice` and a
+`--tool-call-parser`, and `llm_llamacpp` parses tool calls out of the raw token
+stream rather than from a structured API field, so results depend on the loaded
+model's family being recognised.
 
 ```dart
 class CalculatorTool extends LLMTool {
@@ -351,7 +386,14 @@ final options = LLMChatOptions(
   toolAttempts: 5,
   timeout: Duration(minutes: 5),
   retryConfig: RetryConfig(maxAttempts: 3),
-  responseFormat: JsonSchemaFormat(name: 'result', schema: {...}),
+  responseFormat: JsonSchemaFormat(
+    name: 'result',
+    schema: {
+      'type': 'object',
+      'properties': {'answer': {'type': 'string'}},
+      'required': ['answer'],
+    },
+  ),
 );
 
 final stream = repo.streamChat('model', messages: messages, options: options);
@@ -471,8 +513,9 @@ final metrics = DefaultLLMMetrics();
 // Metrics are automatically recorded by repositories that support them
 // Access metrics:
 final stats = metrics.getMetrics();
-print('Total requests: ${stats['model.total_requests']}');
-print('Avg latency: ${stats['model.avg_latency_ms']}ms');
+// Keys are prefixed with the model id the request was made against:
+print('Total requests: ${stats['qwen3:0.6b.total_requests']}');
+print('Avg latency: ${stats['qwen3:0.6b.avg_latency_ms']}ms');
 ```
 
 ## API Documentation
@@ -506,6 +549,15 @@ melos run format:check
 # Dry-run pub publish for all packages
 melos run publish:dry-run
 ```
+
+## Further reading
+
+- [ARCHITECTURE.md](ARCHITECTURE.md) - How the packages fit together and how to add a backend
+- [CONTRIBUTING.md](CONTRIBUTING.md) - Development setup, testing, and PR process
+- [SECURITY.md](SECURITY.md) - Supported versions, key handling, and per-backend considerations
+- [CHANGELOG.md](CHANGELOG.md) - Release history across the workspace
+- [docs/TOOL_RESPONSE_CHAT_LOOP.md](docs/TOOL_RESPONSE_CHAT_LOOP.md) - How a tool call round-trips through the stream
+- [docs/concurrent-send-stall.md](docs/concurrent-send-stall.md) - Investigation behind the shared HTTP client's write gate
 
 ## License
 

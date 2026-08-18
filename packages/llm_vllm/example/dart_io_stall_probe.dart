@@ -1,6 +1,6 @@
 /// Minimal reproducer for the `send()` stall, with no `package:http` involved.
 ///
-/// See `BUG-concurrent-send-stall.md`. This exists to answer one question:
+/// See `docs/concurrent-send-stall.md`. This exists to answer one question:
 /// is the stall ours, or `dart:io`'s? It issues the same shape of traffic as
 /// `concurrency_stall_repro.dart` — N concurrent large POSTs to one host from
 /// a single isolate — against `dart:io`'s `HttpClient` directly.

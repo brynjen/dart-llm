@@ -35,8 +35,10 @@ This project adheres to a code of conduct that all contributors are expected to 
 
 ### Prerequisites
 
-- **Dart SDK**: Version 3.8.0 or higher
-- **Flutter SDK**: Version 3.24.0 or higher (for `llm_llamacpp` package)
+- **Dart SDK**: Version 3.12.0 or higher (CI pins 3.12.2)
+- **Flutter SDK**: Version 3.44.0 or higher (for `llm_llamacpp`; CI pins 3.44.8)
+- **CMake**: Only needed if you build `llm_llamacpp`'s native library from
+  source instead of using a prebuilt bundle
 - **Git**: For version control
 - **Melos**: For monorepo management (recommended)
 
@@ -78,9 +80,12 @@ dart-llm/
 │   ├── llm_llamacpp/      # llama.cpp local inference backend
 │   ├── llm_claude/        # Anthropic Claude backend implementation
 │   └── llm_gemini/        # Google Gemini backend implementation
+├── docs/                  # Cross-package notes and investigations
+├── scripts/               # Repository tooling (doc generation)
 ├── .github/
 │   └── workflows/         # CI/CD workflows
 ├── pubspec.yaml           # Root workspace + Melos scripts
+├── ARCHITECTURE.md        # Design and extension points
 └── README.md              # Main project documentation
 ```
 
@@ -243,8 +248,11 @@ When adding a new backend package:
 2. Add it to the `workspace:` list in the root `pubspec.yaml`
 3. Implement `LLMChatRepository` from `llm_core`
 4. Add the package to CI jobs in `.github/workflows/ci.yaml`
-5. Create `README.md`, `CHANGELOG.md`, `LICENSE`, and `.pubignore`
-6. Update `ARCHITECTURE.md`, the root `README.md`, and `CONTRIBUTING.md`
+5. Create `README.md`, `CHANGELOG.md`, `LICENSE`, `.pubignore`, `.env.example`
+   and an `example/` directory with a runnable CLI
+6. Update `ARCHITECTURE.md`, `SECURITY.md`, the root `README.md`,
+   `packages/llm_core/README.md` and `CONTRIBUTING.md` — a new backend has to
+   appear in every backend list, not just the root README
 
 ## Submitting Changes
 

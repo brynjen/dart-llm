@@ -7,12 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-08-18
+
 ### Fixed
 - The default HTTP client is now `createLLMHttpClient()`, which applies `TimeoutConfig.connectionTimeout` and bounds the connection pool.
+- Documentation no longer claims Azure OpenAI compatibility. Azure needs a different URL layout and an `api-key` header; this package always sends `$baseUrl/v1/chat/completions` with a bearer token. Vision and reasoning-model support, both real, are now documented.
 
 ### Changed
-- Dependency floors raised: Dart SDK `^3.12.0` (was `^3.8.0`), `http ^1.6.0`; dev deps refreshed (`lints ^6.1.0`, `test ^1.31.0`) and new lint findings fixed (null-aware elements, private named initializing formals).
-
+- Dependency floors raised: Dart SDK `^3.12.0` (was `^3.8.0`), `http ^1.6.0`, `lints ^6.1.0`, `test ^1.31.0`.
 
 ## [0.3.0] - 2026-08-17
 

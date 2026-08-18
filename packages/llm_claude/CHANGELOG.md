@@ -7,13 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-08-18
+
 ### Fixed
-- `streamChat` now applies a timeout to the send operation. `sendStreamingRequest` previously defaulted to no send timeout, so a request that wedged before response headers arrived never recovered.
+- `streamChat` applies a timeout to the send operation. It previously opted out, so a request that wedged before response headers arrived never recovered.
 - The default HTTP client is now `createLLMHttpClient()`, which applies `TimeoutConfig.connectionTimeout` and bounds the connection pool.
 
 ### Changed
-- Dependency floors raised: Dart SDK `^3.12.0` (was `^3.8.0`), `http ^1.6.0`; dev deps refreshed (`lints ^6.1.0`, `test ^1.31.0`) and new lint findings fixed (null-aware elements, private named initializing formals).
-
+- Dependency floors raised: Dart SDK `^3.12.0` (was `^3.8.0`), `http ^1.6.0`, `lints ^6.1.0`, `test ^1.31.0`.
 
 ## [0.3.0] - 2026-08-17
 

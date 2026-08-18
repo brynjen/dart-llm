@@ -6,13 +6,15 @@ Local LLM inference via llama.cpp for Dart and Flutter.
 
 Available on [pub.dev](https://pub.dev/packages/llm_llamacpp).
 
+Part of the [dart-llm](https://github.com/brynjen/dart-llm) ecosystem.
+
 ## Features
 
 - Local on-device inference with GGUF models
 - Streaming token generation
 - **Non-streaming responses** - Get complete responses with `chatResponse()`
-- Multiple prompt templates (ChatML, Llama2, Llama3, Alpaca, Vicuna, Phi-3)
-- Tool calling via prompt convention
+- Chat templates read from the GGUF itself and applied by llama.cpp
+- **Model-aware tool calling** - Definitions advertised in the format the loaded model's family expects, calls parsed back out of the raw token stream
 - **Advanced generation options** - Temperature, top-p, top-k, repeat penalty, frequency/presence penalties
 - GPU acceleration support (CUDA, Metal, Vulkan)
 - Cross-platform: Android, iOS, macOS, Windows, Linux
@@ -26,40 +28,56 @@ Available on [pub.dev](https://pub.dev/packages/llm_llamacpp).
 
 ```yaml
 dependencies:
-  llm_llamacpp: ^0.2.0
+  llm_llamacpp: ^0.3.1
 ```
 
 ## Prerequisites
 
-### 1. GGUF Model
+### GGUF model
 
-Download a model in GGUF format. **Important:** Use properly converted GGUF files from trusted sources.
+Download a model in GGUF format. **Important:** use properly converted GGUF
+files from trusted sources — see [Model Compatibility](#model-compatibility).
 
-### 2. Native Library
+### Native library
 
-The llama.cpp shared library must be available:
+Nothing to do. The native library is a
+[native asset](https://dart.dev/interop/c-interop#native-assets): `hook/build.dart`
+resolves it during `dart pub get` / `flutter build`, and there is no manual step,
+no `jniLibs` to copy and no library path to set.
 
-**Option A**: Build from CI
-- Run the GitHub Actions workflow `.github/workflows/build-llamacpp.yaml`
-- Download artifacts and place in appropriate locations
+How it resolves, in order:
 
-**Option B**: Build manually
-```bash
-git clone https://github.com/ggerganov/llama.cpp
-cd llama.cpp
-mkdir build && cd build
+1. **ABI fingerprint.** A SHA-256 over `lib/src/bindings/llama_bindings.dart`
+   yields a 12-character fingerprint identifying the exact FFI surface this Dart
+   code expects.
+2. **Prebuilt download.** The hook fetches
+   `llm_llamacpp-v<version>-abi<fingerprint>-<os>-<arch>.zip` from this repo's
+   GitHub release tagged `<version>` (a bare version, no `v` prefix), where
+   `<version>` is read from this package's `pubspec.yaml`. Because the fingerprint is part of the filename, a binding
+   change can never be paired with a mismatched binary — the URL simply stops
+   resolving.
+3. **Cache.** Bundles are cached per `(version, fingerprint, os, arch)`, so a
+   stale extract is never reused and one download serves every target.
+4. **Source build.** On a 404 the hook configures and builds llama.cpp itself
+   with CMake. This requires the vendored submodule, so it works in a checkout
+   (`git submodule update --init`) but **not** from a pub.dev install — the
+   published archive excludes `llamacpp/`. For published versions the prebuilt is
+   the only path.
 
-# CPU only
-cmake .. -DBUILD_SHARED_LIBS=ON
+The primary library and every `ggml*` library it links against are bundled
+together, so a built app keeps working when moved off the build machine.
 
-# With CUDA (NVIDIA GPU)
-cmake .. -DBUILD_SHARED_LIBS=ON -DGGML_CUDA=ON
+Prebuilts are produced by `.github/workflows/build-release.yaml`, which reads the
+same `version:` field the hook does, so bumping the package version is what
+triggers a new native release. Release tags are bare versions — `0.3.1`, not
+`v0.3.1` — because that is the tag the hook's download URL is built from.
 
-# With Metal (Apple Silicon)
-cmake .. -DBUILD_SHARED_LIBS=ON -DGGML_METAL=ON
+Two escape hatches, both optional:
 
-cmake --build . --config Release
-```
+| Variable | Effect |
+|---|---|
+| `LLM_LLAMACPP_LIB_DIR` | Directory searched first when loading the library. Useful for running pure-Dart scripts and tests against a local build under `.dart_tool/`. |
+| `LLM_LLAMACPP_ANDROID_VULKAN` | Tri-state override for the Android arm64-v8a Vulkan backend, which is otherwise enabled automatically whenever `glslc` is on `PATH`. `0` forces CPU-only; `1` forces Vulkan and turns a missing `glslc` into a hard build error. |
 
 ## Model Compatibility
 
@@ -321,8 +339,15 @@ if (plan.method == AcquisitionMethod.convertFromSafetensors) {
 
 **Requirements for conversion:**
 - Python 3.8+ with: `pip install transformers torch safetensors sentencepiece`
-- llama.cpp repository: `git clone https://github.com/ggerganov/llama.cpp`
-- Build quantize tool: `cd llama.cpp && make llama-quantize`
+- A llama.cpp checkout. In this repository it is already vendored at
+  `packages/llm_llamacpp/llamacpp` (`git submodule update --init`); otherwise
+  `git clone https://github.com/ggml-org/llama.cpp`
+- Build the quantize tool (llama.cpp is CMake-only; the old `make` targets are
+  gone):
+  ```bash
+  cmake -B build -DLLAMA_BUILD_COMMON=ON
+  cmake --build build --target llama-quantize --config Release
+  ```
 
 **Available quantization types:**
 | Type | Size | Quality | Use Case |
@@ -408,17 +433,13 @@ print('Tokens used: ${response.evalCount}');
 repo.dispose();
 ```
 
-### Custom Prompt Template
+### Chat Templates
 
-```dart
-// Auto-detect from model name
-repo.template = getTemplateForModel('llama-3-8b');
-
-// Or set explicitly
-repo.template = ChatMLTemplate();   // Qwen, many others
-repo.template = Llama3Template();   // Llama 3.x
-repo.template = Phi3Template();     // Phi-3
-```
+There is nothing to configure. Every GGUF embeds its own chat template, and the
+package applies it through llama.cpp's `llama_chat_apply_template()`. The
+template classes this package used to expose (`ChatMLTemplate`, `Llama3Template`,
+`getTemplateForModel`, …) were removed in 0.1.5 — hand-picking a template was a
+reliable way to disagree with what the model was actually trained on.
 
 ### GPU Acceleration
 
@@ -451,21 +472,47 @@ export LD_LIBRARY_PATH=/usr/local/cuda/lib64:$LD_LIBRARY_PATH
 
 ### Tool Calling
 
-Tool calling is implemented via prompt convention (the model outputs JSON):
+Pass `tools:` and the package handles the rest — do **not** hand-write tool
+syntax into the system prompt, which fights the format the model was trained on:
 
 ```dart
-final stream = repo.streamChat('model',
-  messages: [
-    LLMMessage(
-      role: LLMRole.system,
-      content: '''You have access to tools. To use a tool, output JSON:
-{"name": "tool_name", "arguments": {...}}''',
-    ),
-    ...
-  ],
+final stream = repo.streamChat(modelPath,
+  messages: messages,
   tools: [MyTool()],
 );
 ```
+
+The package detects the model's tool-call family from its GGUF chat template,
+falling back to probing the tokenizer vocabulary for the family's opening
+delimiter (necessary because GGUF conversions often ship a template with the
+`tools` branch stripped). It then advertises the tool definitions in that
+family's format and parses calls back out of the raw token stream. Supported
+families: LFM2/LFM2.5 (`<|tool_call_start|>` with Pythonic calls), Hermes/Qwen
+(`<tool_call>`), Mistral (`[TOOL_CALLS]`), Llama 3.x (`<|python_tag|>`), plus
+bare Pythonic call lists and bare JSON. Add one in
+`lib/src/tool_calls/tool_call_syntax.dart`.
+
+Tools are executed internally and their results are **not** surfaced as
+`role: tool` chunks. A UI that wants to show them needs the tool to report its
+own invocations — see `example_app`'s `CalculatorTool(onInvoke: ...)`.
+
+#### Replay `rawContent` across turns
+
+If you maintain conversation history yourself, append the assistant turn from
+`chunk.message.rawContent`, not from the visible text:
+
+```dart
+String? rawTurn;
+await for (final chunk in stream) {
+  rawTurn = chunk.message?.rawContent ?? rawTurn;
+}
+messages.add(LLMMessage(role: LLMRole.assistant, content: rawTurn ?? visible));
+```
+
+`rawContent` keeps the tool-call markup that is stripped from `content`. Replay
+only the visible text and history ends up showing the assistant announcing a
+tool and then answering without calling one — the model copies that pattern and
+stops calling tools after the first turn.
 
 ## Platform Support
 
@@ -474,7 +521,7 @@ final stream = repo.streamChat('model',
 | Linux    | x86_64       | CUDA, Vulkan |
 | macOS    | arm64, x86_64 | Metal |
 | Windows  | x86_64       | CUDA, Vulkan |
-| Android  | arm64-v8a    | OpenCL (Adreno) |
+| Android  | arm64-v8a    | Vulkan (auto when `glslc` is available) |
 | Android  | x86_64       | - |
 | iOS      | arm64        | Metal |
 
@@ -486,7 +533,7 @@ LlamaCppChatRepository(
   batchSize: 512,       // Batch size for processing
   threads: null,        // null = auto-detect
   nGpuLayers: 0,        // Layers to offload to GPU (99 = all)
-  maxToolAttempts: 25,  // Max tool calling iterations
+  maxToolAttempts: 90,  // Max tool calling iterations (default)
 );
 ```
 
@@ -494,11 +541,26 @@ LlamaCppChatRepository(
 
 ### Library not found
 
-Ensure the native library is accessible:
-- Current directory
-- System library path (`/usr/local/lib`, etc.)
-- Next to your executable
-- Set `LD_LIBRARY_PATH` (Linux) or `DYLD_LIBRARY_PATH` (macOS)
+Under Flutter the library ships inside the app bundle (on macOS/iOS as
+`llama.framework/llama`, on Android as a JNI library) and this should not happen
+— if it does, the build hook failed; check the `pub get` / build output for its
+messages.
+
+For pure-Dart programs the loader searches, in order:
+1. `LLM_LLAMACPP_LIB_DIR`, if set
+2. The current directory
+3. The usual system locations
+
+The hook's output lives under `.dart_tool/`, so point the override at it:
+
+```bash
+export LLM_LLAMACPP_LIB_DIR=$(dirname $(find .dart_tool/hooks_runner \
+  \( -name 'libllama.*' -o -name 'llama.dll' \) | head -1))
+```
+
+If the hook could not download a prebuilt and you are working from a checkout,
+make sure the submodule is present (`git submodule update --init`) and CMake is
+installed so the source build can run.
 
 ### Model loading errors
 

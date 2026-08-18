@@ -4,36 +4,17 @@ Flutter test app for llm_llamacpp on Android and iOS.
 
 ## Prerequisites
 
-### 1. Native Libraries
+Just Flutter. The native libraries are handled by `llm_llamacpp`'s native-assets
+build hook — there is nothing to download and nothing to copy. `flutter run`
+triggers the hook, which fetches a prebuilt bundle (or builds from the vendored
+submodule) and bundles the libraries into the app.
 
-Before running, you need the llama.cpp native libraries:
+Nothing should be placed in `android/src/main/jniLibs/` by hand: the plugin's
+`android/build.gradle` sets `jniLibs.srcDirs = []` precisely so hook output is
+the only source, and anything copied there is ignored.
 
-**Option A: Download from CI**
-1. Go to [GitHub Actions](https://github.com/brynjen/dart-llm/actions/workflows/build-llamacpp.yaml)
-2. Run the "Build llama.cpp" workflow
-3. Download the `llm-llamacpp-native-libs` artifact
-4. Extract and copy libraries:
-   ```bash
-   # Android
-   cp -r plugin/android/src/main/jniLibs/* ../android/src/main/jniLibs/
-   
-   # iOS
-   cp -r plugin/ios/Frameworks/* ../ios/Frameworks/
-   ```
-
-**Option B: Build manually**
-See the main [llm_llamacpp README](../README.md) for build instructions.
-
-### 2. Verify Libraries
-
-```bash
-# Check Android libraries exist
-ls -la ../android/src/main/jniLibs/arm64-v8a/
-ls -la ../android/src/main/jniLibs/x86_64/
-
-# Check iOS framework exists  
-ls -la ../ios/Frameworks/llama.xcframework/
-```
+See the main [llm_llamacpp README](../README.md#native-library) for how
+resolution works and which environment variables can override it.
 
 ## Running the App
 
@@ -63,20 +44,20 @@ flutter run -d "iPhone 15 Pro"
 
 1. **Model Download** — Downloads LiquidAI LFM2.5-1.2B-Instruct Q4_K_M (~731 MB).
 2. **Text Chat** — Streaming chat with the local LFM2.5 text model.
-3. **Offline Inference** — Works completely offline after the model is downloaded.
+3. **Tool Calling** — A calculator tool, toggleable in the UI. Each call renders
+   as a subdued thinking bubble showing the invocation and its result. The app
+   replays `LLMChunkMessage.rawContent` into history, which is what keeps tool
+   calling working past the first turn.
+4. **Offline Inference** — Works completely offline after the model is downloaded.
 
 ## Troubleshooting
 
-### "Library not found" on Android
+### "Library not found" / "Symbol not found"
 
-Make sure the `.so` files are in the correct jniLibs directories:
-- `android/src/main/jniLibs/arm64-v8a/libllama.so` (device)
-- `android/src/main/jniLibs/x86_64/libllama.so` (emulator)
-
-### "Symbol not found" on iOS
-
-Ensure the xcframework is properly placed:
-- `ios/Frameworks/llama.xcframework/`
+The build hook failed to produce or bundle the native libraries. Check the
+`flutter run` output for the hook's messages — it logs the ABI fingerprint, the
+prebuilt URL it tried, and whether it fell back to a source build. Copying
+libraries by hand will not help; the plugin ignores hand-placed `jniLibs`.
 
 ### Model download fails
 
@@ -101,5 +82,6 @@ This is required because `ggml_backend_load_all_from_path()` needs a real filesy
 ### Slow inference
 
 - This is expected on mobile devices
-- The 0.5B model should generate ~10-20 tokens/second on modern phones
+- Expect single-digit to low-double-digit tokens/second for the bundled
+  LFM2.5-1.2B on a modern phone
 - Larger models will be significantly slower

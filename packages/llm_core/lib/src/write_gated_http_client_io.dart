@@ -20,7 +20,7 @@ import 'package:http/io_client.dart' show IOStreamedResponse;
 /// both ends, the client's `Send-Q` is 0, and the server never receives a
 /// byte — and no error is ever raised. Verified against a raw `dart:io`
 /// [Socket] with kernel counters on both ends; the same traffic from a Linux
-/// client is unaffected. See `llm_vllm`'s `BUG-concurrent-send-stall.md` for
+/// client is unaffected. See `docs/concurrent-send-stall.md` for
 /// the investigation, and dart-lang/sdk#30434 for a known, still-open race in
 /// the same write-event path.
 ///

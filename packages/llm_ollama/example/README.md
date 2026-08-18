@@ -91,8 +91,12 @@ for (final model in models) {
   print('${model.name} - ${model.size} bytes');
 }
 
-// Pull a model
-await ollamaRepo.pullModel('qwen2:0.5b');
+// Pull a model — pullModel returns a progress Stream, so it must be consumed.
+// `await ollamaRepo.pullModel(...)` compiles but never subscribes, so nothing
+// is pulled.
+await for (final progress in ollamaRepo.pullModel('qwen2:0.5b')) {
+  print('${progress.status}: ${progress.completed}/${progress.total}');
+}
 
 // Show model info
 final info = await ollamaRepo.showModel('qwen2:0.5b');
@@ -136,14 +140,17 @@ final stream = repo.streamChat(
 
 ## Configuration
 
-### Environment Variables
+### Arguments
 
-You can configure the base URL via environment variable:
+The CLI takes the model and base URL as positional arguments:
 
 ```bash
-export OLLAMA_BASE_URL=http://localhost:11434
-dart run example/cli_example.dart
+dart run example/cli_example.dart                              # qwen2:0.5b @ localhost:11434
+dart run example/cli_example.dart qwen3:0.6b
+dart run example/cli_example.dart qwen3:0.6b http://my-server:11434
 ```
+
+`OLLAMA_BASE_URL` is read by the integration tests, not by this example.
 
 ### Custom Base URL
 

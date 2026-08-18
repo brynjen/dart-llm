@@ -6,6 +6,8 @@ Ollama backend implementation for LLM interactions in Dart.
 
 Available on [pub.dev](https://pub.dev/packages/llm_ollama).
 
+Part of the [dart-llm](https://github.com/brynjen/dart-llm) ecosystem.
+
 ## Features
 
 - Streaming chat responses
@@ -13,7 +15,9 @@ Available on [pub.dev](https://pub.dev/packages/llm_ollama).
 - Vision (image) support
 - Embeddings
 - Thinking mode support
+- Structured output (JSON mode and JSON Schema via the native `format` field)
 - Model management (list, pull, show, version)
+- Multi-instance pooling with health checks and per-model routing (`OllamaPool`)
 
 ## Streaming Reliability Guarantees
 
@@ -25,7 +29,7 @@ Available on [pub.dev](https://pub.dev/packages/llm_ollama).
 
 ```yaml
 dependencies:
-  llm_ollama: ^0.2.0
+  llm_ollama: ^0.3.1
 ```
 
 ## Prerequisites
@@ -134,8 +138,8 @@ final stream = repo.streamChat(
 
 // JSON Schema mode — requires a model with structured_outputs capability
 // Check support first:
-final repo_mgmt = OllamaRepository();
-final supportsSchema = await repo_mgmt.supportsStructuredOutput('llama3.2');
+final modelRepo = OllamaRepository();
+final supportsSchema = await modelRepo.supportsStructuredOutput('llama3.2');
 
 const schema = {
   'type': 'object',
@@ -315,3 +319,104 @@ final repo = OllamaChatRepository(
   ),
 );
 ```
+
+## Capabilities
+
+`capabilitiesForModel` reports what the backend implements. To find out what a
+*specific model* supports, ask the server:
+
+```dart
+final repo = OllamaRepository(baseUrl: 'http://localhost:11434');
+
+if (await repo.supportsVision('llama3.2-vision')) { /* attach images */ }
+if (await repo.supportsStructuredOutput('qwen3:0.6b')) { /* pass a schema */ }
+```
+
+`streamChat` runs the vision check for you: passing images to a model whose
+`/api/show` capabilities do not include vision throws
+`VisionNotSupportedException` before any request is sent.
+
+## Pool
+
+Route across several Ollama servers — useful when models are pinned to specific
+GPUs:
+
+```dart
+final pool = OllamaPool(
+  instances: [
+    OllamaInstanceConfig(
+      baseUrl: 'http://bigcard:11434',
+      maxConcurrent: 1,
+      exclusiveModels: ['llama3.3:70b'],
+      embeddingIsolation: EmbeddingIsolation.unloadFirst,
+    ),
+    OllamaInstanceConfig(
+      baseUrl: 'http://smallcard:11434',
+      maxConcurrent: 3,
+      preferredModels: ['qwen3:0.6b'],
+    ),
+  ],
+  modelConfigs: [
+    OllamaModelConfig(pattern: 'llama3.3:*', maxConcurrent: 1),
+  ],
+  healthCheck: const HealthCheckConfig(),
+);
+
+final stream = pool.streamChat('qwen3:0.6b', messages: messages);
+```
+
+`OllamaPool` is a drop-in `LLMChatRepository` with routing, per-instance
+concurrency limits, optional per-model limits (`pattern` supports `*` globs),
+queue limits, and `/api/version` health checks. Unhealthy instances are excluded
+from routing until they recover.
+
+`EmbeddingIsolation` addresses the VRAM problem specific to Ollama: an instance
+serving one large chat model has to swap it out to run an embedding model.
+`unloadFirst` injects `keep_alive: '0'` so the embedding model is released
+immediately; `dedicated` routes every `embed` call to an instance tagged
+`preferEmbedding`.
+
+Inspect live state with `pool.stats()`, which returns an `OllamaPoolStats`
+carrying per-instance health, in-flight and queued counts. A pool that cannot
+place a request throws `OllamaNoEligibleInstanceException`,
+`OllamaQueueFullException` or `OllamaQueueTimeoutException`. There is also a
+fluent `OllamaPool.builder()`.
+
+## Resource cleanup
+
+Every repository owns an HTTP client unless you pass one in; whoever creates the
+client closes it.
+
+```dart
+final repo = OllamaChatRepository(baseUrl: 'http://localhost:11434');
+// ... use it ...
+repo.close();
+
+final pool = OllamaPool(instances: [...]);
+// ... use it ...
+pool.dispose();   // stops health checks and closes owned per-instance clients
+```
+
+A client you supply is never closed for you.
+
+## Notes
+
+- **Retries are off by default.** Pass a `RetryConfig` to enable them.
+- **`batchEmbed` does not batch.** Ollama's `/api/embed` takes one input at a
+  time, so `batchEmbed` delegates to `embed`. It exists for interface parity.
+- Portable `LLMChatOptions` fields (`temperature`, `topP`, `topK`,
+  `maxOutputTokens`, `stopSequences`) are mapped into Ollama's nested
+  `options` object for you — you only need raw `backendOptions['options']` for
+  knobs without a portable equivalent.
+
+## Testing
+
+```bash
+dart test --exclude-tags integration
+
+OLLAMA_BASE_URL=http://localhost:11434 dart test --tags integration
+```
+
+Integration tests read `OLLAMA_BASE_URL` from the environment or a local `.env`
+(see `.env.example`). They need the models named in
+`test/integration/test_helpers.dart` pulled on the target server.

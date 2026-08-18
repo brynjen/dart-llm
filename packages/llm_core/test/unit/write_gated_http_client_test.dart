@@ -8,7 +8,7 @@ import 'package:llm_core/llm_core.dart';
 import 'package:test/test.dart';
 
 /// Guards the write-gate workaround for the macOS/iOS VM socket defect
-/// documented in `llm_vllm`'s `BUG-concurrent-send-stall.md`.
+/// documented in `docs/concurrent-send-stall.md`.
 ///
 /// These drive a real [HttpServer] (and a raw, never-reading [ServerSocket]
 /// for the stall cases) because the properties under test live below
