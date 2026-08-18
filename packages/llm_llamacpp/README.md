@@ -28,7 +28,7 @@ Part of the [dart-llm](https://github.com/brynjen/dart-llm) ecosystem.
 
 ```yaml
 dependencies:
-  llm_llamacpp: ^0.3.1
+  llm_llamacpp: ^0.3.2
 ```
 
 ## Prerequisites
@@ -69,8 +69,8 @@ together, so a built app keeps working when moved off the build machine.
 
 Prebuilts are produced by `.github/workflows/build-release.yaml`, which reads the
 same `version:` field the hook does, so bumping the package version is what
-triggers a new native release. Release tags are bare versions — `0.3.1`, not
-`v0.3.1` — because that is the tag the hook's download URL is built from.
+triggers a new native release. Release tags are bare versions — `0.3.2`, not
+`v0.3.2` — because that is the tag the hook's download URL is built from.
 
 Two escape hatches, both optional:
 

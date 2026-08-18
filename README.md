@@ -167,22 +167,22 @@ Add the package(s) you need to your `pubspec.yaml`:
 ```yaml
 dependencies:
   # For Ollama backend
-  llm_ollama: ^0.3.1
+  llm_ollama: ^0.3.2
 
   # For vLLM OpenAI-compatible servers
-  llm_vllm: ^0.3.1
+  llm_vllm: ^0.3.2
 
   # For ChatGPT/OpenAI backend
-  llm_chatgpt: ^0.3.1
+  llm_chatgpt: ^0.3.2
 
   # For Anthropic Claude backend
-  llm_claude: ^0.3.1
+  llm_claude: ^0.3.2
 
   # For Google Gemini backend
-  llm_gemini: ^0.3.1
+  llm_gemini: ^0.3.2
 
   # For local llama.cpp inference
-  llm_llamacpp: ^0.3.1
+  llm_llamacpp: ^0.3.2
 ```
 
 Each backend depends on `llm_core`, so you only need it directly when writing
@@ -190,7 +190,7 @@ your own backend or programming against the abstractions:
 
 ```yaml
 dependencies:
-  llm_core: ^0.3.1
+  llm_core: ^0.3.2
 ```
 
 ## Package Details

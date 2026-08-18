@@ -43,7 +43,7 @@ Embeddings still use the `embedContent` / `batchEmbedContents` endpoints.
 
 ```yaml
 dependencies:
-  llm_gemini: ^0.3.1
+  llm_gemini: ^0.3.2
 ```
 
 ## Prerequisites

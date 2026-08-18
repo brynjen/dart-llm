@@ -20,7 +20,7 @@ Available on [pub.dev](https://pub.dev/packages/llm_claude).
 
 ```yaml
 dependencies:
-  llm_claude: ^0.3.1
+  llm_claude: ^0.3.2
 ```
 
 ## Prerequisites

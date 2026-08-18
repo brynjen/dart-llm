@@ -29,7 +29,7 @@ Part of the [dart-llm](https://github.com/brynjen/dart-llm) ecosystem.
 
 ```yaml
 dependencies:
-  llm_ollama: ^0.3.1
+  llm_ollama: ^0.3.2
 ```
 
 ## Prerequisites

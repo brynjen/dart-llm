@@ -310,28 +310,16 @@ void _handleInferenceRequest(
         bindings.llama_vocab_n_tokens(bindings.llama_model_get_vocab(model)),
       );
 
-      // Many models use ChatML-style turn boundaries (`<|im_end|>`) but ship
-      // GGUFs where llama_vocab_is_eog only flags the model-level EOS token.
-      // When the chat template renders to `<|im_start|>...<|im_end|>` we add
-      // `<|im_end|>` as an explicit stop string so generation actually stops
-      // at the end of the assistant turn instead of running to maxTokens.
-      final effectiveStopTokens = <String>[...request.stopTokens];
-      if (prompt.contains('<|im_end|>') || prompt.contains('<|im_start|>')) {
-        if (!effectiveStopTokens.contains('<|im_end|>')) {
-          effectiveStopTokens.add('<|im_end|>');
-          // ignore: avoid_print
-          print(
-            '[inference_isolate_handler] Auto-added "<|im_end|>" to stop tokens '
-            '(ChatML-style template detected).',
-          );
-        }
-      }
-      // Same idea for Llama-3-style end-of-turn markers.
-      if (prompt.contains('<|eot_id|>')) {
-        if (!effectiveStopTokens.contains('<|eot_id|>')) {
-          effectiveStopTokens.add('<|eot_id|>');
-        }
-      }
+      // Caller-supplied stops plus the markers detected from the rendered
+      // template. See `resolveStopTokens` for why detection is additive.
+      final effectiveStopTokens = resolveStopTokens(
+        requested: request.stopTokens,
+        prompt: prompt,
+        // ignore: avoid_print
+        onDiagnostic: (message) => print(
+          '[inference_isolate_handler] $message',
+        ),
+      );
 
       final generatedTokens = _generateTokens(
         bindings,

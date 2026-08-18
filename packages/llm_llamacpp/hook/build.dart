@@ -24,7 +24,7 @@ const String _githubRepo = 'dart-llm';
 
 /// Fallback native artifact version, used only if `pubspec.yaml` cannot be
 /// read or parsed. The real value comes from [_readNativeBinaryVersion].
-const String _fallbackNativeBinaryVersion = '0.3.1';
+const String _fallbackNativeBinaryVersion = '0.3.2';
 
 /// The GitHub release that carries this package's prebuilt native bundles.
 ///

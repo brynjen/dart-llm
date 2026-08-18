@@ -53,6 +53,7 @@ class LlamaCppChatRepository extends LLMChatRepository {
     this.threads,
     this.nGpuLayers = 0,
     this.maxToolAttempts = 90,
+    this.stopTokens = const [],
     this._loraPath,
     this._loraScale = 1.0,
   }) : _ownsModel = true;
@@ -65,6 +66,7 @@ class LlamaCppChatRepository extends LLMChatRepository {
     this.threads,
     this.nGpuLayers = 0,
     this.maxToolAttempts = 90,
+    this.stopTokens = const [],
     this._loraPath,
     this._loraScale = 1.0,
   }) : _model = model,
@@ -79,6 +81,7 @@ class LlamaCppChatRepository extends LLMChatRepository {
     this.threads,
     this.nGpuLayers = 0,
     this.maxToolAttempts = 90,
+    this.stopTokens = const [],
     this._loraPath,
     this._loraScale = 1.0,
   }) : _modelPath = modelPath,
@@ -98,6 +101,27 @@ class LlamaCppChatRepository extends LLMChatRepository {
 
   /// Maximum number of tool calling attempts.
   final int maxToolAttempts;
+
+  /// Extra text-level stop strings for models whose turn-end marker the GGUF
+  /// does not flag as end-of-generation.
+  ///
+  /// These are *additional*. The markers implied by the model's own chat
+  /// template are detected from the rendered prompt and appended to this list,
+  /// so ChatML (`<|im_end|>`) and Llama-3 (`<|eot_id|>`) already stop correctly
+  /// with the default empty list -- set this only for a template that is not
+  /// detected:
+  ///
+  /// ```dart
+  /// // Gemma
+  /// LlamaCppChatRepository(stopTokens: ['<end_of_turn>']);
+  /// // Phi-3
+  /// LlamaCppChatRepository(stopTokens: ['<|end|>']);
+  /// ```
+  ///
+  /// Naming a marker that would have been detected anyway is a no-op. Note that
+  /// these match against generated *text*, so a string the model can emit as
+  /// ordinary prose will truncate the response.
+  final List<String> stopTokens;
 
   /// Whether this repository owns and should dispose the model.
   final bool _ownsModel;

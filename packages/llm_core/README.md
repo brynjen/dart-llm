@@ -27,14 +27,14 @@ Most users should depend on a backend implementation (it re-exports `llm_core` t
 
 ```yaml
 dependencies:
-  llm_ollama: ^0.3.1
+  llm_ollama: ^0.3.2
 ```
 
 If you're implementing your own backend, depend on `llm_core` directly:
 
 ```yaml
 dependencies:
-  llm_core: ^0.3.1
+  llm_core: ^0.3.2
 ```
 
 ## Core Types

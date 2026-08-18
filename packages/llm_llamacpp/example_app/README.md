@@ -9,9 +9,10 @@ build hook — there is nothing to download and nothing to copy. `flutter run`
 triggers the hook, which fetches a prebuilt bundle (or builds from the vendored
 submodule) and bundles the libraries into the app.
 
-Nothing should be placed in `android/src/main/jniLibs/` by hand: the plugin's
-`android/build.gradle` sets `jniLibs.srcDirs = []` precisely so hook output is
-the only source, and anything copied there is ignored.
+Nothing should be placed in `android/src/main/jniLibs/` by hand. `llm_llamacpp`
+declares no Flutter plugin platforms at all; the hook's code assets are the only
+source of the native libraries, and Flutter's own `InstallCodeAssets` build step
+bundles them. Anything copied into `jniLibs` is ignored.
 
 See the main [llm_llamacpp README](../README.md#native-library) for how
 resolution works and which environment variables can override it.
@@ -57,7 +58,7 @@ flutter run -d "iPhone 15 Pro"
 The build hook failed to produce or bundle the native libraries. Check the
 `flutter run` output for the hook's messages — it logs the ABI fingerprint, the
 prebuilt URL it tried, and whether it fell back to a source build. Copying
-libraries by hand will not help; the plugin ignores hand-placed `jniLibs`.
+libraries by hand will not help; hand-placed `jniLibs` are ignored.
 
 ### Model download fails
 

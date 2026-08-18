@@ -387,7 +387,7 @@ LLMChatRepository repo = LlamaCppChatRepository(...);
 2. **Add dependency** on `llm_core` (workspace resolution):
    ```yaml
    dependencies:
-     llm_core: ^0.3.1
+     llm_core: ^0.3.2
    ```
 3. **Implement LLMChatRepository**:
    ```dart

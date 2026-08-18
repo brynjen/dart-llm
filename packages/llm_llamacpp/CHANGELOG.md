@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-08-18
+
+### Added
+- `LlamaCppChatRepository.stopTokens` for models whose turn-end marker the GGUF does not flag as end-of-generation. These are additional: the markers implied by the model's own chat template are still detected and appended, so ChatML and Llama 3.x keep working with the default empty list. Set it for a template that is not detected, e.g. Gemma's `<end_of_turn>` or Phi-3's `<|end|>`. Thanks @drawing (#3).
+
+### Fixed
+- The package no longer declares itself a Flutter plugin. It declared `ffiPlugin: true` for five platforms while shipping a platform directory for only two, so a consuming app failed to build: CocoaPods could not find a podspec for macOS or iOS, and Linux CMake could not `add_subdirectory`. The native libraries have been code assets from `hook/build.dart` for several releases, and Flutter installs those through its own build step with no dependency manager involved, so the declarations bought nothing. Reported by @drawing for macOS (#1).
+- Removed the `android/` and `windows/` plugin stubs the declarations existed for. The Android one had already been reduced to `jniLibs.srcDirs = []`, and the Windows one still tried to install a `libs/llama.dll` that no longer exists.
+- `hook/build.dart` read `input.config.code` without first checking `input.config.buildCodeAssets`, so any hook invocation that did not ask for code assets — `flutter run -d macos --debug` makes one once the app is up — failed with `Bad state: HookConfig.code should only be accessed when building code assets` and "Building native assets failed". The hook now emits no assets for those invocations. Pre-existing and unrelated to the plugin declarations above.
+
 ## [0.3.1] - 2026-08-18
 
 ### Added

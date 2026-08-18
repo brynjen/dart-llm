@@ -1,6 +1,6 @@
 name: llm_llamacpp
 description: llama.cpp backend implementation for LLM interactions. Enables local on-device inference with GGUF models on Android, iOS, macOS, Windows, and Linux.
-version: 0.3.1
+version: 0.3.2
 resolution: workspace
 homepage: https://github.com/brynjen/dart-llm
 repository: https://github.com/brynjen/dart-llm
@@ -20,7 +20,7 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  llm_core: ^0.3.1
+  llm_core: ^0.3.2
   ffi: ^2.1.3
   http: ^1.6.0
   path: ^1.9.0
@@ -40,16 +40,23 @@ dev_dependencies:
   ffigen: ^21.0.0
   dotenv: ^4.2.0
 
-flutter:
-  plugin:
-    platforms:
-      android:
-        ffiPlugin: true
-      ios:
-        ffiPlugin: true
-      macos:
-        ffiPlugin: true
-      windows:
-        ffiPlugin: true
-      linux:
-        ffiPlugin: true
+# Supported platforms, declared the way a non-plugin package does. This is
+# documentation for pub.dev only -- it carries no native build integration.
+platforms:
+  android:
+  ios:
+  linux:
+  macos:
+  windows:
+
+# Deliberately no `flutter: plugin:` block. The native libraries are code
+# assets produced by `hook/build.dart`, which Flutter installs through its
+# `InstallCodeAssets` build target -- that target resolves packages by "has a
+# build hook", never by the plugin list, and does the macOS/iOS framework
+# wrapping itself. Declaring `ffiPlugin: true` here would additionally enrol
+# the package in CocoaPods (and then require a Package.swift per darwin
+# platform for Swift Package Manager), and every declared platform must have a
+# matching `<platform>/` directory or the consuming app fails to build:
+# `pod install` cannot find a spec, and Linux CMake cannot add_subdirectory.
+# See https://docs.flutter.dev/platform-integration/bind-native-code -- this is
+# the `package_ffi` shape; the older `plugin_ffi` template is deprecated.

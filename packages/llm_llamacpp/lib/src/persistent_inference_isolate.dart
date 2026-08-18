@@ -9,6 +9,7 @@ import 'package:llm_llamacpp/src/bindings/llama_bindings.dart';
 import 'package:llm_llamacpp/src/generation_options.dart';
 import 'package:llm_llamacpp/src/isolate_messages.dart';
 import 'package:llm_llamacpp/src/lora_context_adapters.dart';
+import 'package:llm_llamacpp/src/stop_token_resolver.dart';
 import 'package:llm_llamacpp/src/streaming_utf8_decoder.dart';
 import 'package:llm_llamacpp/src/tool_calls/tool_call_syntax.dart';
 import 'package:llm_llamacpp/src/tool_definition_injector.dart';

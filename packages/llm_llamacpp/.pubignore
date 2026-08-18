@@ -20,18 +20,12 @@ compile_commands.json
 *.a
 *.lib
 
-# Exclude Android JNI libraries
-android/src/main/jniLibs/
-
 # Exclude test models
 test/models/
 
 # Exclude example app build
 example_app/build/
 example_app/.gradle/
-
-# Exclude Windows libs folder
-windows/libs/
 
 # Scratch/debug files
 _*.dart
