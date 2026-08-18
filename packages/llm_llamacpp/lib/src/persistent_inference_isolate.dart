@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:ffi' as ffi;
 import 'dart:isolate';
 
@@ -9,8 +10,11 @@ import 'package:llm_llamacpp/src/generation_options.dart';
 import 'package:llm_llamacpp/src/isolate_messages.dart';
 import 'package:llm_llamacpp/src/lora_context_adapters.dart';
 import 'package:llm_llamacpp/src/streaming_utf8_decoder.dart';
+import 'package:llm_llamacpp/src/tool_calls/tool_call_syntax.dart';
+import 'package:llm_llamacpp/src/tool_definition_injector.dart';
 
 part 'native_template_applier.dart';
+part 'tool_format_probe.dart';
 part 'inference_isolate_handler.dart';
 part 'inference_isolate_messages.dart';
 part 'inference_sampler_config.dart';
@@ -109,6 +113,7 @@ class PersistentInferenceIsolate {
     String? loraPath,
     double loraScale = 1.0,
     List<IsolateMessage>? messages,
+    List<String> toolSchemasJson = const [],
   }) async* {
     await _ensureInitialized();
 
@@ -131,6 +136,7 @@ class PersistentInferenceIsolate {
         loraPath: loraPath,
         loraScale: loraScale,
         messages: messages,
+        toolSchemasJson: toolSchemasJson,
       ),
     );
 

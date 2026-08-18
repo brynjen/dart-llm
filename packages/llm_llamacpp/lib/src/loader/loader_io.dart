@@ -97,8 +97,24 @@ String _getLibraryName() {
   }
 }
 
+/// Environment variable naming a directory to search first.
+///
+/// Set this to a llama.cpp build output directory to run pure-Dart scripts and
+/// integration tests against a local build, e.g.
+/// `LLM_LLAMACPP_LIB_DIR=.dart_tool/hooks_runner/shared/llm_llamacpp/build/<hash>/build-macos-arm64/bin`.
+/// Without it the loader falls back to the working directory and the usual
+/// system locations, which is awkward when the libraries live under
+/// `.dart_tool/`.
+const String libraryDirEnvVar = 'LLM_LLAMACPP_LIB_DIR';
+
 List<String> _getSearchPaths(String libraryName) {
   final paths = <String>[];
+
+  // 0. Explicit override, so a caller can point at a build directory.
+  final override = Platform.environment[libraryDirEnvVar];
+  if (override != null && override.isNotEmpty) {
+    paths.add(path.join(override, libraryName));
+  }
 
   // 1. Current directory
   paths.add(path.join(Directory.current.path, libraryName));

@@ -3,8 +3,9 @@ part of 'persistent_inference_isolate.dart';
 String _applyNativeChatTemplate(
   LlamaBindings bindings,
   ffi.Pointer<llama_model> model,
-  List<IsolateMessage> messages,
-) {
+  List<IsolateMessage> messages, {
+  List<String> toolSchemasJson = const [],
+}) {
   // Retrieve the chat template stored in the GGUF metadata. Despite what the
   // doc-comment on `llama_chat_apply_template` claims, passing nullptr there
   // does NOT consult the model — upstream falls back to a literal "chatml"
@@ -14,9 +15,11 @@ String _applyNativeChatTemplate(
   final templatePtr = bindings.llama_model_chat_template(model, ffi.nullptr);
   final hasTemplate = templatePtr.address != 0;
 
+  String? templateSource;
   if (hasTemplate) {
     try {
       final templateStr = templatePtr.cast<Utf8>().toDartString();
+      templateSource = templateStr;
       final preview = templateStr.length > 200
           ? '${templateStr.substring(0, 200)}...'
           : templateStr;
@@ -35,6 +38,24 @@ String _applyNativeChatTemplate(
     print(
       '[native_template_applier] WARNING: model has no embedded chat template; '
       'falling back to llama.cpp default ("chatml"). Output may be malformed.',
+    );
+  }
+
+  // The C chat-template API takes only role/content pairs, so a template's
+  // `{%- if tools -%}` branch can never fire from here. Write the tool list into
+  // the system message ourselves, in the shape this model's template would have
+  // produced, so the model sees the format it was fine-tuned on.
+  final toolFormat = _detectToolCallFormat(bindings, model, templateSource);
+  messages = injectToolDefinitions(
+    messages,
+    toolSchemasJson,
+    format: toolFormat,
+  );
+  if (toolSchemasJson.isNotEmpty) {
+    // ignore: avoid_print
+    print(
+      '[native_template_applier] Advertised ${toolSchemasJson.length} tool(s) '
+      'as ${toolFormat.name}',
     );
   }
 

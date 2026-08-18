@@ -142,7 +142,12 @@ void _handleInferenceRequest(
       }
 
       if (request.messages != null && request.messages!.isNotEmpty) {
-        prompt = _applyNativeChatTemplate(bindings, model, request.messages!);
+        prompt = _applyNativeChatTemplate(
+          bindings,
+          model,
+          request.messages!,
+          toolSchemasJson: request.toolSchemasJson,
+        );
       } else {
         prompt = request.prompt;
       }

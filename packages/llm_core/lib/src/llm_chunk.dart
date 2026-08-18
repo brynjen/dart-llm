@@ -59,6 +59,7 @@ class LLMChunkMessage {
     this.toolCallId,
     this.toolCalls,
     this.images,
+    this.rawContent,
   });
 
   /// The text content of this chunk.
@@ -78,4 +79,18 @@ class LLMChunkMessage {
 
   /// List of tool call data.
   final List<LLMToolCall>? toolCalls;
+
+  /// The assistant turn exactly as the model emitted it, including any
+  /// tool-call markup that was stripped out of [content].
+  ///
+  /// Only set on the final chunk of a turn, and only by backends that parse tool
+  /// calls out of raw model output — that is, local inference. Hosted APIs return
+  /// tool calls as structured fields and have nothing to preserve here.
+  ///
+  /// Callers that keep their own conversation history need this to replay the
+  /// turn faithfully: a model that is shown its earlier tool call, followed by
+  /// the tool result, will keep using tools. Replaying only the visible text
+  /// instead shows the model a turn where it announced a tool and then answered
+  /// without calling one, and it will copy that.
+  final String? rawContent;
 }

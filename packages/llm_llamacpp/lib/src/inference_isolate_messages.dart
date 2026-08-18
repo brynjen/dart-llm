@@ -14,12 +14,20 @@ class _InferenceRequestMessage {
     this.loraPath,
     this.loraScale = 1.0,
     this.messages,
+    this.toolSchemasJson = const [],
   });
 
   final int requestId;
   final String modelPath;
   final String prompt;
   final List<IsolateMessage>? messages;
+
+  /// JSON-encoded OpenAI-style function schemas for the available tools.
+  ///
+  /// Encoded rather than structured because these cross an isolate boundary, and
+  /// injected inside the isolate where the model's chat template is available to
+  /// pick the right wire format.
+  final List<String> toolSchemasJson;
   final List<String> stopTokens;
   final int contextSize;
   final int batchSize;

@@ -4,6 +4,17 @@ import 'package:llm_core/llm_core.dart';
 ///
 /// This tool demonstrates function calling with llama.cpp models.
 class CalculatorTool extends LLMTool {
+  /// Creates a calculator tool.
+  ///
+  /// [onInvoke] is called with the arguments the model supplied and the result
+  /// handed back to it. llm_llamacpp executes tools internally and does not
+  /// surface their results in the chunk stream, so this callback is how the UI
+  /// gets to show what the tool actually did.
+  CalculatorTool({this.onInvoke});
+
+  /// Notified after every execution, for display purposes.
+  final void Function(Map<String, dynamic> args, String result)? onInvoke;
+
   @override
   String get name => 'calculator';
 
@@ -36,9 +47,23 @@ class CalculatorTool extends LLMTool {
 
   @override
   Future<String> execute(Map<String, dynamic> args, {dynamic extra}) async {
-    final operation = args['operation'] as String;
-    final a = (args['a'] as num).toDouble();
-    final b = (args['b'] as num).toDouble();
+    final result = _compute(args);
+    onInvoke?.call(args, result);
+    return result;
+  }
+
+  String _compute(Map<String, dynamic> args) {
+    // A local model can get the argument names or types wrong, and that should
+    // read back to it as a tool error rather than crashing the app.
+    final operation = args['operation'];
+    if (operation is! String) {
+      return 'Error: missing or non-string "operation"';
+    }
+    final a = _asDouble(args['a']);
+    final b = _asDouble(args['b']);
+    if (a == null || b == null) {
+      return 'Error: "a" and "b" must both be numbers';
+    }
 
     double result;
     String operationSymbol;
@@ -67,14 +92,37 @@ class CalculatorTool extends LLMTool {
         return 'Error: Unknown operation "$operation"';
     }
 
-    // Format result nicely (remove unnecessary decimals)
-    final resultStr = result == result.toInt()
-        ? result.toInt().toString()
-        : result
-              .toStringAsFixed(4)
-              .replaceAll(RegExp(r'0+$'), '')
-              .replaceAll(RegExp(r'\.$'), '');
-
-    return '$a $operationSymbol $b = $resultStr';
+    return '${_formatNumber(a)} $operationSymbol ${_formatNumber(b)} '
+        '= ${_formatNumber(result)}';
   }
+
+  /// Renders a number the way a person would write it.
+  ///
+  /// Everything is widened to `double` for the arithmetic, but echoing that back
+  /// as `347.0 x 89.0 = 30883` gives a small model a decimal-looking operand and
+  /// an integer-looking answer in the same breath, which invites it to "fix" the
+  /// result by inventing separators. Integral values are therefore printed
+  /// without a fractional part.
+  static String _formatNumber(double value) {
+    // Beyond 2^53 a double can no longer represent consecutive integers, so
+    // stop claiming integrality out there and let the decimal form show.
+    if (value == value.roundToDouble() && value.abs() < 1e15) {
+      return value.toInt().toString();
+    }
+    var text = value.toStringAsFixed(4);
+    // Trim only the fractional tail. Applied to a whole integer string this
+    // would turn 10200 into 102, so the '.' guard is load-bearing.
+    if (text.contains('.')) {
+      text = text.replaceFirst(RegExp(r'0+$'), '');
+      text = text.replaceFirst(RegExp(r'\.$'), '');
+    }
+    return text;
+  }
+
+  /// Accepts numbers and numeric strings, since models quote numbers freely.
+  static double? _asDouble(dynamic value) => switch (value) {
+    final num n => n.toDouble(),
+    final String s => double.tryParse(s),
+    _ => null,
+  };
 }

@@ -104,6 +104,14 @@ Stream<LLMChunk> _streamChatImpl(
     loraPath: repo._loraPath,
     loraScale: repo._loraScale,
     messages: isolateMessages,
+    // Encoded here and injected inside the isolate, where the model's chat
+    // template is available to choose the wire format the model expects.
+    toolSchemasJson: [
+      for (final tool in effectiveTools)
+        json.encode(
+          (tool.toJson['function'] as Map<String, dynamic>?) ?? tool.toJson,
+        ),
+    ],
   );
 
   try {
@@ -159,6 +167,13 @@ Stream<LLMChunk> _streamChatImpl(
             content: null,
             role: LLMRole.assistant,
             toolCalls: collectedToolCalls.isEmpty ? null : collectedToolCalls,
+            // The turn as the model actually wrote it, tool-call markup and all.
+            // Callers keeping their own history must replay this rather than the
+            // visible text, or the model sees a turn that announced a tool and
+            // then answered without calling one — and imitates it next turn.
+            rawContent: collectedToolCalls.isEmpty
+                ? null
+                : streamHandler.accumulatedContent,
           ),
           done: true,
           promptEvalCount: message.promptTokens,
