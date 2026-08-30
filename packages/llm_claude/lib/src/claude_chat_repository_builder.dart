@@ -15,6 +15,7 @@ class ClaudeChatRepositoryBuilder
     extends ChatRepositoryBuilderBase<ClaudeChatRepositoryBuilder> {
   String? _apiKey;
   String? _baseUrl;
+  Map<String, String>? _extraHeaders;
 
   /// Set the Anthropic API key.
   ClaudeChatRepositoryBuilder apiKey(String apiKey) {
@@ -28,6 +29,15 @@ class ClaudeChatRepositoryBuilder
     return this;
   }
 
+  /// Set extra headers sent with every request, such as `anthropic-beta`.
+  ///
+  /// The protocol headers, `x-api-key` and `anthropic-version` always take
+  /// precedence.
+  ClaudeChatRepositoryBuilder extraHeaders(Map<String, String> headers) {
+    _extraHeaders = headers;
+    return this;
+  }
+
   @override
   ClaudeChatRepository build() {
     if (_apiKey == null) {
@@ -36,6 +46,7 @@ class ClaudeChatRepositoryBuilder
     return ClaudeChatRepository(
       apiKey: _apiKey!,
       baseUrl: _baseUrl ?? 'https://api.anthropic.com',
+      extraHeaders: _extraHeaders,
       maxToolAttempts: maxToolAttemptsValue,
       retryConfig: retryConfigValue,
       timeoutConfig: timeoutConfigValue,

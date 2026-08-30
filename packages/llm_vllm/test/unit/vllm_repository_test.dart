@@ -38,6 +38,67 @@ void main() {
       expect(models.single.ownedBy, 'vllm');
     });
 
+    test('sends extraHeaders on probes, without letting them win', () async {
+      late Map<String, String> requestHeaders;
+      final repo = VLLMRepository(
+        baseUrl: 'http://localhost:8000',
+        apiKey: 'secret',
+        extraHeaders: const {
+          'x-tenant': 'acme',
+          'authorization': 'Bearer stolen',
+        },
+        httpClient: MockClient((request) async {
+          requestHeaders = request.headers;
+          return http.Response(
+            json.encode({'object': 'list', 'data': <dynamic>[]}),
+            200,
+            headers: {'content-type': 'application/json'},
+          );
+        }),
+      );
+
+      await repo.models();
+
+      expect(requestHeaders['x-tenant'], 'acme');
+      expect(requestHeaders['authorization'], 'Bearer secret');
+    });
+
+    test('fetchSupportedParams authenticates against a keyed server', () async {
+      // The /openapi.json probe used to omit authorization entirely, so an
+      // --api-key server answered 401 and this silently returned null — the
+      // caller fell back to the built-in snapshot with no sign anything
+      // had gone wrong.
+      late Map<String, String> requestHeaders;
+      final repo = VLLMRepository(
+        baseUrl: 'http://localhost:8000',
+        apiKey: 'secret',
+        httpClient: MockClient((request) async {
+          requestHeaders = request.headers;
+          if (requestHeaders['authorization'] != 'Bearer secret') {
+            return http.Response('unauthorized', 401);
+          }
+          return http.Response(
+            json.encode({
+              'components': {
+                'schemas': {
+                  'ChatCompletionRequest': {
+                    'properties': {'temperature': <String, dynamic>{}},
+                  },
+                },
+              },
+            }),
+            200,
+            headers: {'content-type': 'application/json'},
+          );
+        }),
+      );
+
+      final params = await repo.fetchSupportedParams();
+
+      expect(requestHeaders['authorization'], 'Bearer secret');
+      expect(params, contains('temperature'));
+    });
+
     test('models parses max_model_len', () async {
       final repo = VLLMRepository(
         baseUrl: 'http://localhost:8000',

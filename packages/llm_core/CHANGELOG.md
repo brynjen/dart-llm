@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-08-30
+
+### Added
+- `LLMToolCallDelta` and `LLMChunkMessage.toolCallDeltas` — fragments of a tool call that is still streaming. Backends announce the tool's name in their first event, so a caller can show which tool is running without waiting for its arguments.
+
+### Fixed
+- Tool calls that take no arguments always failed. A zero-parameter tool is routinely called with `""` (OpenAI-compatible servers) or with nothing to concatenate (Anthropic), and decoding that as JSON threw — the executor answered `Tool x failed: FormatException` and the message converters that replay history threw outright. `LLMToolCall.argumentsJson` now reads no arguments as an empty map; genuinely malformed JSON still throws.
+- Token counts survive a turn that ends in more than one `done` chunk. Several backends report the finish reason first and token usage in a trailing frame, and a tool loop produces a done chunk per round; counts were assigned unconditionally, so a later count-less chunk erased them.
+- `529` is retryable by default. It is Anthropic's transient "overloaded" signal, and its absence meant those failures were never retried.
+- `ToolLoopIncompleteException.attemptsUsed` reported `0` no matter how many tool rounds had run. Each recursion builds a fresh executor whose budget is already decremented, so the frame that runs out cannot see the rounds behind it; the accounting is now restated as the error unwinds, and the outermost frame — which knows the real ceiling — supplies the final number.
+
+### Changed
+- `LLMChunkMessage.toolCalls` is documented as only ever holding complete, executable calls. Deltas are never executable and never appear there.
+
 ## [0.3.2] - 2026-08-18
 
 ### Changed

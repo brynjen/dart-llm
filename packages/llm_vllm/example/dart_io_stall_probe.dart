@@ -53,7 +53,7 @@ Future<void> main(List<String> args) async {
   final rounds = int.parse(args.isNotEmpty ? args[0] : '6');
   final concurrency = int.parse(args.length > 1 ? args[1] : '16');
   final promptKTokens = int.parse(args.length > 2 ? args[2] : '32');
-  final host = args.length > 3 ? args[3] : 'http://192.168.0.74:8000';
+  final host = args.length > 3 ? args[3] : 'http://localhost:8000';
   final model = args.length > 4 ? args[4] : 'Qwen/Qwen3.8-27B-FP8';
 
   final prompt = _filler(promptKTokens * 1024);

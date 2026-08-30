@@ -472,11 +472,16 @@ void main() {
 
       final llmToolCalls = gptToolCalls.toLLMToolCalls;
 
-      // Should only take first tool call
-      expect(llmToolCalls.length, 1);
+      // Every parallel call must survive. Dropping any is silent data loss:
+      // the caller runs one tool and answers as if that were the whole
+      // request.
+      expect(llmToolCalls.length, 2);
       expect(llmToolCalls[0].id, 'call_1');
       expect(llmToolCalls[0].name, 'calculator');
       expect(llmToolCalls[0].arguments, '{"a": 2, "b": 2}');
+      expect(llmToolCalls[1].id, 'call_2');
+      expect(llmToolCalls[1].name, 'search');
+      expect(llmToolCalls[1].arguments, '{}');
     });
 
     test(
@@ -537,6 +542,38 @@ void main() {
 
       expect(llmMessage.toolCalls, isNotNull);
       expect(llmMessage.toolCalls?.length, 1);
+    });
+
+    test('GPTMessageToLLMMessageExt.toLLMMessage keeps parallel calls', () {
+      // Replaying an assistant turn that made two calls must show the model
+      // both of them; showing one rewrites history and teaches it that the
+      // other call never happened.
+      final gptMessage = GPTMessage(
+        role: 'assistant',
+        content: null,
+        refusal: null,
+        toolCalls: [
+          GPTToolCall(
+            id: 'call_1',
+            index: 0,
+            type: 'function',
+            function: GPTToolFunctionCall(name: 'calculator', arguments: '{}'),
+          ),
+          GPTToolCall(
+            id: 'call_2',
+            index: 1,
+            type: 'function',
+            function: GPTToolFunctionCall(name: 'search', arguments: '{}'),
+          ),
+        ],
+      );
+
+      final llmMessage = gptMessage.toLLMMessage;
+
+      expect(llmMessage.toolCalls?.length, 2);
+      expect(llmMessage.toolCalls?[0].id, 'call_1');
+      expect(llmMessage.toolCalls?[1].id, 'call_2');
+      expect(llmMessage.toolCalls?[1].name, 'search');
     });
   });
 }

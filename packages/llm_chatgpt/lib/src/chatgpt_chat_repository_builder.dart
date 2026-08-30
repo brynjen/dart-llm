@@ -22,6 +22,7 @@ class ChatGPTChatRepositoryBuilder
     extends ChatRepositoryBuilderBase<ChatGPTChatRepositoryBuilder> {
   String? _apiKey;
   String? _baseUrl;
+  Map<String, String>? _extraHeaders;
 
   /// Set the API key for OpenAI.
   ChatGPTChatRepositoryBuilder apiKey(String apiKey) {
@@ -35,6 +36,14 @@ class ChatGPTChatRepositoryBuilder
     return this;
   }
 
+  /// Set extra headers sent with every request.
+  ///
+  /// The protocol headers and `authorization` always take precedence.
+  ChatGPTChatRepositoryBuilder extraHeaders(Map<String, String> headers) {
+    _extraHeaders = headers;
+    return this;
+  }
+
   @override
   ChatGPTChatRepository build() {
     if (_apiKey == null) {
@@ -43,6 +52,7 @@ class ChatGPTChatRepositoryBuilder
     return ChatGPTChatRepository(
       apiKey: _apiKey!,
       baseUrl: _baseUrl ?? 'https://api.openai.com',
+      extraHeaders: _extraHeaders,
       maxToolAttempts: maxToolAttemptsValue,
       retryConfig: retryConfigValue,
       timeoutConfig: timeoutConfigValue,

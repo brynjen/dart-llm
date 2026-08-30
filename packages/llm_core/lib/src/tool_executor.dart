@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 
 import 'package:llm_core/src/exceptions.dart';
 import 'package:llm_core/src/llm_chunk.dart';
@@ -133,10 +132,7 @@ class StreamToolExecutor {
           dynamic toolResponse;
           try {
             toolResponse =
-                await tool.execute(
-                  json.decode(toolCall.arguments),
-                  extra: extra,
-                ) ??
+                await tool.execute(toolCall.argumentsJson, extra: extra) ??
                 'Tool ${toolCall.name} returned null';
           } catch (e) {
             // If a tool throws, capture the error as a tool message instead of
@@ -183,13 +179,33 @@ class StreamToolExecutor {
 
         // Continue the conversation with tool results if we have attempts left
         if (toolAttempts > 0) {
+          // Each recursion builds a fresh executor whose budget is already
+          // decremented, so the level that finally runs out has no idea how
+          // many rounds preceded it and reports `attemptsUsed: 0`. This level
+          // does know its own budget, so it restates the accounting on the way
+          // out; the outermost frame has the true ceiling and wins.
+          //
+          // The rewrite has to happen on the stream rather than in a
+          // `try` around the `yield*`: an error from a yielded stream goes
+          // straight to the subscriber without unwinding through this
+          // generator, so an enclosing catch never sees it.
           yield* streamChatCallback(
             model,
             workingMessages,
             tools,
             extra,
             toolAttempts - 1,
-          );
+          ).handleError((Object error) {
+            final e = error as ToolLoopIncompleteException;
+            throw ToolLoopIncompleteException(
+              reason: e.reason,
+              attemptsUsed: _attemptsUsed(e.attemptsRemaining),
+              attemptsRemaining: e.attemptsRemaining,
+              lastRoundEndedWithDone: e.lastRoundEndedWithDone,
+              lastRoundHadToolCalls: e.lastRoundHadToolCalls,
+              hadFinalAssistantResponse: e.hadFinalAssistantResponse,
+            );
+          }, test: (error) => error is ToolLoopIncompleteException);
           return;
         }
       }

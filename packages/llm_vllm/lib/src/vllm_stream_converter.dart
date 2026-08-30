@@ -20,7 +20,11 @@ class VLLMStreamConverter {
     final config = timeoutConfig ?? TimeoutConfig.defaultConfig;
     final readTimeout = config.readTimeout;
     final lineBuffer = StringBuffer();
-    final toolCallsByIndex = <int, VLLMToolCall>{};
+    // Accumulated calls in arrival order, plus a map from the wire `index`
+    // to the position of the call currently open at that index. See
+    // [_accumulateToolCalls] for why neither field alone is enough.
+    final accumulatedToolCalls = <VLLMToolCall>[];
+    final openToolCallAt = <int, int>{};
     final thinkingSplitter = _ThinkingTagSplitter();
     var malformedEventCount = 0;
     // Kept so a carry flushed at end of stream can reuse the response's
@@ -110,21 +114,34 @@ class VLLMStreamConverter {
             thinkingSplitter,
           );
           lastChunk = chunk;
-          _accumulateToolCalls(chunk, toolCallsByIndex);
+          _accumulateToolCalls(chunk, accumulatedToolCalls, openToolCallAt);
 
           final choice = chunk.choices.isEmpty ? null : chunk.choices.first;
           final finishReason = choice?.finishReason;
-          final hasContent = choice?.delta.content != null;
+          // An empty content delta is vLLM's priming event announcing the
+          // assistant role, not output. Yielding it told consumers the model
+          // had started producing text before it had produced anything.
+          final hasContent = choice?.delta.content?.isNotEmpty ?? false;
           final hasThinking = choice?.delta.thinking != null;
+          final rawToolCallDeltas = choice?.delta.toolCalls;
 
-          if (finishReason == 'tool_calls' && toolCallsByIndex.isNotEmpty) {
-            yield _toolCallChunk(chunk, toolCallsByIndex);
-            toolCallsByIndex.clear();
+          if (finishReason == 'tool_calls' && accumulatedToolCalls.isNotEmpty) {
+            // Accumulation above already folded in any fragment this same
+            // chunk carried, so this covers both terminal shapes vLLM emits:
+            // a lone `{}` delta, and a final fragment fused with the finish
+            // reason.
+            yield _toolCallChunk(chunk, accumulatedToolCalls);
+            accumulatedToolCalls.clear();
+            openToolCallAt.clear();
           } else if (finishReason != null ||
               hasContent ||
               hasThinking ||
               chunk.usage != null) {
             yield chunk;
+          } else if (rawToolCallDeltas != null &&
+              rawToolCallDeltas.isNotEmpty) {
+            // A fragment-only event, which previously yielded nothing at all.
+            yield _toolCallDeltaChunk(chunk, rawToolCallDeltas);
           }
           malformedEventCount = 0;
         } on LLMApiException {
@@ -207,18 +224,32 @@ class VLLMStreamConverter {
     );
   }
 
+  /// Folds the fragments carried by one event into the accumulating calls.
+  ///
+  /// Neither `id` nor `index` alone can correlate fragments. Continuation
+  /// fragments carry no id by design, so id cannot match them to a call — but
+  /// some OpenAI-compatible servers and proxies emit every parallel call with
+  /// `index: 0`, so index alone merges distinct calls into one malformed
+  /// blob. A fragment carrying an id different from the call currently open at
+  /// its index therefore starts a new call.
   static void _accumulateToolCalls(
     VLLMChunk chunk,
-    Map<int, VLLMToolCall> toolCallsByIndex,
+    List<VLLMToolCall> accumulated,
+    Map<int, int> openAt,
   ) {
     if (chunk.choices.isEmpty) return;
     for (final toolCall
         in chunk.choices.first.delta.toolCalls ?? const <VLLMToolCall>[]) {
-      final previous = toolCallsByIndex[toolCall.index];
-      if (previous == null) {
-        toolCallsByIndex[toolCall.index] = toolCall;
+      final position = openAt[toolCall.index];
+      final id = toolCall.id;
+      final startsNewCall =
+          position == null ||
+          (id != null && id.isNotEmpty && accumulated[position].id != id);
+      if (startsNewCall) {
+        openAt[toolCall.index] = accumulated.length;
+        accumulated.add(toolCall);
       } else {
-        toolCallsByIndex[toolCall.index] = previous.copyWith(
+        accumulated[position] = accumulated[position].copyWith(
           newFunction: toolCall.function,
         );
       }
@@ -268,7 +299,7 @@ class VLLMStreamConverter {
 
   static VLLMChunk _toolCallChunk(
     VLLMChunk source,
-    Map<int, VLLMToolCall> toolCallsByIndex,
+    List<VLLMToolCall> accumulated,
   ) {
     return VLLMChunk(
       id: source.id,
@@ -283,10 +314,42 @@ class VLLMStreamConverter {
             role: LLMRole.assistant.name,
             content: null,
             thinking: null,
-            toolCalls: toolCallsByIndex.values.toList(growable: false),
+            toolCalls: List<VLLMToolCall>.from(accumulated),
           ),
           logProbs: null,
           finishReason: 'tool_calls',
+        ),
+      ],
+    );
+  }
+
+  /// Builds a progress chunk carrying the fragments from a single event.
+  ///
+  /// `toolCalls` is deliberately left null: only complete, executable calls
+  /// belong there, and [StreamToolExecutor] dispatches whatever it finds.
+  static VLLMChunk _toolCallDeltaChunk(
+    VLLMChunk source,
+    List<VLLMToolCall> rawDeltas,
+  ) {
+    return VLLMChunk(
+      id: source.id,
+      created: source.created,
+      model: source.model,
+      systemFingerprint: source.systemFingerprint,
+      choices: [
+        VLLMChunkChoice(
+          index: 0,
+          delta: VLLMChunkChoiceDelta(
+            // Set explicitly: a fragment-only event carries no role, and role
+            // inference has nothing else to go on.
+            role: LLMRole.assistant.name,
+            content: null,
+            thinking: null,
+            toolCalls: null,
+            toolCallDeltas: rawDeltas,
+          ),
+          logProbs: null,
+          finishReason: null,
         ),
       ],
     );

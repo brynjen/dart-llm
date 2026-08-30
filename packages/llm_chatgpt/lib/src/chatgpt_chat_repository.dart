@@ -38,9 +38,11 @@ class ChatGPTChatRepository extends LLMChatRepository
     ResponseCache? responseCache,
     LLMMetrics? metrics,
     http.Client? httpClient,
+    Map<String, String>? extraHeaders,
   }) : this._(
          apiKey: apiKey,
          baseUrl: baseUrl,
+         extraHeaders: extraHeaders,
          maxToolAttempts: maxToolAttempts,
          retryConfig: retryConfig,
          timeoutConfig: timeoutConfig,
@@ -60,6 +62,7 @@ class ChatGPTChatRepository extends LLMChatRepository
     required this.timeoutConfig,
     required this.httpClient,
     required this._ownsHttpClient,
+    this.extraHeaders,
     RateLimiter? rateLimiter,
     this.responseCache,
     this.metrics,
@@ -76,6 +79,22 @@ class ChatGPTChatRepository extends LLMChatRepository
 
   /// The API key for OpenAI.
   final String apiKey;
+
+  /// Extra headers sent with every request this repository makes.
+  ///
+  /// Useful for gateways and proxies that route on a header, for per-request
+  /// attribution in observability tooling, and for OpenAI's own organization
+  /// and project headers. The protocol headers and `authorization` always take
+  /// precedence, so entries here can add to a request but cannot break or
+  /// spoof it.
+  final Map<String, String>? extraHeaders;
+
+  Map<String, String> _headers({required String accept}) => {
+    ...?extraHeaders,
+    'content-type': 'application/json',
+    'accept': accept,
+    'authorization': 'Bearer $apiKey',
+  };
 
   /// The HTTP client to use for requests.
   final http.Client httpClient;
@@ -171,11 +190,7 @@ class ChatGPTChatRepository extends LLMChatRepository
         operation: () => _httpHelper.sendStreamingRequest(
           method: 'POST',
           uri: uri,
-          headers: {
-            'content-type': 'application/json',
-            'accept': 'text/event-stream',
-            'authorization': 'Bearer $apiKey',
-          },
+          headers: _headers(accept: 'text/event-stream'),
           body: utf8.encode(json.encode(body)),
           applyTimeoutToSend: true, // OpenAI applies timeout to send
           timeout: merged.timeout,
@@ -327,11 +342,7 @@ class ChatGPTChatRepository extends LLMChatRepository
         operation: () => _httpHelper.sendNonStreamingRequest(
           method: 'POST',
           uri: Uri.parse('$baseUrl/v1/embeddings'),
-          headers: {
-            'content-type': 'application/json',
-            'accept': 'application/json',
-            'authorization': 'Bearer $apiKey',
-          },
+          headers: _headers(accept: 'application/json'),
           body: json.encode(body),
         ),
         config: retryConfig,

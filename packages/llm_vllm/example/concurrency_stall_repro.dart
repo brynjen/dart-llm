@@ -14,7 +14,7 @@
 ///
 /// Usage:
 ///   dart run example/concurrency_stall_repro.dart \
-///     --host http://192.168.0.74:8000 \
+///     --host "$VLLM_BASE_URL" \
 ///     --model Qwen/Qwen3.8-27B-FP8 \
 ///     --concurrency 16 --prompt-ktokens 32 --batches 20 \
 ///     --read-timeout-seconds 60

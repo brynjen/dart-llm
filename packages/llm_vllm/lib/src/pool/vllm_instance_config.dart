@@ -16,6 +16,7 @@ class VLLMInstanceConfig {
     this.rateLimiter,
     this.supportedParams,
     this.capabilities,
+    this.extraHeaders,
     this.httpClient,
   }) : assert(maxConcurrent > 0, 'maxConcurrent must be positive');
 
@@ -63,6 +64,10 @@ class VLLMInstanceConfig {
   /// `VLLMRepository.resolveCapabilities()`. Feeds the pool's
   /// `capabilitiesForModel` aggregation.
   final LLMCapabilities? capabilities;
+
+  /// Extra headers sent with every request to this instance, including its
+  /// health checks. The protocol headers and `authorization` always win.
+  final Map<String, String>? extraHeaders;
 
   /// Optional HTTP client for this instance.
   ///

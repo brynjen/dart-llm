@@ -9,7 +9,10 @@ void main() {
       expect(config.initialDelay, const Duration(seconds: 1));
       expect(config.maxDelay, const Duration(seconds: 30));
       expect(config.backoffMultiplier, 2.0);
-      expect(config.retryableStatusCodes, [429, 500, 502, 503, 504]);
+      // 529 is Anthropic's transient "overloaded" signal — retryable by
+      // definition, and previously absent so Claude overloads were never
+      // retried.
+      expect(config.retryableStatusCodes, [429, 500, 502, 503, 504, 529]);
     });
 
     test('enabled when maxAttempts > 0', () {

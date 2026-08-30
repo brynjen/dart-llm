@@ -31,6 +31,118 @@ String _completed({Map<String, dynamic>? usage, String status = 'completed'}) =>
 
 void main() {
   group('GeminiStreamConverter', () {
+    test('a mid-stream quota error is a retryable 429', () async {
+      // Captured from the live free tier: the code arrives as the symbolic
+      // string "quota_exceeded", not a number. Reading it as a number alone
+      // left statusCode null, and retry classification works off the status —
+      // so a mid-stream quota failure was never recognized as retryable.
+      final body =
+          _created() +
+          _sseLine({
+            'event_type': 'error',
+            'error': {
+              'message': 'You exceeded your current quota',
+              'code': 'quota_exceeded',
+            },
+          });
+
+      await expectLater(
+        GeminiStreamConverter.toLLMStream(
+          _makeResponse(body),
+          model: 'gemini-3.5-flash-lite',
+        ).toList(),
+        throwsA(
+          isA<LLMApiException>()
+              .having((e) => e.statusCode, 'statusCode', 429)
+              .having((e) => e.message, 'message', contains('quota')),
+        ),
+      );
+
+      expect(const RetryConfig().shouldRetryForStatusCode(429), isTrue);
+    });
+
+    test('a numeric error code still maps straight through', () async {
+      final body =
+          _created() +
+          _sseLine({
+            'event_type': 'error',
+            'error': {'message': 'Service unavailable', 'code': 503},
+          });
+
+      await expectLater(
+        GeminiStreamConverter.toLLMStream(
+          _makeResponse(body),
+          model: 'gemini-3.5-flash-lite',
+        ).toList(),
+        throwsA(
+          isA<LLMApiException>().having((e) => e.statusCode, 'statusCode', 503),
+        ),
+      );
+    });
+
+    test('reports the tool name before the call completes', () async {
+      // step.start names the function before any argument fragment arrives.
+      // The converter already parsed both events; it just never surfaced
+      // them, so a streamed call was invisible until it finished.
+      final body =
+          _created() +
+          _sseLine({
+            'event_type': 'step.start',
+            'index': 0,
+            'step': {
+              'type': 'function_call',
+              'id': 'fc_1',
+              'name': 'get_weather',
+            },
+          }) +
+          _sseLine({
+            'event_type': 'step.delta',
+            'index': 0,
+            'delta': {'type': 'arguments_delta', 'arguments': '{"location":'},
+          }) +
+          _sseLine({
+            'event_type': 'step.delta',
+            'index': 0,
+            'delta': {'type': 'arguments_delta', 'arguments': ' "Oslo"}'},
+          }) +
+          _sseLine({
+            'event_type': 'interaction.completed',
+            'interaction': {'id': 'int_1', 'status': 'completed'},
+          });
+
+      final chunks = await GeminiStreamConverter.toLLMStream(
+        _makeResponse(body),
+        model: 'gemini-3.5-flash-lite',
+      ).toList();
+
+      final deltas = chunks
+          .expand(
+            (c) => c.message?.toolCallDeltas ?? const <LLMToolCallDelta>[],
+          )
+          .toList();
+
+      expect(deltas, hasLength(3));
+      expect(deltas.first.name, 'get_weather');
+      expect(deltas.first.id, 'fc_1');
+      expect(deltas.first.index, 0);
+      // initialArguments is a decoded map, never a wire fragment, so the
+      // fragment channel stays empty on step.start.
+      expect(deltas.first.argumentsDelta, isNull);
+
+      final nameAt = chunks.indexWhere(
+        (c) => c.message?.toolCallDeltas?.any((d) => d.name != null) ?? false,
+      );
+      final completedAt = chunks.indexWhere(
+        (c) => c.message?.toolCalls?.isNotEmpty ?? false,
+      );
+      expect(nameAt, lessThan(completedAt));
+
+      final rebuilt = deltas.map((d) => d.argumentsDelta ?? '').join();
+      final completed = chunks[completedAt].message!.toolCalls!.single;
+      expect(completed.name, 'get_weather');
+      expect(json.decode(rebuilt), json.decode(completed.arguments));
+    });
+
     test('emits text deltas as assistant content', () async {
       final body =
           _created() +

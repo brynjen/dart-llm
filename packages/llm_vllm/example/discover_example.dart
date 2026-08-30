@@ -3,7 +3,7 @@
 /// accepted request parameters diffed against the bundled snapshot.
 ///
 /// ```bash
-/// dart run example/discover_example.dart http://192.168.0.74:8000 [more urls...]
+/// dart run example/discover_example.dart http://localhost:8000 [more urls...]
 /// ```
 ///
 /// Defaults to `http://localhost:8000` when no URLs are given.

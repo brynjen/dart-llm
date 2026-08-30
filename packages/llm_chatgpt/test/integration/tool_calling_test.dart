@@ -33,6 +33,70 @@ void main() {
       repo = createRepository();
     });
 
+    group('Streaming progress', () {
+      test(
+        'reports the tool name before the call completes',
+        () async {
+          if (!hasApiKey()) {
+            markTestSkipped('API key not available');
+            return;
+          }
+
+          // The delta channel exists so a caller learns which tool is running
+          // without waiting for its arguments. Assert ordering against the
+          // real wire, and that the completed call is still whole.
+          var sawFinish = false;
+          var nameSeenBeforeFinish = false;
+          String? streamedName;
+          final fragments = StringBuffer();
+          LLMToolCall? completed;
+
+          await for (final chunk in repo.streamChat(
+            chatModel,
+            messages: [
+              LLMMessage(
+                role: LLMRole.user,
+                content: 'Use the calculator tool to work out 15 * 7.',
+              ),
+            ],
+            tools: [CalculatorTool()],
+            options: const LLMChatOptions(autoExecuteTools: false),
+          )) {
+            for (final delta
+                in chunk.message?.toolCallDeltas ??
+                    const <LLMToolCallDelta>[]) {
+              if (delta.name != null) {
+                streamedName ??= delta.name;
+                if (!sawFinish) nameSeenBeforeFinish = true;
+              }
+              if (delta.argumentsDelta != null) {
+                fragments.write(delta.argumentsDelta);
+              }
+            }
+
+            final calls = chunk.message?.toolCalls;
+            if (calls != null && calls.isNotEmpty) completed = calls.first;
+            if (chunk.finishReason != null) sawFinish = true;
+          }
+
+          expect(streamedName, 'calculator');
+          expect(
+            nameSeenBeforeFinish,
+            isTrue,
+            reason: 'the tool name must arrive before the finish reason',
+          );
+
+          expect(completed, isNotNull);
+          expect(completed!.name, 'calculator');
+          // Fragments are the same bytes as the completed call, not a summary.
+          expect(fragments.toString(), completed.arguments);
+          expect(completed.argumentsJson['expression'], isNotNull);
+        },
+        tags: ['integration'],
+        timeout: const Timeout(Duration(minutes: 3)),
+      );
+    });
+
     group('Tool Calling Tests', () {
       test(
         'simple tool execution with calculator',
@@ -355,17 +419,35 @@ void main() {
             ),
           ];
 
-          final chunks = await collectStreamWithTimeout(
-            repo.streamChat(
-              chatModel,
-              messages: messages,
-              tools: [CalculatorTool()],
-              toolAttempts: 3, // Limit to 3 attempts
-            ),
-            const Duration(minutes: 5),
-          );
-
-          expect(chunks, isNotEmpty);
+          // Two lawful outcomes, and which one happens is up to the model:
+          // it either stops calling tools and answers (stream completes), or
+          // it keeps calling and the budget runs out (the loop refuses to
+          // return a truncated conversation and throws). Asserting only "some
+          // chunks arrived" made this pass or fail on model temperament — it
+          // failed against Gemini and passed elsewhere purely by luck.
+          const budget = 3;
+          try {
+            final chunks = await collectStreamWithTimeout(
+              repo.streamChat(
+                chatModel,
+                messages: messages,
+                tools: [CalculatorTool()],
+                toolAttempts: budget,
+              ),
+              const Duration(minutes: 5),
+            );
+            expect(chunks, isNotEmpty);
+            expect(extractContent(chunks), isNotEmpty);
+          } on ToolLoopIncompleteException catch (e) {
+            expect(e.attemptsRemaining, 0);
+            expect(
+              e.attemptsUsed,
+              budget,
+              reason:
+                  'the exception must report the rounds actually consumed, '
+                  "not the deepest frame's empty budget",
+            );
+          }
           // Should eventually stop due to max attempts
         },
         tags: ['integration'],

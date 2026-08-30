@@ -23,3 +23,26 @@ extension VLLMToolCallToLLMToolCallExt on List<VLLMToolCall> {
         .toList(growable: false);
   }
 }
+
+/// Extension to convert raw per-chunk tool call fragments to core deltas.
+extension VLLMToolCallToLLMToolCallDeltaExt on List<VLLMToolCall> {
+  /// Maps the fragments carried by a single stream event.
+  ///
+  /// Unlike [VLLMToolCallToLLMToolCallExt.toLLMToolCalls] this keeps entries
+  /// whose `function.name` is null: every continuation fragment is name-less,
+  /// and those are exactly what a delta exists to surface. Ids are likewise
+  /// left null rather than synthesized — only the first fragment for an index
+  /// carries one, and inventing the rest would imply a correlation that the
+  /// `index` already provides.
+  List<LLMToolCallDelta> get toLLMToolCallDeltas => map((call) {
+    final arguments = call.function.arguments;
+    return LLMToolCallDelta(
+      index: call.index,
+      id: call.id,
+      name: call.function.name,
+      // vLLM omits `arguments` on the name fragment; OpenAI sends "". Both
+      // mean "no argument text yet", and an empty fragment is not a fragment.
+      argumentsDelta: arguments.isEmpty ? null : arguments,
+    );
+  }).toList(growable: false);
+}

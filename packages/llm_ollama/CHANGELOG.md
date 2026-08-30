@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-08-30
+
+### Added
+- `extraHeaders` on `OllamaChatRepository`, `OllamaRepository` and the builder. Protocol headers always take precedence.
+
+### Changed
+- Version bumped to `0.4.0` in lockstep with the other packages, and the `llm_core` constraint raised to `^0.4.0`. Ollama needs no tool-call streaming work: it emits each tool call whole in a single chunk as soon as its parser recognises one, which the converter already yields.
+
 ## [0.3.2] - 2026-08-18
 
 ### Changed

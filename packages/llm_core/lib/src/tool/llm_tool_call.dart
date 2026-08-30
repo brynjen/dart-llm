@@ -48,8 +48,17 @@ class LLMToolCall {
   Map<String, dynamic> toJson() => toApiFormat();
 
   /// Decodes [arguments] as a JSON object.
+  ///
+  /// A tool that takes no parameters is routinely called with no arguments at
+  /// all: OpenAI-compatible servers send `""` and Anthropic simply never emits
+  /// a fragment to concatenate. That is a call with no arguments, not
+  /// malformed JSON, so it decodes to an empty map rather than throwing. A
+  /// literal `null` is treated the same way.
   Map<String, dynamic> get argumentsJson {
-    final decoded = jsonDecode(arguments);
+    final trimmed = arguments.trim();
+    if (trimmed.isEmpty) return <String, dynamic>{};
+    final decoded = jsonDecode(trimmed);
+    if (decoded == null) return <String, dynamic>{};
     if (decoded is Map<String, dynamic>) return decoded;
     if (decoded is Map) return Map<String, dynamic>.from(decoded);
     throw const FormatException('Tool call arguments must decode to an object');

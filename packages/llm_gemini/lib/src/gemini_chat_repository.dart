@@ -41,9 +41,11 @@ class GeminiChatRepository extends LLMChatRepository
     ResponseCache? responseCache,
     LLMMetrics? metrics,
     http.Client? httpClient,
+    Map<String, String>? extraHeaders,
   }) : this._(
          apiKey: apiKey,
          baseUrl: baseUrl,
+         extraHeaders: extraHeaders,
          maxToolAttempts: maxToolAttempts,
          retryConfig: retryConfig,
          timeoutConfig: timeoutConfig,
@@ -63,6 +65,7 @@ class GeminiChatRepository extends LLMChatRepository
     required this.timeoutConfig,
     required this.httpClient,
     required this._ownsHttpClient,
+    this.extraHeaders,
     RateLimiter? rateLimiter,
     this.responseCache,
     this.metrics,
@@ -424,13 +427,20 @@ class GeminiChatRepository extends LLMChatRepository
         ReasoningEffort.max => 'high',
       };
 
-  Map<String, String> _headers({required String accept}) {
-    return {
-      'content-type': 'application/json',
-      'accept': accept,
-      'x-goog-api-key': apiKey,
-    };
-  }
+  /// Extra headers sent with every request this repository makes.
+  ///
+  /// Useful for gateways and proxies that route on a header, and for
+  /// per-request attribution in observability tooling. The protocol headers
+  /// and `x-goog-api-key` always take precedence, so entries here can add to a
+  /// request but cannot break or spoof it.
+  final Map<String, String>? extraHeaders;
+
+  Map<String, String> _headers({required String accept}) => {
+    ...?extraHeaders,
+    'content-type': 'application/json',
+    'accept': accept,
+    'x-goog-api-key': apiKey,
+  };
 
   /// Builds the `generation_config` object.
   ///

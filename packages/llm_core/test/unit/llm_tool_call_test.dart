@@ -68,4 +68,54 @@ void main() {
       expect(api['function']['name'], 'echo');
     });
   });
+
+  group('argumentsJson with no arguments', () {
+    // A tool that takes no parameters is routinely called with nothing to
+    // decode: OpenAI-compatible servers send "" and Anthropic never emits a
+    // fragment to concatenate. Treating that as malformed JSON made every
+    // zero-parameter tool call fail — the executor answered "Tool x failed:
+    // FormatException", and the message converters that replay history threw.
+    test('empty arguments decode to an empty map', () {
+      expect(
+        LLMToolCall(name: 'ping', arguments: '', id: 'c1').argumentsJson,
+        isEmpty,
+      );
+    });
+
+    test('whitespace-only arguments decode to an empty map', () {
+      expect(
+        LLMToolCall(name: 'ping', arguments: '   ', id: 'c1').argumentsJson,
+        isEmpty,
+      );
+    });
+
+    test('a literal null decodes to an empty map', () {
+      expect(
+        LLMToolCall(name: 'ping', arguments: 'null', id: 'c1').argumentsJson,
+        isEmpty,
+      );
+    });
+
+    test('genuinely malformed arguments still throw', () {
+      expect(
+        () => LLMToolCall(
+          name: 'ping',
+          arguments: '{"a":',
+          id: 'c1',
+        ).argumentsJson,
+        throwsFormatException,
+      );
+    });
+
+    test('a non-object payload still throws', () {
+      expect(
+        () => LLMToolCall(
+          name: 'ping',
+          arguments: '[1,2]',
+          id: 'c1',
+        ).argumentsJson,
+        throwsFormatException,
+      );
+    });
+  });
 }

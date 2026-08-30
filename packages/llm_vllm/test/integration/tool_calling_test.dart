@@ -20,6 +20,91 @@ void main() {
         repo = createRepository();
       });
 
+      group('Streaming progress', () {
+        test(
+          'reports the tool name before the call completes',
+          () async {
+            // The whole point of the delta channel: the name is on the wire in
+            // the first tool-call event, and used to be withheld until the
+            // last. Run this more than once when changing the converter — vLLM
+            // picks nondeterministically between ending the stream with a lone
+            // finish_reason chunk and fusing it onto the final fragment.
+            var sawFinish = false;
+            var nameSeenBeforeFinish = false;
+            String? streamedName;
+            final fragments = StringBuffer();
+            LLMToolCall? completed;
+
+            await for (final chunk in repo.streamChat(
+              chatModel,
+              messages: [
+                LLMMessage(
+                  role: LLMRole.user,
+                  content: 'What is the weather in Oslo? Use get_weather.',
+                ),
+              ],
+              tools: [WeatherTool()],
+              options: const LLMChatOptions(autoExecuteTools: false),
+            )) {
+              for (final delta
+                  in chunk.message?.toolCallDeltas ??
+                      const <LLMToolCallDelta>[]) {
+                if (delta.name != null) {
+                  streamedName ??= delta.name;
+                  if (!sawFinish) nameSeenBeforeFinish = true;
+                }
+                if (delta.argumentsDelta != null) {
+                  fragments.write(delta.argumentsDelta);
+                }
+              }
+
+              final calls = chunk.message?.toolCalls;
+              if (calls != null && calls.isNotEmpty) completed = calls.first;
+              if (chunk.finishReason != null) sawFinish = true;
+            }
+
+            expect(streamedName, 'get_weather');
+            expect(
+              nameSeenBeforeFinish,
+              isTrue,
+              reason: 'the tool name must arrive before the finish reason',
+            );
+
+            // The completed call is still whole and executable, and the
+            // fragments are genuinely the same bytes rather than a summary.
+            expect(completed, isNotNull);
+            expect(completed!.name, 'get_weather');
+            expect(fragments.toString(), completed.arguments);
+            expect(completed.argumentsJson['location'], isNotNull);
+          },
+          tags: ['integration'],
+          timeout: const Timeout(Duration(minutes: 3)),
+        );
+
+        test(
+          'sends extraHeaders without disturbing the response',
+          () async {
+            final tagged = createRepository(
+              extraHeaders: const {'x-integration-probe': 'dart-llm'},
+            );
+            addTearDown(tagged.close);
+
+            final chunks = await collectStreamWithTimeout(
+              tagged.streamChat(
+                chatModel,
+                messages: [LLMMessage(role: LLMRole.user, content: 'Say OK.')],
+              ),
+              const Duration(minutes: 2),
+            );
+
+            expect(chunks, isNotEmpty);
+            expect(extractContent(chunks), isNotEmpty);
+          },
+          tags: ['integration'],
+          timeout: const Timeout(Duration(minutes: 2)),
+        );
+      });
+
       group('Tool Calling Tests', () {
         test(
           'simple tool execution with calculator',
@@ -259,18 +344,35 @@ void main() {
               ),
             ];
 
-            final chunks = await collectStreamWithTimeout(
-              repo.streamChat(
-                chatModel,
-                messages: messages,
-                tools: [CalculatorTool()],
-                toolAttempts: 3, // Limit to 3 attempts
-              ),
-              const Duration(minutes: 5),
-            );
-
-            expect(chunks, isNotEmpty);
-            // Should eventually stop due to max attempts
+            // Two lawful outcomes, and which one happens is up to the model:
+            // it either stops calling tools and answers (stream completes), or
+            // it keeps calling and the budget runs out (the loop refuses to
+            // return a truncated conversation and throws). Asserting only
+            // "some chunks arrived" missed the second outcome entirely, which
+            // is the one this test exists to cover.
+            const budget = 3;
+            try {
+              final chunks = await collectStreamWithTimeout(
+                repo.streamChat(
+                  chatModel,
+                  messages: messages,
+                  tools: [CalculatorTool()],
+                  toolAttempts: budget,
+                ),
+                const Duration(minutes: 5),
+              );
+              expect(chunks, isNotEmpty);
+              expect(extractContent(chunks), isNotEmpty);
+            } on ToolLoopIncompleteException catch (e) {
+              expect(e.attemptsRemaining, 0);
+              expect(
+                e.attemptsUsed,
+                budget,
+                reason:
+                    'the exception must report the rounds actually consumed, '
+                    'not the deepest frame\'s empty budget',
+              );
+            }
           },
           tags: ['integration'],
           timeout: const Timeout(Duration(minutes: 5)),

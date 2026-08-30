@@ -20,13 +20,16 @@ class RetryConfig {
   /// [initialDelay] - Initial delay before first retry (default: 1s).
   /// [maxDelay] - Maximum delay between retries (default: 30s).
   /// [backoffMultiplier] - Multiplier for exponential backoff (default: 2.0).
-  /// [retryableStatusCodes] - HTTP status codes that should trigger retry (default: [429, 500, 502, 503, 504]).
+  /// [retryableStatusCodes] - HTTP status codes that should trigger retry
+  /// (default: [429, 500, 502, 503, 504, 529]). 529 is Anthropic's
+  /// "overloaded" status: a transient capacity signal that is retryable by
+  /// definition, and the one Claude reports during periods of high load.
   const RetryConfig({
     this.maxAttempts = 3,
     this.initialDelay = const Duration(seconds: 1),
     this.maxDelay = const Duration(seconds: 30),
     this.backoffMultiplier = 2.0,
-    this.retryableStatusCodes = const [429, 500, 502, 503, 504],
+    this.retryableStatusCodes = const [429, 500, 502, 503, 504, 529],
   });
 
   /// Maximum number of retry attempts.

@@ -81,6 +81,54 @@ void main() {
       },
     );
 
+    test('sends extraHeaders on chat requests', () async {
+      final client = _QueueStreamClient([_contentResponse('ok')]);
+      final repo = VLLMChatRepository(
+        baseUrl: 'http://localhost:8000',
+        extraHeaders: const {'x-tenant': 'acme', 'x-trace': 'abc123'},
+        httpClient: client,
+      );
+
+      await repo
+          .streamChat(
+            'test-model',
+            messages: [LLMMessage(role: LLMRole.user, content: 'hello')],
+          )
+          .toList();
+
+      expect(client.requestHeaders.single['x-tenant'], 'acme');
+      expect(client.requestHeaders.single['x-trace'], 'abc123');
+      expect(client.requestHeaders.single['accept'], 'text/event-stream');
+    });
+
+    test('extraHeaders cannot override protocol or auth headers', () async {
+      // Extras are spread first so a caller can add to a request but can
+      // neither break the wire format nor swap out the configured key.
+      final client = _QueueStreamClient([_contentResponse('ok')]);
+      final repo = VLLMChatRepository(
+        baseUrl: 'http://localhost:8000',
+        apiKey: 'secret',
+        extraHeaders: const {
+          'authorization': 'Bearer stolen',
+          'content-type': 'text/plain',
+          'accept': 'text/plain',
+        },
+        httpClient: client,
+      );
+
+      await repo
+          .streamChat(
+            'test-model',
+            messages: [LLMMessage(role: LLMRole.user, content: 'hello')],
+          )
+          .toList();
+
+      final headers = client.requestHeaders.single;
+      expect(headers['authorization'], 'Bearer secret');
+      expect(headers['content-type'], 'application/json');
+      expect(headers['accept'], 'text/event-stream');
+    });
+
     test('sends authorization header when apiKey is configured', () async {
       final client = _QueueStreamClient([_contentResponse('ok')]);
       final repo = VLLMChatRepository(

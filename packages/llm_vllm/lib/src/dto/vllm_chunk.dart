@@ -55,6 +55,8 @@ class VLLMChunk extends LLMChunk {
                      ? LLMRole.assistant
                      : null,
                  toolCalls: choices[0].delta.toolCalls?.toLLMToolCalls,
+                 toolCallDeltas:
+                     choices[0].delta.toolCallDeltas?.toLLMToolCallDeltas,
                ),
        );
 
@@ -122,12 +124,20 @@ class VLLMChunkChoiceDelta {
     required this.content,
     required this.thinking,
     required this.toolCalls,
+    this.toolCallDeltas,
   });
 
   final String? role;
   final String? content;
   final String? thinking;
   final List<VLLMToolCall>? toolCalls;
+
+  /// Raw fragments carried by this event, set only by the stream converter.
+  ///
+  /// Never populated by [VLLMChunkChoiceDelta.fromJson]: the wire parse puts
+  /// fragments on [toolCalls] exactly as before, and the converter decides
+  /// which of them represent progress rather than a finished call.
+  final List<VLLMToolCall>? toolCallDeltas;
 
   factory VLLMChunkChoiceDelta.fromJson(Map<String, dynamic> json) =>
       VLLMChunkChoiceDelta(

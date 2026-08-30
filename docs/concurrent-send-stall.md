@@ -47,7 +47,7 @@ invocations (one process per request, no shared client) never reproduce it.
 ```bash
 cd packages/llm_vllm
 LLM_VLLM_TRACE=1 dart run example/concurrency_stall_repro.dart \
-  --host http://192.168.0.74:8000 \
+  --host "$VLLM_BASE_URL" \
   --model Qwen/Qwen3.8-27B-FP8 \
   --concurrency 8 --prompt-ktokens 8 --batches 40 \
   --read-timeout-seconds 120

@@ -19,5 +19,5 @@ When a paid run is warranted:
 - run `--concurrency=1`;
 - **llm_gemini is free-tier: 15 requests/minute** — run one test file at a
   time with ~75s pauses between files, never the whole suite at once;
-- llm_vllm (192.168.0.74:8000/8001) and llm_ollama (localhost) are self-hosted
+- llm_vllm and llm_ollama are self-hosted
   and free to test.

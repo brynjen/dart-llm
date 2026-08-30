@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-08-30
+
+### Fixed
+- Mid-stream error codes are mapped to an HTTP status even when they are not numeric. A live free-tier quota failure reports `"quota_exceeded"` as a string, which read as a number left `statusCode` null — and retry classification works off the status, so a mid-stream quota or capacity error was never recognized as retryable. Numeric codes, numeric strings and Google's symbolic statuses are all handled.
+
+### Added
+- Streaming tool calls surface as they arrive on `LLMChunkMessage.toolCallDeltas`. The Interactions API reports the tool in `step.start` before any argument fragment, and those fragments were already parsed but never surfaced.
+- `extraHeaders` on `GeminiChatRepository` and its builder. Protocol headers and `x-goog-api-key` always take precedence.
+
 ## [0.3.2] - 2026-08-18
 
 ### Changed

@@ -225,8 +225,13 @@ abstract class LLMChatRepository {
 
       if (chunk.done ?? false) {
         sawDoneChunk = true;
-        promptEvalCount = chunk.promptEvalCount;
-        evalCount = chunk.evalCount;
+        // A turn can end with more than one `done` chunk — several backends
+        // report the finish reason first and token counts in a trailing
+        // usage-only frame, and a tool loop produces a done chunk per round.
+        // Assigning unconditionally let a later count-less chunk erase counts
+        // that had already arrived, so these fold the same way `usage` does.
+        promptEvalCount = chunk.promptEvalCount ?? promptEvalCount;
+        evalCount = chunk.evalCount ?? evalCount;
         usage = chunk.usage ?? usage;
         finishReason = chunk.finishReason ?? finishReason;
         providerMetadata = chunk.providerMetadata.isNotEmpty

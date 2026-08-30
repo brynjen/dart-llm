@@ -20,11 +20,25 @@ import 'package:llm_ollama/src/dto/ollama_model.dart';
 class OllamaRepository {
   OllamaRepository({
     this.baseUrl = 'http://localhost:11434',
+    this.extraHeaders,
     http.Client? httpClient,
   }) : httpClient = httpClient ?? createLLMHttpClient();
 
   /// The base URL of the Ollama server.
   final String baseUrl;
+
+  /// Extra headers sent with every request this repository makes.
+  ///
+  /// Useful for gateways and proxies that route on a header, and for
+  /// per-request attribution in observability tooling. `content-type` always
+  /// takes precedence, so entries here can add to a request but cannot break
+  /// the wire format.
+  final Map<String, String>? extraHeaders;
+
+  Map<String, String> get _jsonHeaders => {
+    ...?extraHeaders,
+    'content-type': 'application/json',
+  };
 
   /// The HTTP client to use for requests.
   final http.Client httpClient;
@@ -64,7 +78,7 @@ class OllamaRepository {
     // `content-length` and write it as part of send(). send() still returns a
     // StreamedResponse, which is what the progress loop below reads.
     final request = http.Request('POST', Uri.parse('$baseUrl/api/pull'))
-      ..headers['content-type'] = 'application/json'
+      ..headers.addAll(_jsonHeaders)
       ..bodyBytes = utf8.encode(json.encode({'model': modelName}));
 
     final response = await httpClient.send(request);
@@ -151,7 +165,7 @@ class OllamaRepository {
     Uri uri, {
     Map<String, dynamic>? body,
   }) async {
-    final headers = {'content-type': 'application/json'};
+    final headers = _jsonHeaders;
 
     final response = method.toUpperCase() == 'POST'
         ? await httpClient.post(

@@ -1,7 +1,68 @@
+import 'dart:convert';
+
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 import 'package:llm_vllm/llm_vllm.dart';
 import 'package:test/test.dart';
 
 void main() {
+  group('VLLMChatRepository.embed headers', () {
+    // Embeddings share `_headers()` with streaming chat, so this is the test
+    // that keeps them from drifting apart.
+    late List<Map<String, String>> captured;
+
+    http.Client clientCapturing() {
+      captured = [];
+      return MockClient((request) async {
+        captured.add(request.headers);
+        return http.Response(
+          jsonEncode({
+            'model': 'embedding-model',
+            'object': 'list',
+            'usage': {'prompt_tokens': 1, 'total_tokens': 1},
+            'data': [
+              {
+                'object': 'embedding',
+                'index': 0,
+                'embedding': [0.1, 0.2],
+              },
+            ],
+          }),
+          200,
+          headers: {'content-type': 'application/json'},
+        );
+      });
+    }
+
+    test('sends extraHeaders and authorization', () async {
+      final repo = VLLMChatRepository(
+        baseUrl: 'http://localhost:8000',
+        apiKey: 'secret',
+        extraHeaders: const {'x-tenant': 'acme'},
+        httpClient: clientCapturing(),
+      );
+
+      await repo.embed(model: 'embedding-model', messages: ['hello']);
+
+      expect(captured.single['x-tenant'], 'acme');
+      expect(captured.single['authorization'], 'Bearer secret');
+      expect(captured.single['accept'], 'application/json');
+    });
+
+    test('extraHeaders cannot override auth on embeddings', () async {
+      final repo = VLLMChatRepository(
+        baseUrl: 'http://localhost:8000',
+        apiKey: 'secret',
+        extraHeaders: const {'authorization': 'Bearer stolen'},
+        httpClient: clientCapturing(),
+      );
+
+      await repo.embed(model: 'embedding-model', messages: ['hello']);
+
+      expect(captured.single['authorization'], 'Bearer secret');
+    });
+  });
+
   group('VLLMEmbeddingsResponse', () {
     test('fromJson and toJson roundtrip', () {
       final json = {

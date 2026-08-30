@@ -38,8 +38,10 @@ class VLLMChatRepository extends LLMChatRepository with LLMRepositoryFeatures {
     http.Client? httpClient,
     Set<String>? supportedParams,
     LLMCapabilities? capabilities,
+    Map<String, String>? extraHeaders,
   }) : this._(
          baseUrl: baseUrl ?? 'http://localhost:8000',
+         extraHeaders: extraHeaders,
          supportedParams: supportedParams,
          capabilities: capabilities,
          apiKey: apiKey,
@@ -64,6 +66,7 @@ class VLLMChatRepository extends LLMChatRepository with LLMRepositoryFeatures {
     required this._ownsHttpClient,
     this.supportedParams,
     this.capabilities,
+    this.extraHeaders,
     RateLimiter? rateLimiter,
     this.responseCache,
     this.metrics,
@@ -80,6 +83,14 @@ class VLLMChatRepository extends LLMChatRepository with LLMRepositoryFeatures {
 
   /// Optional API key for vLLM servers started with `--api-key`.
   final String? apiKey;
+
+  /// Extra headers sent with every request this repository makes.
+  ///
+  /// Useful for gateways and proxies that route on a header, and for
+  /// per-request attribution in observability tooling. The protocol headers
+  /// and `authorization` always take precedence, so entries here can add to
+  /// the request but cannot break or spoof it.
+  final Map<String, String>? extraHeaders;
 
   /// The HTTP client to use for requests.
   final http.Client httpClient;
@@ -511,14 +522,8 @@ class VLLMChatRepository extends LLMChatRepository with LLMRepositoryFeatures {
     return results;
   }
 
-  Map<String, String> _headers({required String accept}) {
-    return {
-      'content-type': 'application/json',
-      'accept': accept,
-      if (apiKey != null && apiKey!.isNotEmpty)
-        'authorization': 'Bearer $apiKey',
-    };
-  }
+  Map<String, String> _headers({required String accept}) =>
+      vllmHeaders(accept: accept, apiKey: apiKey, extraHeaders: extraHeaders);
 
   static void _applyGenerationOptions(
     Map<String, dynamic> body,

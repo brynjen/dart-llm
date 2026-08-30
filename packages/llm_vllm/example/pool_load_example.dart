@@ -9,7 +9,7 @@
 /// is deliberately not sent.)
 ///
 /// ```bash
-/// VLLM_BASE_URL=http://192.168.0.74:8000 \
+/// VLLM_BASE_URL=http://localhost:8000 \
 /// VLLM_CHAT_MODEL=nvidia/Qwen3.6-27B-NVFP4 \
 /// dart run example/pool_load_example.dart [concurrency] [requests] [tokens]
 /// ```

@@ -71,7 +71,7 @@ class GeminiStreamConverter {
           final error = data['error'] as Map<String, dynamic>? ?? const {};
           throw LLMApiException(
             error['message'] as String? ?? 'Gemini API error',
-            statusCode: (error['code'] as num?)?.toInt(),
+            statusCode: _statusCodeFor(error['code']),
             responseBody: dataStr,
           );
 
@@ -87,10 +87,32 @@ class GeminiStreamConverter {
           final index = (data['index'] as num?)?.toInt() ?? 0;
           final step = data['step'] as Map<String, dynamic>? ?? const {};
           if (step['type'] == 'function_call') {
+            final name = step['name'] as String? ?? '';
             functionCalls[index] = _GeminiFunctionCallStep(
               id: step['id'] as String?,
-              name: step['name'] as String? ?? '',
+              name: name,
               initialArguments: step['arguments'] as Map<String, dynamic>?,
+            );
+            // The step announces the tool before any argument fragment
+            // arrives, so this is the earliest a consumer can know which tool
+            // is running. Only id and name are reported: `initialArguments` is
+            // a decoded map, not a wire fragment, and putting it on the
+            // string-fragment channel would make concatenation lie.
+            yield GeminiChunk(
+              model: resolvedModel,
+              done: false,
+              createdAt: DateTime.now(),
+              message: LLMChunkMessage(
+                content: null,
+                role: LLMRole.assistant,
+                toolCallDeltas: [
+                  LLMToolCallDelta(
+                    index: index,
+                    id: step['id'] as String?,
+                    name: name,
+                  ),
+                ],
+              ),
             );
           }
 
@@ -140,7 +162,20 @@ class GeminiStreamConverter {
             // concatenated across every delta for the step.
             case 'arguments_delta':
               final fragment = delta['arguments'] as String? ?? '';
+              if (fragment.isEmpty) break;
               functionCalls[index]?.arguments.write(fragment);
+              yield GeminiChunk(
+                model: resolvedModel,
+                done: false,
+                createdAt: DateTime.now(),
+                message: LLMChunkMessage(
+                  content: null,
+                  role: LLMRole.assistant,
+                  toolCallDeltas: [
+                    LLMToolCallDelta(index: index, argumentsDelta: fragment),
+                  ],
+                ),
+              );
 
             case 'image':
               final imageData = delta['data'] as String? ?? '';
@@ -236,6 +271,31 @@ class GeminiStreamConverter {
           );
       }
     }
+  }
+
+  /// Maps an in-stream error `code` onto an HTTP status.
+  ///
+  /// Retry classification works off the status code, and the code arrives in
+  /// three shapes: a number, a numeric string, or one of Google's symbolic
+  /// statuses (a live free-tier quota error reports `"quota_exceeded"`).
+  /// Reading it as a number alone left the status null, so a mid-stream quota
+  /// or capacity failure could never be recognized as retryable.
+  static int? _statusCodeFor(Object? code) {
+    if (code is num) return code.toInt();
+    if (code is! String) return null;
+    final parsed = int.tryParse(code);
+    if (parsed != null) return parsed;
+    return switch (code.toUpperCase()) {
+      'INVALID_ARGUMENT' || 'FAILED_PRECONDITION' || 'OUT_OF_RANGE' => 400,
+      'UNAUTHENTICATED' => 401,
+      'PERMISSION_DENIED' => 403,
+      'NOT_FOUND' => 404,
+      'QUOTA_EXCEEDED' || 'RESOURCE_EXHAUSTED' => 429,
+      'INTERNAL' || 'UNKNOWN' => 500,
+      'UNAVAILABLE' => 503,
+      'DEADLINE_EXCEEDED' => 504,
+      _ => null,
+    };
   }
 
   /// Resolves the finish reason for a completed interaction.

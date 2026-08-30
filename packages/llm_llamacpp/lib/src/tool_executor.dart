@@ -1,5 +1,3 @@
-import 'dart:convert';
-
 import 'package:llm_core/llm_core.dart'
     show LLMLogger, LLMMessage, LLMRole, LLMTool, LLMToolCall;
 
@@ -37,7 +35,7 @@ class ToolExecutor {
       );
 
       try {
-        final args = json.decode(toolCall.arguments);
+        final args = toolCall.argumentsJson;
         logger.fine('Tool args: $args');
         final toolResponse =
             await tool.execute(args, extra: extra) ??

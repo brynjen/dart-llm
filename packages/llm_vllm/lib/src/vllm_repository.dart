@@ -60,6 +60,7 @@ class VLLMRepository {
   VLLMRepository({
     this.baseUrl = 'http://localhost:8000',
     this.apiKey,
+    this.extraHeaders,
     http.Client? httpClient,
   }) : httpClient = httpClient ?? createLLMHttpClient(),
        _ownsHttpClient = httpClient == null;
@@ -69,6 +70,11 @@ class VLLMRepository {
 
   /// Optional API key for vLLM servers started with `--api-key`.
   final String? apiKey;
+
+  /// Extra headers sent with every probe this repository makes.
+  ///
+  /// The protocol headers and `authorization` always take precedence.
+  final Map<String, String>? extraHeaders;
 
   /// The HTTP client to use for requests.
   final http.Client httpClient;
@@ -296,7 +302,7 @@ class VLLMRepository {
       final root = normalizeVllmBaseUrl(baseUrl);
       final response = await httpClient.get(
         Uri.parse('$root/openapi.json'),
-        headers: {'accept': 'application/json'},
+        headers: _jsonHeaders,
       );
       if (response.statusCode != 200) return null;
       final schemas =
@@ -314,23 +320,18 @@ class VLLMRepository {
     }
   }
 
-  Map<String, String> get _jsonHeaders => {
-    'content-type': 'application/json',
-    'accept': 'application/json',
-    if (apiKey != null && apiKey!.isNotEmpty) 'authorization': 'Bearer $apiKey',
-  };
+  Map<String, String> get _jsonHeaders => vllmHeaders(
+    accept: 'application/json',
+    apiKey: apiKey,
+    extraHeaders: extraHeaders,
+  );
 
   Future<http.Response> _sendRequest(
     String method,
     Uri uri, {
     Map<String, dynamic>? body,
   }) async {
-    final headers = {
-      'content-type': 'application/json',
-      'accept': 'application/json',
-      if (apiKey != null && apiKey!.isNotEmpty)
-        'authorization': 'Bearer $apiKey',
-    };
+    final headers = _jsonHeaders;
 
     final response = method.toUpperCase() == 'POST'
         ? await httpClient.post(

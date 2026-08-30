@@ -33,9 +33,11 @@ class ClaudeChatRepository extends LLMChatRepository
     ResponseCache? responseCache,
     LLMMetrics? metrics,
     http.Client? httpClient,
+    Map<String, String>? extraHeaders,
   }) : this._(
          apiKey: apiKey,
          baseUrl: baseUrl,
+         extraHeaders: extraHeaders,
          maxToolAttempts: maxToolAttempts,
          retryConfig: retryConfig,
          timeoutConfig: timeoutConfig,
@@ -55,6 +57,7 @@ class ClaudeChatRepository extends LLMChatRepository
     required this.timeoutConfig,
     required this.httpClient,
     required this._ownsHttpClient,
+    this.extraHeaders,
     RateLimiter? rateLimiter,
     this.responseCache,
     this.metrics,
@@ -98,6 +101,28 @@ class ClaudeChatRepository extends LLMChatRepository
   final LLMMetrics? metrics;
 
   static const String _anthropicVersion = '2023-06-01';
+
+  /// Extra headers sent with every request this repository makes.
+  ///
+  /// This is how `anthropic-beta` is set, which the built-in headers have no
+  /// way to express — for example
+  /// `{'anthropic-beta': 'fine-grained-tool-streaming-2025-05-14'}` to stream
+  /// tool parameters without server-side buffering or JSON validation. Note
+  /// that beta streams partial JSON that may never become valid if the turn is
+  /// cut short, which is why it is opt-in rather than the default.
+  ///
+  /// The protocol headers, `x-api-key` and `anthropic-version` always take
+  /// precedence, so entries here can add to a request but cannot break or
+  /// spoof it.
+  final Map<String, String>? extraHeaders;
+
+  Map<String, String> _headers({required String accept}) => {
+    ...?extraHeaders,
+    'content-type': 'application/json',
+    'accept': accept,
+    'x-api-key': apiKey,
+    'anthropic-version': _anthropicVersion,
+  };
   static const int _defaultMaxTokens = 4096;
 
   /// Fallback thinking budget for models that still require `budget_tokens`.
@@ -210,12 +235,7 @@ class ClaudeChatRepository extends LLMChatRepository
         operation: () => _httpHelper.sendStreamingRequest(
           method: 'POST',
           uri: _messagesUri,
-          headers: {
-            'content-type': 'application/json',
-            'accept': 'text/event-stream',
-            'x-api-key': apiKey,
-            'anthropic-version': _anthropicVersion,
-          },
+          headers: _headers(accept: 'text/event-stream'),
           body: utf8.encode(json.encode(body)),
           timeout: merged.timeout,
         ),

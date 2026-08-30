@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-08-30
+
+### Fixed
+- A truncated tool call no longer runs with **no arguments**. Accumulated tool input was decoded and re-encoded, and anything unparseable was swallowed into `{}` — so a turn cut short by `max_tokens`, or the fine-grained tool streaming beta (which emits unvalidated partial JSON by design), produced a tool call that executed with empty arguments instead of failing. The wire text is now passed through verbatim, so truncation surfaces as an error at execution. This also makes the completed call byte-identical to its concatenated `toolCallDeltas`, as on every other backend.
+- Mid-stream `error` events now carry a `statusCode`. Anthropic reports failures by `type` rather than a numeric code, and retry classification works off the status code, so a mid-stream `overloaded_error` or `rate_limit_error` was never recognized as retryable. Types are mapped to their documented HTTP equivalents (`overloaded_error` → 529).
+
+### Added
+- Streaming tool calls surface as they arrive on `LLMChunkMessage.toolCallDeltas`. Claude names the tool in a dedicated `content_block_start` event, so the name is reported before a single argument byte exists.
+- `extraHeaders` on `ClaudeChatRepository` and its builder. This makes `anthropic-beta` reachable for the first time — for example `fine-grained-tool-streaming-2025-05-14`, which streams tool parameters without server-side buffering. Protocol headers, `x-api-key` and `anthropic-version` always take precedence.
+
 ## [0.3.2] - 2026-08-18
 
 ### Changed

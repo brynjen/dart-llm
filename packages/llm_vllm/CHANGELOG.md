@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-08-30
+
+### Added
+- Streaming tool calls surface as they arrive on `LLMChunkMessage.toolCallDeltas`, instead of being withheld until the call finishes. Against a live server the tool name became visible 697ms before the completed call, on a two-field argument object.
+- `extraHeaders` on `VLLMChatRepository`, `VLLMRepository`, `VLLMInstanceConfig` and the builder — arbitrary headers on every request, including embeddings and pool health checks. Protocol headers and `authorization` always take precedence.
+
+### Fixed
+- Parallel tool calls stay separate when a server or proxy emits all of them with `index: 0`. A fragment whose `id` differs from the call open at that index now starts a new call instead of being merged into it.
+- `VLLMRepository.fetchSupportedParams` omitted `authorization`, so against a server started with `--api-key` the `/openapi.json` probe returned 401 and the method silently fell back to the built-in parameter snapshot.
+
+### Changed
+- The empty priming delta (`{"role":"assistant","content":""}`) is no longer yielded. It carried no output and told consumers the model had started producing text before it had.
+
 ## [0.3.2] - 2026-08-18
 
 ### Changed

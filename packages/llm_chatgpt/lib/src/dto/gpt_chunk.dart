@@ -1,3 +1,4 @@
+import 'package:llm_chatgpt/src/dto/gpt_extensions.dart';
 import 'package:llm_chatgpt/src/dto/gpt_tool_call.dart';
 import 'package:llm_chatgpt/src/dto/gpt_usage.dart';
 import 'package:llm_core/llm_core.dart';
@@ -66,6 +67,8 @@ class GPTChunk extends LLMChunk {
                        ),
                      )
                      .toList(growable: false),
+                 toolCallDeltas:
+                     choices[0].delta.toolCallDeltas?.toLLMToolCallDeltas,
                ),
        );
 
@@ -174,11 +177,19 @@ class GPTChunkChoiceDelta {
     required this.content,
     required this.toolCalls,
     this.thinking,
+    this.toolCallDeltas,
   });
 
   final String? role;
   final String? content;
   final List<GPTToolCall>? toolCalls;
+
+  /// Raw fragments carried by this event, set only by the stream converter.
+  ///
+  /// Never populated by [GPTChunkChoiceDelta.fromJson]: the wire parse puts
+  /// fragments on [toolCalls] exactly as before, and the converter decides
+  /// which of them represent progress rather than a finished call.
+  final List<GPTToolCall>? toolCallDeltas;
 
   /// Reasoning delta from OpenAI-compatible servers.
   ///

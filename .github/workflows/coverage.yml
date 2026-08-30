@@ -32,7 +32,7 @@ jobs:
       
       - name: Run tests with coverage
         run: |
-          cd packages/llm_core && dart test --coverage=coverage
+          cd packages/llm_core && dart test --coverage=coverage --exclude-tags integration
           cd ../llm_ollama && dart test --coverage=coverage --exclude-tags integration
           cd ../llm_chatgpt && dart test --coverage=coverage --exclude-tags integration
           cd ../llm_vllm && dart test --coverage=coverage --exclude-tags integration
@@ -81,7 +81,7 @@ jobs:
       
       - name: Run tests with coverage
         run: |
-          cd packages/llm_llamacpp && dart test --coverage=coverage || echo "Tests skipped (models may not be available)"
+          cd packages/llm_llamacpp && dart test --coverage=coverage --exclude-tags integration || echo "Tests skipped (models may not be available)"
         continue-on-error: true
       
       - name: Upload coverage artifacts

@@ -38,8 +38,10 @@ class OllamaChatRepository extends LLMChatRepository
     ResponseCache? responseCache,
     LLMMetrics? metrics,
     http.Client? httpClient,
+    Map<String, String>? extraHeaders,
   }) : this._(
          baseUrl: baseUrl ?? 'http://localhost:11434',
+         extraHeaders: extraHeaders,
          maxToolAttempts: maxToolAttempts,
          retryConfig: retryConfig,
          timeoutConfig: timeoutConfig,
@@ -58,6 +60,7 @@ class OllamaChatRepository extends LLMChatRepository
     required this.timeoutConfig,
     required this.httpClient,
     required this._ownsHttpClient,
+    this.extraHeaders,
     RateLimiter? rateLimiter,
     this.responseCache,
     this.metrics,
@@ -72,6 +75,20 @@ class OllamaChatRepository extends LLMChatRepository
 
   /// The base URL of the Ollama server.
   final String baseUrl;
+
+  /// Extra headers sent with every request this repository makes.
+  ///
+  /// Useful for gateways and proxies that route on a header, and for
+  /// per-request attribution in observability tooling. The protocol headers
+  /// always take precedence, so entries here can add to a request but cannot
+  /// break the wire format.
+  final Map<String, String>? extraHeaders;
+
+  Map<String, String> _headers({String? accept}) => {
+    ...?extraHeaders,
+    'content-type': 'application/json',
+    'accept': ?accept,
+  };
 
   /// The HTTP client to use for requests.
   final http.Client httpClient;
@@ -176,7 +193,7 @@ class OllamaChatRepository extends LLMChatRepository
         operation: () => _httpHelper.sendStreamingRequest(
           method: 'POST',
           uri: uri,
-          headers: {'content-type': 'application/json'},
+          headers: _headers(),
           body: utf8.encode(json.encode(body)),
           timeout: merged.timeout,
         ),
@@ -289,10 +306,7 @@ class OllamaChatRepository extends LLMChatRepository
         operation: () => _httpHelper.sendNonStreamingRequest(
           method: 'POST',
           uri: Uri.parse('$baseUrl/api/embed'),
-          headers: {
-            'content-type': 'application/json',
-            'accept': 'application/json',
-          },
+          headers: _headers(accept: 'application/json'),
           body: json.encode(body),
         ),
         config: retryConfig,

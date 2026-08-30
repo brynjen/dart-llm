@@ -15,7 +15,7 @@ class GPTToolCall {
   factory GPTToolCall.fromJson(Map<String, dynamic> json) {
     return GPTToolCall(
       id: json['id'],
-      index: json['index'],
+      index: json['index'] as int? ?? 0,
       type: json['type'],
       function: GPTToolFunctionCall.fromJson(json['function']),
     );

@@ -41,9 +41,11 @@ jobs:
           cd packages/llm_llamacpp
           # Tests require models - skip if not available in CI
           # For full testing, models should be downloaded in a previous step
-          dart test --reporter expanded || echo "Tests skipped (models not available)"
+          dart test --reporter expanded --exclude-tags integration || echo "Tests skipped (models not available)"
         continue-on-error: true
       
-      - name: Check formatting
+      # Reported, never gating — see the note in ci.yaml.
+      - name: Check formatting (informational)
+        continue-on-error: true
         run: |
           cd packages/llm_llamacpp && dart format --set-exit-if-changed .

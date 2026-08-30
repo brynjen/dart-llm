@@ -47,7 +47,7 @@ Future<void> main(List<String> args) async {
   final rounds = int.parse(args.isNotEmpty ? args[0] : '3');
   final concurrency = int.parse(args.length > 1 ? args[1] : '16');
   final ktokens = int.parse(args.length > 2 ? args[2] : '32');
-  final host = args.length > 3 ? args[3] : '192.168.0.74';
+  final host = args.length > 3 ? args[3] : 'localhost';
   final port = int.parse(args.length > 4 ? args[4] : '8000');
   final model = args.length > 5 ? args[5] : 'Qwen/Qwen3.8-27B-FP8';
   final staggerMs = int.parse(args.length > 6 ? args[6] : '0');

@@ -15,6 +15,7 @@ class GeminiChatRepositoryBuilder
     extends ChatRepositoryBuilderBase<GeminiChatRepositoryBuilder> {
   String? _apiKey;
   String? _baseUrl;
+  Map<String, String>? _extraHeaders;
 
   /// Set the Google API key.
   GeminiChatRepositoryBuilder apiKey(String apiKey) {
@@ -28,6 +29,14 @@ class GeminiChatRepositoryBuilder
     return this;
   }
 
+  /// Set extra headers sent with every request.
+  ///
+  /// The protocol headers and `x-goog-api-key` always take precedence.
+  GeminiChatRepositoryBuilder extraHeaders(Map<String, String> headers) {
+    _extraHeaders = headers;
+    return this;
+  }
+
   @override
   GeminiChatRepository build() {
     if (_apiKey == null) {
@@ -35,6 +44,7 @@ class GeminiChatRepositoryBuilder
     }
     return GeminiChatRepository(
       apiKey: _apiKey!,
+      extraHeaders: _extraHeaders,
       baseUrl: _baseUrl ?? 'https://generativelanguage.googleapis.com',
       maxToolAttempts: maxToolAttemptsValue,
       retryConfig: retryConfigValue,

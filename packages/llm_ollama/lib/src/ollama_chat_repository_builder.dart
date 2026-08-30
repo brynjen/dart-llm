@@ -20,10 +20,19 @@ import 'package:llm_ollama/src/ollama_chat_repository.dart';
 class OllamaChatRepositoryBuilder
     extends ChatRepositoryBuilderBase<OllamaChatRepositoryBuilder> {
   String? _baseUrl;
+  Map<String, String>? _extraHeaders;
 
   /// Set the base URL of the Ollama server.
   OllamaChatRepositoryBuilder baseUrl(String baseUrl) {
     _baseUrl = baseUrl;
+    return this;
+  }
+
+  /// Set extra headers sent with every request.
+  ///
+  /// The protocol headers always take precedence.
+  OllamaChatRepositoryBuilder extraHeaders(Map<String, String> headers) {
+    _extraHeaders = headers;
     return this;
   }
 
@@ -38,6 +47,7 @@ class OllamaChatRepositoryBuilder
       responseCache: responseCacheValue,
       metrics: metricsValue,
       httpClient: httpClientValue,
+      extraHeaders: _extraHeaders,
     );
   }
 }

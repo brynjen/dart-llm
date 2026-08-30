@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-08-30
+
+### Added
+- Streaming tool calls surface as they arrive on `LLMChunkMessage.toolCallDeltas`, instead of being withheld until the call finishes.
+- `extraHeaders` on `ChatGPTChatRepository` and its builder — arbitrary headers on every request, including embeddings. Protocol headers and `authorization` always take precedence.
+
+### Fixed
+- Mid-stream `error` events are raised instead of ignored. Parsed as an ordinary frame such an event has no choices and no usage, so it was skipped and the stream ended as a *success* carrying a truncated answer. The error's code is surfaced as `statusCode` so a mid-stream 429 or 503 is classified as retryable.
+- Streamed tool call fragments are correlated by `index` rather than by `id`. Continuation fragments carry no `id` by design, and the previous fallback attributed them to the most recently seen call.
+- Parallel tool calls stay separate when a server or proxy emits all of them with `index: 0`. A fragment whose `id` differs from the call open at that index now starts a new call instead of being merged into it.
+- Non-streaming responses kept only the **first** tool call and silently discarded the rest, so a model that asked for parallel calls had all but one dropped — the caller ran one tool and answered as though that were the whole request. The same truncation applied when converting an assistant message back for replay, which rewrote history and taught the model its other calls never happened.
+- `GPTToolCall.fromJson` tolerates a missing `index` instead of throwing into the converter's catch-all, where the whole event was silently dropped.
+
+### Changed
+- The empty priming delta is no longer yielded.
+
 ## [0.3.2] - 2026-08-18
 
 ### Changed

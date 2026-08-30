@@ -22,7 +22,96 @@ class _EchoTool extends LLMTool {
   }
 }
 
+/// A tool the model is made to call on every round, so the loop runs until the
+/// budget is gone.
+class _AlwaysCallsTool extends LLMTool {
+  @override
+  String get name => 'looping_tool';
+
+  @override
+  String get description => 'Always called again';
+
+  @override
+  List<LLMToolParam> get parameters => const [];
+
+  @override
+  Future<dynamic> execute(Map<String, dynamic> args, {dynamic extra}) async =>
+      'ok';
+}
+
+LLMChunk _toolCallChunk() => LLMChunk(
+  model: 'test-model',
+  createdAt: DateTime(2026),
+  done: true,
+  message: LLMChunkMessage(
+    content: null,
+    role: LLMRole.assistant,
+    toolCalls: [
+      LLMToolCall(name: 'looping_tool', arguments: '{}', id: 'call_1'),
+    ],
+  ),
+);
+
 void main() {
+  group('tool attempt accounting', () {
+    test(
+      'reports the attempts actually consumed when the budget runs out',
+      () async {
+        // Every recursion builds a fresh executor whose budget is already
+        // decremented, so the level that runs out cannot see how many rounds
+        // preceded it. Without restating the accounting on the way out, this
+        // reported `attemptsUsed: 0` no matter how many rounds had run.
+        const budget = 3;
+        var rounds = 0;
+
+        late StreamToolExecutor executor;
+        executor = StreamToolExecutor(
+          tools: [_AlwaysCallsTool()],
+          extra: null,
+          maxToolAttempts: budget,
+          streamChatCallback: (model, messages, tools, extra, attempts) {
+            rounds++;
+            // Mirrors a provider: a fresh executor whose ceiling is the
+            // already-decremented remaining budget.
+            final next = StreamToolExecutor(
+              tools: tools,
+              extra: extra,
+              maxToolAttempts: attempts,
+              streamChatCallback: executor.streamChatCallback,
+            );
+            return next.executeTools(
+              chunkStream: Stream.value(_toolCallChunk()),
+              model: model,
+              initialMessages: messages,
+              toolAttempts: attempts,
+            );
+          },
+        );
+
+        await expectLater(
+          executor
+              .executeTools(
+                chunkStream: Stream.value(_toolCallChunk()),
+                model: 'test-model',
+                initialMessages: [
+                  LLMMessage(role: LLMRole.user, content: 'go'),
+                ],
+                toolAttempts: budget,
+              )
+              .toList(),
+          throwsA(
+            isA<ToolLoopIncompleteException>()
+                .having((e) => e.attemptsUsed, 'attemptsUsed', budget)
+                .having((e) => e.attemptsRemaining, 'attemptsRemaining', 0),
+          ),
+        );
+
+        // The budget really did cap the loop.
+        expect(rounds, budget);
+      },
+    );
+  });
+
   group('StreamToolExecutor', () {
     test(
       'synthesizes non-empty toolCallId when LLMToolCall.id is null',

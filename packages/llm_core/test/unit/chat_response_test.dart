@@ -22,6 +22,54 @@ void main() {
       expect(response.done, true);
     });
 
+    test('keeps token counts from a trailing usage-only chunk', () async {
+      // Several backends end a turn with two `done` chunks: the finish reason
+      // first, then a frame carrying only usage. Assigning counts
+      // unconditionally on every done chunk meant whichever arrived last won,
+      // so a count-less finish chunk erased real numbers.
+      final mock = MockLLMChatRepository();
+      mock.setStreamChunks([
+        LLMChunk(
+          model: 'test-model',
+          createdAt: DateTime(2026),
+          done: false,
+          message: LLMChunkMessage(content: 'Hi', role: LLMRole.assistant),
+        ),
+        // Usage arrives first here, finish reason second.
+        LLMChunk(
+          model: 'test-model',
+          createdAt: DateTime(2026),
+          done: true,
+          promptEvalCount: 11,
+          evalCount: 22,
+          usage: const LLMUsage(
+            promptTokens: 11,
+            completionTokens: 22,
+            totalTokens: 33,
+          ),
+          message: null,
+        ),
+        LLMChunk(
+          model: 'test-model',
+          createdAt: DateTime(2026),
+          done: true,
+          finishReason: LLMFinishReason.stop,
+          message: LLMChunkMessage(content: null, role: LLMRole.assistant),
+        ),
+      ]);
+
+      final response = await mock.chatResponse(
+        'test-model',
+        messages: [LLMMessage(role: LLMRole.user, content: 'Hello')],
+      );
+
+      expect(response.content, 'Hi');
+      expect(response.promptEvalCount, 11);
+      expect(response.evalCount, 22);
+      expect(response.usage.totalTokens, 33);
+      expect(response.finishReason, LLMFinishReason.stop);
+    });
+
     test('handles tool calls in response', () async {
       final mock = MockLLMChatRepository();
       mock.setResponse('I will calculate that');

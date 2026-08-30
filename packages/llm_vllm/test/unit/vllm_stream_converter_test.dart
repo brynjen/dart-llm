@@ -243,12 +243,326 @@ void main() {
 
       final parsed = await VLLMStreamConverter.toLLMStream(response).toList();
 
-      expect(parsed, hasLength(1));
-      final toolCall = parsed.single.message?.toolCalls?.single;
+      // Two fragment events, then the completed call. The fragments used to
+      // yield nothing at all, which is what made a streamed call invisible
+      // until it had finished.
+      expect(parsed, hasLength(3));
+
+      // Progress chunks carry fragments only — never an executable call.
+      final progress = parsed.take(2).toList();
+      expect(progress.every((c) => c.message?.toolCalls == null), isTrue);
+      expect(progress.every((c) => c.done ?? false), isFalse);
+
+      final first = progress.first.message!.toolCallDeltas!.single;
+      expect(first.index, 0);
+      expect(first.id, 'call_1');
+      expect(first.name, 'calculator');
+      expect(first.argumentsDelta, '{"expression"');
+
+      final second = progress.last.message!.toolCallDeltas!.single;
+      expect(second.index, 0);
+      expect(second.name, isNull);
+      expect(second.argumentsDelta, ':"2+2"}');
+
+      // Fragments concatenate to exactly what the completed call reports.
+      final rebuilt = progress
+          .expand((c) => c.message!.toolCallDeltas!)
+          .map((d) => d.argumentsDelta ?? '')
+          .join();
+
+      // The completed call is unchanged from before deltas existed.
+      final completed = parsed.last;
+      final toolCall = completed.message?.toolCalls?.single;
       expect(toolCall?.id, 'call_1');
       expect(toolCall?.name, 'calculator');
       expect(toolCall?.arguments, '{"expression":"2+2"}');
-      expect(parsed.single.finishReason, LLMFinishReason.toolCalls);
+      expect(rebuilt, toolCall?.arguments);
+      expect(completed.finishReason, LLMFinishReason.toolCalls);
+      expect(completed.message?.toolCallDeltas, isNull);
+    });
+
+    test('completes a tool call fused with the finish reason', () async {
+      // Live vLLM ends a tool-call stream in one of two shapes, chosen
+      // nondeterministically: a lone `{}` delta carrying finish_reason (the
+      // test above), or the final argument fragment fused with it. Captured
+      // from a real server, the fused shape was the more common of the two.
+      final response = http.StreamedResponse(
+        Stream.value(
+          utf8.encode(
+            _sse([
+              {
+                'id': 'chatcmpl-test',
+                'created': 1700000000,
+                'model': 'test-model',
+                'choices': [
+                  {
+                    'index': 0,
+                    'delta': {
+                      'tool_calls': [
+                        {
+                          'id': 'call_1',
+                          'type': 'function',
+                          'index': 0,
+                          'function': {'name': 'get_weather'},
+                        },
+                      ],
+                    },
+                    'finish_reason': null,
+                  },
+                ],
+              },
+              {
+                'id': 'chatcmpl-test',
+                'created': 1700000000,
+                'model': 'test-model',
+                'choices': [
+                  {
+                    'index': 0,
+                    'delta': {
+                      'tool_calls': [
+                        {
+                          'index': 0,
+                          'function': {'arguments': '{"city":"Oslo"}'},
+                        },
+                      ],
+                    },
+                    'finish_reason': 'tool_calls',
+                  },
+                ],
+              },
+            ]),
+          ),
+        ),
+        200,
+      );
+
+      final parsed = await VLLMStreamConverter.toLLMStream(response).toList();
+
+      // The fused chunk completes the call rather than emitting a fragment,
+      // so the consumer gets the whole call in that same event.
+      expect(parsed, hasLength(2));
+      expect(parsed.first.message?.toolCallDeltas?.single.name, 'get_weather');
+      expect(parsed.first.message?.toolCalls, isNull);
+
+      final toolCall = parsed.last.message?.toolCalls?.single;
+      expect(toolCall?.name, 'get_weather');
+      expect(toolCall?.arguments, '{"city":"Oslo"}');
+      expect(parsed.last.finishReason, LLMFinishReason.toolCalls);
+    });
+
+    test('a name-only fragment reports no argument text', () async {
+      // vLLM omits `arguments` on the name fragment; OpenAI sends "". Both
+      // mean the same thing, and neither is a fragment worth reporting.
+      for (final function in [
+        {'name': 'get_weather'},
+        {'name': 'get_weather', 'arguments': ''},
+      ]) {
+        final response = http.StreamedResponse(
+          Stream.value(
+            utf8.encode(
+              _sse([
+                {
+                  'id': 'chatcmpl-test',
+                  'created': 1700000000,
+                  'model': 'test-model',
+                  'choices': [
+                    {
+                      'index': 0,
+                      'delta': {
+                        'tool_calls': [
+                          {
+                            'id': 'call_1',
+                            'type': 'function',
+                            'index': 0,
+                            'function': function,
+                          },
+                        ],
+                      },
+                      'finish_reason': null,
+                    },
+                  ],
+                },
+              ]),
+            ),
+          ),
+          200,
+        );
+
+        final parsed = await VLLMStreamConverter.toLLMStream(response).toList();
+        final delta = parsed.single.message!.toolCallDeltas!.single;
+        expect(delta.name, 'get_weather');
+        expect(delta.argumentsDelta, isNull, reason: 'function was $function');
+      }
+    });
+
+    test('keeps parallel calls apart when a server reuses index 0', () async {
+      // Some OpenAI-compatible servers and proxies emit every parallel tool
+      // call with index 0. Correlating on index alone merges them into one
+      // malformed call, so a fragment whose id differs from the call open at
+      // that index starts a new call instead.
+      final response = http.StreamedResponse(
+        Stream.value(
+          utf8.encode(
+            _sse([
+              {
+                'id': 'chatcmpl-test',
+                'created': 1700000000,
+                'model': 'test-model',
+                'choices': [
+                  {
+                    'index': 0,
+                    'delta': {
+                      'tool_calls': [
+                        {
+                          'id': 'call_a',
+                          'type': 'function',
+                          'index': 0,
+                          'function': {'name': 'alpha'},
+                        },
+                      ],
+                    },
+                    'finish_reason': null,
+                  },
+                ],
+              },
+              {
+                'id': 'chatcmpl-test',
+                'created': 1700000000,
+                'model': 'test-model',
+                'choices': [
+                  {
+                    'index': 0,
+                    'delta': {
+                      'tool_calls': [
+                        {
+                          'index': 0,
+                          'function': {'arguments': '{"a":1}'},
+                        },
+                      ],
+                    },
+                    'finish_reason': null,
+                  },
+                ],
+              },
+              {
+                'id': 'chatcmpl-test',
+                'created': 1700000000,
+                'model': 'test-model',
+                'choices': [
+                  {
+                    'index': 0,
+                    'delta': {
+                      'tool_calls': [
+                        {
+                          'id': 'call_b',
+                          'type': 'function',
+                          'index': 0,
+                          'function': {'name': 'beta'},
+                        },
+                      ],
+                    },
+                    'finish_reason': null,
+                  },
+                ],
+              },
+              {
+                'id': 'chatcmpl-test',
+                'created': 1700000000,
+                'model': 'test-model',
+                'choices': [
+                  {
+                    'index': 0,
+                    'delta': {
+                      'tool_calls': [
+                        {
+                          'index': 0,
+                          'function': {'arguments': '{"b":2}'},
+                        },
+                      ],
+                    },
+                    'finish_reason': null,
+                  },
+                ],
+              },
+              {
+                'id': 'chatcmpl-test',
+                'created': 1700000000,
+                'model': 'test-model',
+                'choices': [
+                  {'index': 0, 'delta': {}, 'finish_reason': 'tool_calls'},
+                ],
+              },
+            ]),
+          ),
+        ),
+        200,
+      );
+
+      final parsed = await VLLMStreamConverter.toLLMStream(response).toList();
+      final completed = parsed.last.message!.toolCalls!;
+
+      expect(completed, hasLength(2));
+      expect(completed[0].name, 'alpha');
+      expect(completed[0].arguments, '{"a":1}');
+      expect(completed[1].name, 'beta');
+      expect(completed[1].arguments, '{"b":2}');
+    });
+
+    test('suppresses the empty priming delta', () async {
+      // vLLM opens every stream with {"role":"assistant","content":""} to
+      // announce the role. It carries no output, and yielding it told
+      // consumers the model had started producing text before it had.
+      final response = http.StreamedResponse(
+        Stream.value(
+          utf8.encode(
+            _sse([
+              {
+                'id': 'chatcmpl-test',
+                'created': 1700000000,
+                'model': 'test-model',
+                'choices': [
+                  {
+                    'index': 0,
+                    'delta': {'role': 'assistant', 'content': ''},
+                    'finish_reason': null,
+                  },
+                ],
+              },
+              {
+                'id': 'chatcmpl-test',
+                'created': 1700000000,
+                'model': 'test-model',
+                'choices': [
+                  {
+                    'index': 0,
+                    'delta': {'content': 'Hi'},
+                    'finish_reason': null,
+                  },
+                ],
+              },
+              {
+                'id': 'chatcmpl-test',
+                'created': 1700000000,
+                'model': 'test-model',
+                'choices': [
+                  {'index': 0, 'delta': {}, 'finish_reason': 'stop'},
+                ],
+              },
+            ]),
+          ),
+        ),
+        200,
+      );
+
+      final parsed = await VLLMStreamConverter.toLLMStream(response).toList();
+
+      // Content chunk and terminal chunk only — the priming event is gone,
+      // and the terminal chunk survives on its finish reason despite also
+      // having empty content.
+      expect(parsed, hasLength(2));
+      expect(parsed.first.message?.content, 'Hi');
+      expect(parsed.last.finishReason, LLMFinishReason.stop);
+      expect(parsed.last.done, isTrue);
     });
 
     test('deltas without an explicit role fold into chatResponse', () async {

@@ -24,6 +24,7 @@ class VLLMChatRepositoryBuilder
   String? _apiKey;
   LLMCapabilities? _capabilities;
   Set<String>? _supportedParams;
+  Map<String, String>? _extraHeaders;
 
   /// Set the base URL of the VLLM server.
   VLLMChatRepositoryBuilder baseUrl(String baseUrl) {
@@ -34,6 +35,14 @@ class VLLMChatRepositoryBuilder
   /// Set the optional API key for vLLM servers started with `--api-key`.
   VLLMChatRepositoryBuilder apiKey(String apiKey) {
     _apiKey = apiKey;
+    return this;
+  }
+
+  /// Set extra headers sent with every request.
+  ///
+  /// The protocol headers and `authorization` always take precedence.
+  VLLMChatRepositoryBuilder extraHeaders(Map<String, String> headers) {
+    _extraHeaders = headers;
     return this;
   }
 
@@ -65,6 +74,7 @@ class VLLMChatRepositoryBuilder
       httpClient: httpClientValue,
       capabilities: _capabilities,
       supportedParams: _supportedParams,
+      extraHeaders: _extraHeaders,
     );
   }
 }

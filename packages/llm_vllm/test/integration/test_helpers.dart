@@ -136,10 +136,12 @@ VLLMChatRepository createRepository({
   String? customBaseUrl,
   TimeoutConfig? timeoutConfig,
   RetryConfig? retryConfig,
+  Map<String, String>? extraHeaders,
 }) {
   return VLLMChatRepositoryBuilder()
       .baseUrl(customBaseUrl ?? baseUrl)
       .apiKey(apiKey ?? '')
+      .extraHeaders(extraHeaders ?? const {})
       .timeoutConfig(
         timeoutConfig ??
             const TimeoutConfig(

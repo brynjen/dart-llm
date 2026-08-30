@@ -1,7 +1,7 @@
 /// Comprehensive integration test suite for llm_ollama against a remote Ollama server.
 ///
 /// This test suite verifies that the package can successfully communicate with
-/// http://192.168.0.74:11434 using the gpt-oss:20b model for chat and
+/// OLLAMA_BASE_URL using the gpt-oss:20b model for chat and
 /// nomic-embed-text for embeddings.
 ///
 /// The test suite is organized into categories for easier navigation:

@@ -1,6 +1,7 @@
 import 'package:llm_core/src/llm_message.dart';
 import 'package:llm_core/src/llm_response.dart';
 import 'package:llm_core/src/tool/llm_tool_call.dart';
+import 'package:llm_core/src/tool/llm_tool_call_delta.dart';
 
 /// Represents a streaming chunk from an LLM response.
 ///
@@ -58,6 +59,7 @@ class LLMChunkMessage {
     this.thinking,
     this.toolCallId,
     this.toolCalls,
+    this.toolCallDeltas,
     this.images,
     this.rawContent,
   });
@@ -78,7 +80,27 @@ class LLMChunkMessage {
   final List<String>? images;
 
   /// List of tool call data.
+  ///
+  /// Only ever complete, executable calls. A call still being streamed appears
+  /// on [toolCallDeltas] until the backend signals it is finished.
   final List<LLMToolCall>? toolCalls;
+
+  /// Fragments of tool calls that are still arriving.
+  ///
+  /// Backends that stream tool calls announce the tool's name in their first
+  /// event and send the arguments in fragments afterwards. These deltas surface
+  /// that progress as it happens, so a caller can show which tool is running
+  /// without waiting for its arguments to finish.
+  ///
+  /// These are **never executable** — an argument fragment is part of a JSON
+  /// document that only parses once all fragments are concatenated. The
+  /// complete call always arrives on [toolCalls] at the end of the call,
+  /// exactly as it did before deltas existed.
+  ///
+  /// A backend that delivers a whole tool call in a single event emits no
+  /// deltas at all. That is not a gap: it has no partial state to report, and
+  /// its [toolCalls] already arrive as early as anything could.
+  final List<LLMToolCallDelta>? toolCallDeltas;
 
   /// The assistant turn exactly as the model emitted it, including any
   /// tool-call markup that was stripped out of [content].

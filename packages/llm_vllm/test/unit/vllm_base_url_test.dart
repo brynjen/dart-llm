@@ -8,17 +8,17 @@ void main() {
       // vLLM docs print — which naive concatenation turned into
       // `/v1/v1/chat/completions` and the server answered with a 404.
       const equivalent = [
-        'http://192.168.0.74:8000',
-        'http://192.168.0.74:8000/',
-        'http://192.168.0.74:8000/v1',
-        'http://192.168.0.74:8000/v1/',
-        '  http://192.168.0.74:8000/v1  ',
+        'http://localhost:8000',
+        'http://localhost:8000/',
+        'http://localhost:8000/v1',
+        'http://localhost:8000/v1/',
+        '  http://localhost:8000/v1  ',
       ];
 
       for (final baseUrl in equivalent) {
         expect(
           normalizeVllmBaseUrl(baseUrl),
-          'http://192.168.0.74:8000',
+          'http://localhost:8000',
           reason: 'failed for "$baseUrl"',
         );
       }
@@ -49,14 +49,14 @@ void main() {
   group('vllmEndpoint', () {
     test('builds one /v1 path regardless of base URL spelling', () {
       for (final baseUrl in [
-        'http://192.168.0.74:8000',
-        'http://192.168.0.74:8000/',
-        'http://192.168.0.74:8000/v1',
-        'http://192.168.0.74:8000/v1/',
+        'http://localhost:8000',
+        'http://localhost:8000/',
+        'http://localhost:8000/v1',
+        'http://localhost:8000/v1/',
       ]) {
         expect(
           vllmEndpoint(baseUrl, 'chat/completions').toString(),
-          'http://192.168.0.74:8000/v1/chat/completions',
+          'http://localhost:8000/v1/chat/completions',
           reason: 'failed for "$baseUrl"',
         );
       }

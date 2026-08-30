@@ -30,6 +30,7 @@ export 'src/llm_capabilities.dart';
 export 'src/tool/llm_tool.dart';
 export 'src/tool/llm_tool_param.dart';
 export 'src/tool/llm_tool_call.dart';
+export 'src/tool/llm_tool_call_delta.dart';
 
 // Repository interface
 export 'src/llm_chat_repository.dart';

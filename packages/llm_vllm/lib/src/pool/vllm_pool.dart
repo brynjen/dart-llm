@@ -42,6 +42,7 @@ class _VLLMSlot {
         rateLimiter: config.rateLimiter,
         supportedParams: config.supportedParams,
         capabilities: config.capabilities,
+        extraHeaders: config.extraHeaders,
         httpClient: config.httpClient,
       );
 
@@ -555,12 +556,11 @@ class VLLMPool extends LLMChatRepository with LLMRepositoryFeatures {
         final response = await slot.repository.httpClient
             .get(
               vllmEndpoint(slot.config.baseUrl, 'models'),
-              headers: {
-                'accept': 'application/json',
-                if (slot.config.apiKey != null &&
-                    slot.config.apiKey!.isNotEmpty)
-                  'authorization': 'Bearer ${slot.config.apiKey}',
-              },
+              headers: vllmHeaders(
+                accept: 'application/json',
+                apiKey: slot.config.apiKey,
+                extraHeaders: slot.config.extraHeaders,
+              ),
             )
             .timeout(timeout);
         nowHealthy = response.statusCode == 200;

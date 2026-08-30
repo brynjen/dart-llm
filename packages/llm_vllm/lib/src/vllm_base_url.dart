@@ -42,3 +42,19 @@ Uri vllmEndpoint(String baseUrl, String path) {
   final suffix = path.startsWith('/') ? path.substring(1) : path;
   return Uri.parse('$root/v1/$suffix');
 }
+
+/// Builds the request headers for a vLLM API call.
+///
+/// [extraHeaders] is spread first so the protocol headers and `authorization`
+/// always win: a caller may add headers but can neither break the wire format
+/// nor override the configured credentials.
+Map<String, String> vllmHeaders({
+  required String accept,
+  String? apiKey,
+  Map<String, String>? extraHeaders,
+}) => {
+  ...?extraHeaders,
+  'content-type': 'application/json',
+  'accept': accept,
+  if (apiKey != null && apiKey.isNotEmpty) 'authorization': 'Bearer $apiKey',
+};

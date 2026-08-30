@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-08-30
+
+### Fixed
+- Tool calls that take no arguments always failed, via the shared `llm_core` fix: decoding empty arguments as JSON threw, so a zero-parameter tool reported `Tool x failed: FormatException`.
+
+### Changed
+- Version bumped to `0.4.0` in lockstep with the other packages, and the `llm_core` constraint raised to `^0.4.0`. No other changes to this package: tool calls are parsed out of raw model output after generation, so there is nothing to stream incrementally.
+
 ## [0.3.2] - 2026-08-18
 
 ### Added
