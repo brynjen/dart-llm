@@ -335,7 +335,18 @@ class ChatGPTChatRepository extends LLMChatRepository
     required List<String> messages,
     Map<String, dynamic> options = const {},
   }) async {
-    final body = {'model': model, 'input': messages};
+    // `input` takes a string or an array of strings, and the two are not
+    // interchangeable at the edges: OpenAI embeds a bare `""` happily but
+    // rejects an array that contains one ("Invalid 'input[0]': input cannot be
+    // an empty string"). Sending a single input as a bare string is the shape
+    // OpenAI's own examples use and the only one that can represent it, so a
+    // one-element request no longer fails on an empty string. An empty string
+    // inside a larger batch has no valid representation at all and still
+    // surfaces as the provider's error.
+    final body = {
+      'model': model,
+      'input': messages.length == 1 ? messages.single : messages,
+    };
     final response = await RateLimiterUtil.executeWithRateLimit(
       rateLimiter: _rateLimiter,
       operation: () => RetryUtil.executeWithRetry(

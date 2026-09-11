@@ -612,9 +612,9 @@ void main() {
         final pool = OllamaPool(
           instances: [_instance()],
           modelConfigs: [
-            const OllamaModelConfig(
+            OllamaModelConfig(
               pattern: chatModel,
-              keepAlive: Duration(minutes: 5),
+              keepAlive: const Duration(minutes: 5),
             ),
           ],
         );
@@ -637,7 +637,7 @@ void main() {
         final pool = OllamaPool(
           instances: [_instance(maxConcurrent: 3)],
           modelConfigs: [
-            const OllamaModelConfig(pattern: chatModel, exclusive: true),
+            OllamaModelConfig(pattern: chatModel, exclusive: true),
           ],
         );
         addTearDown(pool.dispose);

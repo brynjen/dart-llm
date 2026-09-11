@@ -4,6 +4,8 @@ import 'package:test/test.dart';
 import 'mock_llm_chat_repository.dart';
 
 void main() {
+  _toolCallAttributionTests();
+
   group('chatResponse', () {
     test('collects complete response from stream', () async {
       final mock = MockLLMChatRepository();
@@ -329,5 +331,161 @@ void main() {
 
       expect(response.content, 'The answer is 4.');
     });
+  });
+}
+
+void _toolCallAttributionTests() {
+  LLMChunk chunk({
+    bool done = false,
+    String? content,
+    LLMRole role = LLMRole.assistant,
+    List<LLMToolCall>? toolCalls,
+    LLMFinishReason? finishReason,
+    String? toolCallId,
+  }) => LLMChunk(
+    model: 'test-model',
+    createdAt: DateTime(2026),
+    done: done,
+    finishReason: finishReason,
+    message: LLMChunkMessage(
+      content: content,
+      role: role,
+      toolCalls: toolCalls,
+      toolCallId: toolCallId,
+    ),
+  );
+
+  final weatherCall = LLMToolCall(
+    id: 'call_1',
+    name: 'get_weather',
+    arguments: '{"city":"Oslo"}',
+  );
+
+  group('chatResponse tool call attribution', () {
+    test('surfaces calls delivered on a chunk that is not done', () async {
+      // Ollama's native API puts the complete call on the frame *before* the
+      // terminal one; Claude and Gemini emit theirs on a `done: false` chunk
+      // too. Capturing only from done chunks returned null for all three.
+      final mock = MockLLMChatRepository();
+      mock.setStreamChunks([
+        chunk(toolCalls: [weatherCall]),
+        chunk(done: true, finishReason: LLMFinishReason.stop),
+      ]);
+
+      final response = await mock.chatResponse(
+        'test-model',
+        messages: [LLMMessage(role: LLMRole.user, content: 'weather?')],
+      );
+
+      expect(response.toolCalls, isNotNull);
+      expect(response.toolCalls!.single.name, 'get_weather');
+    });
+
+    test('reclassifies a stop finish that carried calls', () async {
+      // The turn called a tool, so per the OpenAI spec it is a tool-call turn
+      // however the provider spelled the finish reason.
+      final mock = MockLLMChatRepository();
+      mock.setStreamChunks([
+        chunk(toolCalls: [weatherCall]),
+        chunk(done: true, finishReason: LLMFinishReason.stop),
+      ]);
+
+      final response = await mock.chatResponse(
+        'test-model',
+        messages: [LLMMessage(role: LLMRole.user, content: 'weather?')],
+      );
+
+      expect(response.finishReason, LLMFinishReason.toolCalls);
+      expect(response.doneReason, 'tool_calls');
+    });
+
+    test('leaves a truncated turn reported as a truncation', () async {
+      // Arguments cut mid-JSON are not executable; the caller has to see
+      // `length` and retry rather than receive a malformed call.
+      final mock = MockLLMChatRepository();
+      mock.setStreamChunks([
+        chunk(toolCalls: [weatherCall]),
+        chunk(done: true, finishReason: LLMFinishReason.length),
+      ]);
+
+      final response = await mock.chatResponse(
+        'test-model',
+        messages: [LLMMessage(role: LLMRole.user, content: 'weather?')],
+      );
+
+      expect(response.finishReason, LLMFinishReason.length);
+    });
+
+    test('a trailing usage-only done chunk does not erase the calls', () async {
+      // A turn can end with several done frames. Clearing the accumulation at
+      // `done` would let the count-only frame wipe calls that were real.
+      final mock = MockLLMChatRepository();
+      mock.setStreamChunks([
+        chunk(toolCalls: [weatherCall]),
+        chunk(done: true, finishReason: LLMFinishReason.stop),
+        LLMChunk(
+          model: 'test-model',
+          createdAt: DateTime(2026),
+          done: true,
+          message: null,
+          promptEvalCount: 11,
+          evalCount: 7,
+        ),
+      ]);
+
+      final response = await mock.chatResponse(
+        'test-model',
+        messages: [LLMMessage(role: LLMRole.user, content: 'weather?')],
+      );
+
+      expect(response.toolCalls, isNotNull);
+      expect(response.toolCalls!.single.name, 'get_weather');
+      expect(response.promptEvalCount, 11);
+    });
+
+    test('calls serviced by the tool loop are not reported', () async {
+      // Round 1 calls the tool, the loop runs it, round 2 answers in text.
+      // The response ends with an answer, so it has no outstanding calls.
+      final mock = MockLLMChatRepository();
+      mock.setStreamChunks([
+        chunk(toolCalls: [weatherCall]),
+        chunk(done: true, finishReason: LLMFinishReason.stop),
+        chunk(role: LLMRole.tool, content: '12 degrees', toolCallId: 'call_1'),
+        chunk(content: 'It is 12 degrees in Oslo.'),
+        chunk(done: true, finishReason: LLMFinishReason.stop),
+      ]);
+
+      final response = await mock.chatResponse(
+        'test-model',
+        messages: [LLMMessage(role: LLMRole.user, content: 'weather?')],
+      );
+
+      expect(response.toolCalls, isNull);
+      expect(response.finishReason, LLMFinishReason.stop);
+      expect(response.content, 'It is 12 degrees in Oslo.');
+    });
+
+    test(
+      'a new turn retires the previous turn calls without a tool chunk',
+      () async {
+        // llama.cpp runs its own executor and emits no tool-role chunks, so the
+        // only boundary signal is the next turn's first assistant payload.
+        final mock = MockLLMChatRepository();
+        mock.setStreamChunks([
+          chunk(toolCalls: [weatherCall]),
+          chunk(done: true, finishReason: LLMFinishReason.stop),
+          chunk(content: 'It is 12 degrees in Oslo.'),
+          chunk(done: true, finishReason: LLMFinishReason.stop),
+        ]);
+
+        final response = await mock.chatResponse(
+          'test-model',
+          messages: [LLMMessage(role: LLMRole.user, content: 'weather?')],
+        );
+
+        expect(response.toolCalls, isNull);
+        expect(response.finishReason, LLMFinishReason.stop);
+      },
+    );
   });
 }

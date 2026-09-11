@@ -9,6 +9,7 @@ import 'package:llm_core/llm_core.dart'
         LLMChunk,
         LLMChunkMessage,
         LLMEmbedding,
+        LLMFinishReason,
         LLMLogger,
         DefaultLLMLogger,
         LLMLogLevel,

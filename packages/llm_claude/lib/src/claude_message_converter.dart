@@ -52,6 +52,17 @@ class ClaudeMessageConverter {
     return (system: system, messages: result);
   }
 
+  /// Stands in for a message that converts to no content blocks at all.
+  ///
+  /// Anthropic is the only backend here with no valid representation of an
+  /// empty message: `content: ''`, `content: []`, an empty text block and a
+  /// whitespace-only text block are each rejected, as is an empty `messages`
+  /// array. Every other backend accepts one, so dropping the message instead
+  /// would make the same conversation fail on Claude alone.
+  static const _emptyContentPlaceholder = [
+    {'type': 'text', 'text': '.'},
+  ];
+
   static Map<String, dynamic> _convertUserMessage(LLMMessage msg) {
     final content = <Map<String, dynamic>>[];
 
@@ -68,13 +79,12 @@ class ClaudeMessageConverter {
 
     return {
       'role': 'user',
-      // The API rejects a text block whose text is empty or whitespace-only,
-      // so a message with no content gets a single space rather than ''.
-      'content': content.isEmpty
-          ? [
-              {'type': 'text', 'text': ' '},
-            ]
-          : content,
+      // The Messages API rejects a text block whose text is empty or
+      // whitespace-only — `TextBlockParam.text` is `minLength: 1`, and an
+      // all-whitespace block fails separately with "text content blocks must
+      // contain non-whitespace text". A single space satisfies neither, so the
+      // placeholder has to carry a non-whitespace character.
+      'content': content.isEmpty ? _emptyContentPlaceholder : content,
     };
   }
 
@@ -104,13 +114,12 @@ class ClaudeMessageConverter {
 
     return {
       'role': 'assistant',
-      // The API rejects a text block whose text is empty or whitespace-only,
-      // so a message with no content gets a single space rather than ''.
-      'content': content.isEmpty
-          ? [
-              {'type': 'text', 'text': ' '},
-            ]
-          : content,
+      // The Messages API rejects a text block whose text is empty or
+      // whitespace-only — `TextBlockParam.text` is `minLength: 1`, and an
+      // all-whitespace block fails separately with "text content blocks must
+      // contain non-whitespace text". A single space satisfies neither, so the
+      // placeholder has to carry a non-whitespace character.
+      'content': content.isEmpty ? _emptyContentPlaceholder : content,
     };
   }
 

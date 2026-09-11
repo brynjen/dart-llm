@@ -26,6 +26,8 @@ Future<List<LLMChunk>> _run(List<Map<String, dynamic>> events) =>
     ).toList();
 
 void main() {
+  _turnEndEmissionTests();
+
   group('GPTStreamConverter tool call streaming', () {
     test('reports the tool name before the call completes', () async {
       final parsed = await _run([
@@ -250,6 +252,168 @@ void main() {
       ]);
       expect(parsed.every((c) => c.message?.toolCallDeltas == null), isTrue);
       expect(parsed.last.finishReason, LLMFinishReason.stop);
+    });
+  });
+}
+
+/// SSE events with no `[DONE]` sentinel — the shape a proxy cutoff produces.
+String _sseUnterminated(List<Map<String, dynamic>> events) =>
+    '${events.map((e) => 'data: ${json.encode(e)}').join('\n\n')}\n\n';
+
+Map<String, dynamic> _callDelta({
+  required String arguments,
+  String? name,
+  String? id,
+}) => {
+  'tool_calls': [
+    {
+      'id': ?id,
+      'index': 0,
+      'type': 'function',
+      'function': {'name': ?name, 'arguments': arguments},
+    },
+  ],
+};
+
+void _turnEndEmissionTests() {
+  group('GPTStreamConverter turn-end emission', () {
+    test('a complete call is kept when the finish reason is stop', () async {
+      // OpenAI reports `stop` alongside a complete call intermittently, and
+      // OpenAI-compatible servers do it deterministically for a named
+      // tool_choice. Matching only `tool_calls` dropped a complete, executable
+      // call: downstream that is a round with no content and no calls,
+      // indistinguishable from the model idling.
+      final response = http.StreamedResponse(
+        Stream.value(
+          utf8.encode(
+            _sse([
+              _chunk(
+                _callDelta(
+                  id: 'call_1',
+                  name: 'get_weather',
+                  arguments: '{"city":"Oslo"}',
+                ),
+              ),
+              _chunk(<String, dynamic>{}, finish: 'stop'),
+            ]),
+          ),
+        ),
+        200,
+      );
+
+      final parsed = await GPTStreamConverter.toLLMStream(response).toList();
+      final calls = parsed.last.message?.toolCalls;
+      expect(calls, isNotNull, reason: 'the call must survive a stop finish');
+      expect(calls!.single.name, 'get_weather');
+      expect(parsed.last.finishReason, LLMFinishReason.toolCalls);
+    });
+
+    test(
+      'a tool_calls finish with nothing accumulated still ends the stream',
+      () async {
+        // This matched neither branch before, so no terminal chunk was emitted
+        // at all: chatResponse reported a fabricated `stop` and no usage, and
+        // StreamToolExecutor saw no final assistant answer and threw.
+        final response = http.StreamedResponse(
+          Stream.value(
+            utf8.encode(
+              _sse([
+                _chunk({'content': 'thinking about it'}),
+                _chunk(<String, dynamic>{}, finish: 'tool_calls'),
+              ]),
+            ),
+          ),
+          200,
+        );
+
+        final parsed = await GPTStreamConverter.toLLMStream(response).toList();
+        expect(parsed.last.done, isTrue, reason: 'the turn must be closed out');
+        expect(parsed.last.finishReason, LLMFinishReason.toolCalls);
+      },
+    );
+
+    test('a call cut off by length stays a truncation', () async {
+      // Arguments cut mid-JSON are not executable; the caller has to see the
+      // truncation and retry rather than receive a malformed call.
+      final response = http.StreamedResponse(
+        Stream.value(
+          utf8.encode(
+            _sse([
+              _chunk(
+                _callDelta(
+                  id: 'call_1',
+                  name: 'get_weather',
+                  arguments: '{"city"',
+                ),
+              ),
+              _chunk(<String, dynamic>{}, finish: 'length'),
+            ]),
+          ),
+        ),
+        200,
+      );
+
+      final parsed = await GPTStreamConverter.toLLMStream(response).toList();
+      expect(parsed.last.finishReason, LLMFinishReason.length);
+      for (final chunk in parsed) {
+        expect(chunk.message?.toolCalls, anyOf(isNull, isEmpty));
+      }
+    });
+
+    test('a complete call survives a stream that never terminates', () async {
+      // A proxy cutoff ends the stream with the call fully accumulated and no
+      // finish reason to trigger the flush.
+      final response = http.StreamedResponse(
+        Stream.value(
+          utf8.encode(
+            _sseUnterminated([
+              _chunk(
+                _callDelta(
+                  id: 'call_1',
+                  name: 'get_weather',
+                  arguments: '{"city":"Oslo"}',
+                ),
+              ),
+            ]),
+          ),
+        ),
+        200,
+      );
+
+      final parsed = await GPTStreamConverter.toLLMStream(response).toList();
+      final calls = parsed.last.message?.toolCalls;
+      expect(
+        calls,
+        isNotNull,
+        reason: 'an unterminated stream must not eat it',
+      );
+      expect(calls!.single.name, 'get_weather');
+    });
+
+    test('a call cut off mid-arguments is not flushed at stream end', () async {
+      // There is no provider signal either way at an abrupt end of stream, so
+      // the payload decides — and this one is not executable.
+      final response = http.StreamedResponse(
+        Stream.value(
+          utf8.encode(
+            _sseUnterminated([
+              _chunk(
+                _callDelta(
+                  id: 'call_1',
+                  name: 'get_weather',
+                  arguments: '{"city"',
+                ),
+              ),
+            ]),
+          ),
+        ),
+        200,
+      );
+
+      final parsed = await GPTStreamConverter.toLLMStream(response).toList();
+      for (final chunk in parsed) {
+        expect(chunk.message?.toolCalls, anyOf(isNull, isEmpty));
+      }
     });
   });
 }

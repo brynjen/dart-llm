@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-09-11
+
+### Added
+- `LLMFinishReason.resolve` and `LLMFinishReason.canBecomeToolCalls` — the shared rule for classifying a tool-call turn, so every backend applies it identically instead of each re-deriving it.
+
+### Fixed
+- `chatResponse` returned `toolCalls: null` for Ollama, Claude and Gemini. It captured calls only from chunks with `done: true`, and all three deliver complete calls on an earlier chunk. Calls are now attributed to the turn that carried them, and calls the tool loop already executed are still excluded.
+- `LLMResponse.finishReason` could contradict `LLMResponse.toolCalls`. The finish reason is now resolved against the calls actually returned, so a backend that does not classify the turn itself still yields a consistent response.
+
+### Changed
+- A turn that ends while carrying complete tool calls now reports `LLMFinishReason.toolCalls`, whatever the provider spelled. The OpenAI specification defines `finish_reason` as `tool_calls` "if the model called a tool", and providers violate it routinely. Code branching on `LLMFinishReason.stop` for a tool-calling turn must move to `toolCalls`. `length`, `contentFilter` and `refusal` are never reclassified: a truncated call is not executable, and a declined turn must stay visibly declined.
+
 ## [0.4.0] - 2026-08-30
 
 ### Added

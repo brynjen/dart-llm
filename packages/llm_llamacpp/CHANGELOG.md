@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-09-11
+
+### Fixed
+- Streamed chunks never carried a finish reason at all, so `LLMChunk.finishReason` was always null and `chatResponse` fabricated `stop`. A turn that collected tool calls now reports `LLMFinishReason.toolCalls`. The backend still cannot distinguish `stop` from `length` — the isolate reports token counts only.
+
+### Changed
+- A turn that ends while carrying complete tool calls now reports `LLMFinishReason.toolCalls`, whatever the provider spelled. The OpenAI specification defines `finish_reason` as `tool_calls` "if the model called a tool", and providers violate it routinely. Code branching on `LLMFinishReason.stop` for a tool-calling turn must move to `toolCalls`. `length`, `contentFilter` and `refusal` are never reclassified: a truncated call is not executable, and a declined turn must stay visibly declined.
+
 ## [0.4.0] - 2026-08-30
 
 ### Fixed

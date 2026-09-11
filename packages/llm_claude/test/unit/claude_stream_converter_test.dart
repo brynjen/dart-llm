@@ -14,6 +14,8 @@ String _sse(String event, Map<String, dynamic> data) =>
     'event: $event\ndata: ${json.encode(data)}\n\n';
 
 void main() {
+  _toolCallTurnTests();
+
   group('ClaudeStreamConverter', () {
     test('reports the tool name before the call completes', () async {
       // Claude names the tool in content_block_start, before a single
@@ -399,6 +401,93 @@ void main() {
       ).toList();
 
       expect(chunks.last.model, 'claude-sonnet-4-6');
+    });
+  });
+}
+
+void _toolCallTurnTests() {
+  String turnEndingWith(String stopReason) =>
+      _sse('message_start', {
+        'message': {
+          'model': 'claude-opus-4-6',
+          'usage': {'input_tokens': 10},
+        },
+      }) +
+      _sse('content_block_start', {
+        'index': 0,
+        'content_block': {
+          'type': 'tool_use',
+          'id': 'toolu_01T1x1',
+          'name': 'get_weather',
+          'input': <String, dynamic>{},
+        },
+      }) +
+      _sse('content_block_delta', {
+        'index': 0,
+        'delta': {
+          'type': 'input_json_delta',
+          'partial_json': '{"city":"Oslo"}',
+        },
+      }) +
+      _sse('content_block_stop', {'index': 0}) +
+      _sse('message_delta', {
+        'delta': {'stop_reason': stopReason},
+        'usage': {'output_tokens': 12},
+      }) +
+      _sse('message_stop', <String, dynamic>{});
+
+  group('ClaudeStreamConverter tool-call turns', () {
+    test(
+      'a turn ending end_turn with tool blocks still yields the call',
+      () async {
+        // Claude usually spells this `tool_use`, but a turn mixing text and tool
+        // blocks can end `end_turn`. Matching the spelling rather than the
+        // blocks dropped a complete, executable call.
+        final parsed = await ClaudeStreamConverter.toLLMStream(
+          _makeResponse(turnEndingWith('end_turn')),
+        ).toList();
+
+        final withCalls = parsed.where(
+          (c) => c.message?.toolCalls?.isNotEmpty ?? false,
+        );
+        expect(withCalls, isNotEmpty, reason: 'the call must not be dropped');
+        expect(withCalls.first.message!.toolCalls!.single.name, 'get_weather');
+        expect(parsed.last.finishReason, LLMFinishReason.toolCalls);
+      },
+    );
+
+    test('tool_use is unchanged', () async {
+      final parsed = await ClaudeStreamConverter.toLLMStream(
+        _makeResponse(turnEndingWith('tool_use')),
+      ).toList();
+
+      expect(parsed.last.finishReason, LLMFinishReason.toolCalls);
+      expect(
+        parsed.any((c) => c.message?.toolCalls?.isNotEmpty ?? false),
+        isTrue,
+      );
+    });
+
+    test('a turn cut off by max_tokens stays a truncation', () async {
+      // The arguments may be cut mid-JSON — the comment on the verbatim
+      // pass-through above says so explicitly — so the caller has to see the
+      // truncation rather than receive a call that fails at execution.
+      final parsed = await ClaudeStreamConverter.toLLMStream(
+        _makeResponse(turnEndingWith('max_tokens')),
+      ).toList();
+
+      expect(parsed.last.finishReason, LLMFinishReason.length);
+      for (final chunk in parsed) {
+        expect(chunk.message?.toolCalls, anyOf(isNull, isEmpty));
+      }
+    });
+
+    test('the raw stop_reason is still preserved verbatim', () async {
+      final parsed = await ClaudeStreamConverter.toLLMStream(
+        _makeResponse(turnEndingWith('end_turn')),
+      ).toList();
+
+      expect(parsed.last.providerMetadata['stop_reason'], 'end_turn');
     });
   });
 }

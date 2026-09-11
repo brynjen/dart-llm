@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-09-11
+
+### Fixed
+- An empty message was rejected by the API with a 400. The converter already substituted a placeholder for a message that produces no content blocks, but used a single space — and the Messages API rejects that too ("text content blocks must contain non-whitespace text"), alongside `''`, `[]` and an empty text block. The placeholder is now non-whitespace. Anthropic is the only backend here with no valid representation of an empty message, so every other backend already accepted one.
+- Tool calls were emitted only for `stop_reason: "tool_use"`. A turn mixing text and tool blocks can end `end_turn`, and its complete calls were dropped. A turn cut short by `max_tokens` still suppresses them: its arguments may stop mid-JSON.
+
+### Changed
+- A turn that ends while carrying complete tool calls now reports `LLMFinishReason.toolCalls`, whatever the provider spelled. The OpenAI specification defines `finish_reason` as `tool_calls` "if the model called a tool", and providers violate it routinely. Code branching on `LLMFinishReason.stop` for a tool-calling turn must move to `toolCalls`. `length`, `contentFilter` and `refusal` are never reclassified: a truncated call is not executable, and a declined turn must stay visibly declined.
+
 ## [0.4.0] - 2026-08-30
 
 ### Fixed

@@ -54,8 +54,38 @@ String get baseUrl {
   return 'http://ollama.brynje.net';
 }
 
-const chatModel = 'glm-4.7-flash';
-const embeddingModel = 'nomic-embed-text';
+/// The chat model integration tests run against.
+///
+/// Overridable because the model has to exist on whichever Ollama the tests
+/// point at, and that varies by machine. The default is tool-capable — most of
+/// this suite is tool calling, and a model without the `tools` capability
+/// fails every one of those tests for a reason that has nothing to do with the
+/// code under test. Check a candidate with `ollama show <model>` before
+/// changing it, and keep it small: this suite is meant to run locally.
+String get chatModel {
+  final fromPlatform = Platform.environment['OLLAMA_CHAT_MODEL'];
+  if (fromPlatform != null && fromPlatform.isNotEmpty) {
+    return fromPlatform;
+  }
+  _ensureIntegrationEnvLoaded();
+  if (_integrationEnv.isDefined('OLLAMA_CHAT_MODEL')) {
+    return _integrationEnv['OLLAMA_CHAT_MODEL']!;
+  }
+  return 'qwen3:8b';
+}
+
+/// The embedding model integration tests run against.
+String get embeddingModel {
+  final fromPlatform = Platform.environment['OLLAMA_EMBEDDING_MODEL'];
+  if (fromPlatform != null && fromPlatform.isNotEmpty) {
+    return fromPlatform;
+  }
+  _ensureIntegrationEnvLoaded();
+  if (_integrationEnv.isDefined('OLLAMA_EMBEDDING_MODEL')) {
+    return _integrationEnv['OLLAMA_EMBEDDING_MODEL']!;
+  }
+  return 'nomic-embed-text';
+}
 
 // ============================================================================
 // Helper Utilities

@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-09-11
+
+### Fixed
+- An interaction truncated at `max_output_tokens` reported `LLMFinishReason.toolCalls` when it had produced function-call steps, hiding the truncation behind a call whose arguments may stop mid-JSON. Truncated interactions now report `length`.
+
+### Changed
+- The tool-call classification this package already applied is now the shared `LLMFinishReason.resolve` rule from `llm_core`, so every backend behaves the same way.
+
 ## [0.4.0] - 2026-08-30
 
 ### Fixed

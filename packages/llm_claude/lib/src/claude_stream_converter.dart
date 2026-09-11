@@ -25,6 +25,9 @@ class ClaudeStreamConverter {
 
     // Accumulated state across events
     final Map<int, ClaudeToolUseBlock> toolBlocks = {};
+    // Whether this turn actually handed executable calls to the caller, which
+    // is what the terminal chunk's finish reason has to agree with.
+    var emittedToolCalls = false;
     int? currentBlockIndex;
     int promptTokens = 0;
     int outputTokens = 0;
@@ -193,7 +196,23 @@ class ClaudeStreamConverter {
               );
             }
 
-            if (stopReason == 'tool_use' && toolBlocks.isNotEmpty) {
+            // Claude usually spells a tool-calling turn `tool_use`, but not
+            // always — a turn mixing text and tool blocks can end `end_turn`.
+            // Per the OpenAI specification the finish reason is `tool_calls`
+            // "if the model called a tool", so the classification follows the
+            // blocks rather than the spelling. `max_tokens` is exempt and
+            // stays a truncation: the arguments below are passed through
+            // verbatim precisely because they may be cut mid-JSON.
+            final endsWithToolCalls =
+                toolBlocks.isNotEmpty &&
+                LLMFinishReason.resolve(
+                      reported: LLMFinishReason.fromProvider(stopReason),
+                      hasCompleteToolCalls: true,
+                    ) ==
+                    LLMFinishReason.toolCalls;
+
+            if (endsWithToolCalls) {
+              emittedToolCalls = true;
               // Emit a chunk with accumulated tool calls
               final toolCalls = toolBlocks.values
                   .map(
@@ -242,7 +261,10 @@ class ClaudeStreamConverter {
                 promptTokens: usage?.inputTokens ?? promptTokens,
                 completionTokens: usage?.outputTokens ?? outputTokens,
               ),
-              finishReason: LLMFinishReason.fromProvider(stopReason),
+              finishReason: LLMFinishReason.resolve(
+                reported: LLMFinishReason.fromProvider(stopReason),
+                hasCompleteToolCalls: emittedToolCalls,
+              ),
               providerMetadata: {
                 'stop_reason': ?stopReason,
                 'cache_creation_input_tokens': ?cacheCreationTokens,

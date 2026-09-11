@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-09-11
+
+### Fixed
+- A complete tool call was dropped whenever vLLM ended the turn with `finish_reason: "stop"`. It does this deterministically for a named `tool_choice` — streaming and non-streaming alike — so the call was thrown away and the round reached the caller with no content and no calls, indistinguishable from the model idling.
+- A complete tool call was dropped when the stream ended without a terminal frame at all — a proxy cutoff or a server hiccup. Emission no longer depends on the finish reason: calls are flushed when the turn ends, and at end of stream a call counts as complete only if its accumulated arguments parse.
+
+### Changed
+- A turn that ends while carrying complete tool calls now reports `LLMFinishReason.toolCalls`, whatever the provider spelled. The OpenAI specification defines `finish_reason` as `tool_calls` "if the model called a tool", and providers violate it routinely. Code branching on `LLMFinishReason.stop` for a tool-calling turn must move to `toolCalls`. `length`, `contentFilter` and `refusal` are never reclassified: a truncated call is not executable, and a declined turn must stay visibly declined.
+
 ## [0.4.0] - 2026-08-30
 
 ### Added

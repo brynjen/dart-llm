@@ -68,6 +68,46 @@ differently, and one backend does not emit tool result chunks at all.
   own history must replay `LLMChunkMessage.rawContent` for the assistant turn,
   or the model stops calling tools after the first turn.
 
+### Finish reasons on a tool-calling turn
+
+The OpenAI specification defines `finish_reason` as `tool_calls` "if the model
+called a tool" — a classification of what the turn did, not an opaque provider
+token. Providers violate this routinely, so the mapping layer repairs it rather
+than passing the wrong value through:
+
+- **vLLM** reports `stop` for a named `tool_choice`, streaming and non-streaming
+  alike, while returning a complete call.
+- **Ollama**'s `done_reason` is `stop` on every turn, and the calls arrive on the
+  frame *before* the terminal one.
+- **OpenAI** reports `stop` alongside a complete call intermittently.
+- **Claude** usually spells it `tool_use`, but a turn mixing text and tool blocks
+  can end `end_turn`.
+- **Gemini** has no tool-call status at all.
+- **llama.cpp** reports no finish reason at all.
+
+One rule covers all of them, and every backend applies it through
+`LLMFinishReason.resolve` in `llm_core` rather than re-deriving it:
+
+> A turn that ends while carrying complete, executable tool calls is a tool-call
+> turn, whatever the provider spelled — unless the provider's own reason
+> contradicts the call being executable.
+
+`length`, `contentFilter` and `refusal` are the contradictions and are never
+reclassified. A truncated turn's arguments may stop mid-JSON, so the caller has
+to see the truncation and retry rather than execute a malformed call; a filtered
+or refused turn must stay visibly declined rather than hide a safety outcome
+behind a call the provider did not stand behind.
+
+For the same reason, **emission never depends on the finish reason**. Accumulated
+calls are flushed when the turn ends — a terminal frame, or the stream closing —
+so a spelling this library has not seen, or a proxy cutting the stream off before
+any terminal frame arrives, cannot silently drop a complete call. At an abrupt
+end of stream there is no provider signal either way, so a call counts as
+complete only if its accumulated arguments parse.
+
+A new backend inherits this by calling `LLMFinishReason.resolve` at its turn
+boundary. It should not re-implement the rule.
+
 ## Code Path
 
 - Tool execution: [packages/llm_core/lib/src/tool_executor.dart](../packages/llm_core/lib/src/tool_executor.dart)

@@ -174,6 +174,13 @@ abstract class LLMChatRepository {
     var sawToolLoop = false;
     var sawFinalAssistantAnswer = false;
     var sawDoneChunk = false;
+    // Tool calls carried by the turn currently being read. Several backends
+    // deliver complete calls on a chunk with `done: false` — Ollama's native
+    // API puts them on the frame before the terminal one, Claude and Gemini
+    // emit them ahead of their own terminal chunk — so keying off `done`
+    // alone lost them entirely for those three.
+    final pendingToolCalls = <LLMToolCall>[];
+    var turnClosed = false;
 
     await for (final chunk in streamChat(
       model,
@@ -210,9 +217,38 @@ abstract class LLMChatRepository {
             sawFinalAssistantAnswer = true;
           }
         }
-        // Only capture tool calls from the final response (when done is true)
-        if ((chunk.done ?? false) && chunk.message!.toolCalls != null) {
-          finalToolCalls = chunk.message!.toolCalls;
+        // A tool-result chunk means the loop executed the calls that preceded
+        // it, so they are not this response's outstanding calls. `sawToolLoop`
+        // above keys off the same signal.
+        if (chunk.message!.role == LLMRole.tool) {
+          pendingToolCalls.clear();
+          finalToolCalls = null;
+          turnClosed = false;
+        }
+
+        // A new turn's first assistant payload retires the previous turn's
+        // calls. This cannot be done at the `done` chunk itself: a turn can
+        // end with several `done` frames (see the token-count fold below), and
+        // a trailing usage-only frame would then wipe calls that were real.
+        final message = chunk.message!;
+        final carriesAssistantPayload =
+            message.role == LLMRole.assistant &&
+            (message.content != null ||
+                message.thinking != null ||
+                message.toolCalls != null ||
+                message.toolCallDeltas != null);
+        if (turnClosed && carriesAssistantPayload) {
+          // `finalToolCalls` goes too: the promoted calls belonged to the turn
+          // that just ended, and a turn is now under way that will end the
+          // response instead. Backends running their own tool loop (llama.cpp)
+          // emit no tool-role chunk, so this is the only boundary signal.
+          pendingToolCalls.clear();
+          finalToolCalls = null;
+          turnClosed = false;
+        }
+
+        if (message.toolCalls?.isNotEmpty ?? false) {
+          pendingToolCalls.addAll(message.toolCalls!);
         }
 
         if ((chunk.done ?? false) &&
@@ -225,6 +261,12 @@ abstract class LLMChatRepository {
 
       if (chunk.done ?? false) {
         sawDoneChunk = true;
+        turnClosed = true;
+        // Assigned only when non-empty so a trailing usage-only `done` frame
+        // cannot erase the calls the turn actually carried.
+        if (pendingToolCalls.isNotEmpty) {
+          finalToolCalls = List<LLMToolCall>.unmodifiable(pendingToolCalls);
+        }
         // A turn can end with more than one `done` chunk — several backends
         // report the finish reason first and token counts in a trailing
         // usage-only frame, and a tool loop produces a done chunk per round.
@@ -253,6 +295,13 @@ abstract class LLMChatRepository {
       );
     }
 
+    // Backstop for any backend that did not classify the turn itself, so
+    // `finishReason` can never contradict `toolCalls` on the way out.
+    final resolvedFinishReason = LLMFinishReason.resolve(
+      reported: finishReason,
+      hasCompleteToolCalls: finalToolCalls?.isNotEmpty ?? false,
+    );
+
     return LLMResponse(
       model: responseModel ?? model,
       createdAt: createdAt ?? DateTime.now(),
@@ -260,11 +309,11 @@ abstract class LLMChatRepository {
       content: content,
       thinking: thinking,
       done: true,
-      doneReason: doneReason ?? 'stop',
+      doneReason: resolvedFinishReason?.providerName ?? doneReason ?? 'stop',
       promptEvalCount: promptEvalCount ?? usage?.promptTokens ?? 0,
       evalCount: evalCount ?? usage?.completionTokens ?? 0,
       usage: usage,
-      finishReason: finishReason,
+      finishReason: resolvedFinishReason,
       providerMetadata: providerMetadata,
       toolCalls: finalToolCalls,
     );

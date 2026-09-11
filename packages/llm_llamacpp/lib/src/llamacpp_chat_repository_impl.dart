@@ -176,6 +176,15 @@ Stream<LLMChunk> _streamChatImpl(
                 : streamHandler.accumulatedContent,
           ),
           done: true,
+          // The isolate reports token counts only, so there is no real stop
+          // reason to map — `stop` is what `chatResponse` fabricated for this
+          // backend anyway. What the turn *can* say for itself is whether it
+          // called a tool, which is the classification the OpenAI
+          // specification asks for and every other backend here reports.
+          finishReason: LLMFinishReason.resolve(
+            reported: LLMFinishReason.stop,
+            hasCompleteToolCalls: collectedToolCalls.isNotEmpty,
+          ),
           promptEvalCount: message.promptTokens,
           evalCount: message.generatedTokens,
         );

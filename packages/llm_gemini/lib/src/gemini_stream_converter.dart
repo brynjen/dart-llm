@@ -300,20 +300,29 @@ class GeminiStreamConverter {
 
   /// Resolves the finish reason for a completed interaction.
   ///
-  /// Gemini never reports a tool-call status, so a completed interaction that
-  /// contained at least one `function_call` step finishes as
-  /// [LLMFinishReason.toolCalls]. Otherwise the interaction `status` is
-  /// normalized to a spelling [LLMFinishReason.fromProvider] understands.
+  /// Gemini never reports a tool-call status, so an interaction that contained
+  /// at least one `function_call` step finishes as [LLMFinishReason.toolCalls]
+  /// — the same protocol rule every backend here applies, shared through
+  /// [LLMFinishReason.resolve]. Routing through it rather than returning
+  /// `toolCalls` outright also fixes the truncation case: an interaction cut
+  /// short at `max_output_tokens` has arguments that may stop mid-JSON, and it
+  /// now stays [LLMFinishReason.length] instead of claiming an executable call.
+  ///
+  /// The `status` spellings are normalized first, since they are Gemini's own
+  /// vocabulary rather than anything [LLMFinishReason.fromProvider] knows.
   static LLMFinishReason _finishReason(
     String? status, {
     required bool sawFunctionCalls,
   }) {
-    if (sawFunctionCalls) return LLMFinishReason.toolCalls;
-    return LLMFinishReason.fromProvider(switch (status) {
+    final reported = LLMFinishReason.fromProvider(switch (status) {
       'completed' => 'stop',
       'incomplete' || 'max_output_tokens' => 'length',
       _ => status,
     });
+    return LLMFinishReason.resolve(
+      reported: reported,
+      hasCompleteToolCalls: sawFunctionCalls,
+    )!;
   }
 }
 

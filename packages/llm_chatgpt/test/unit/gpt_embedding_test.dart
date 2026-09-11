@@ -1,7 +1,12 @@
+import 'dart:convert';
+
+import 'package:http/http.dart' as http;
 import 'package:llm_chatgpt/llm_chatgpt.dart';
 import 'package:test/test.dart';
 
 void main() {
+  _embeddingInputShapeTests();
+
   group('ChatGPTEmbeddingsResponse', () {
     test('fromJson and toJson roundtrip', () {
       final json = {
@@ -120,6 +125,65 @@ void main() {
       expect(llmEmbeddings[0].embedding, [0.1, 0.2, 0.3]);
       expect(llmEmbeddings[0].promptEvalCount, 5);
       expect(llmEmbeddings[1].embedding, [0.4, 0.5, 0.6]);
+    });
+  });
+}
+
+/// Captures the JSON body of a non-streaming request and replies with a
+/// canned embeddings response.
+class _BodyCapturingClient extends http.BaseClient {
+  final List<Map<String, dynamic>> bodies = [];
+
+  @override
+  Future<http.StreamedResponse> send(http.BaseRequest request) async {
+    bodies.add(
+      json.decode((request as http.Request).body) as Map<String, dynamic>,
+    );
+    final payload = json.encode({
+      'model': 'text-embedding-3-small',
+      'object': 'list',
+      'usage': {'prompt_tokens': 1, 'total_tokens': 1},
+      'data': [
+        {
+          'object': 'embedding',
+          'index': 0,
+          'embedding': [0.1, 0.2],
+        },
+      ],
+    });
+    return http.StreamedResponse(
+      Stream.value(utf8.encode(payload)),
+      200,
+      request: request,
+    );
+  }
+}
+
+void _embeddingInputShapeTests() {
+  Future<Map<String, dynamic>> capture(List<String> messages) async {
+    final client = _BodyCapturingClient();
+    final repo = ChatGPTChatRepository(apiKey: 'k', httpClient: client);
+    await repo.embed(model: 'text-embedding-3-small', messages: messages);
+    return client.bodies.single;
+  }
+
+  group('embeddings request shape', () {
+    test('a single input is sent as a bare string', () async {
+      // OpenAI embeds a bare `""` but rejects an array containing one
+      // ("Invalid 'input[0]': input cannot be an empty string"), so the bare
+      // form is the only representation of an empty input. Sending every
+      // single-element request that way is also the shape OpenAI's own
+      // examples use.
+      expect((await capture(['hello']))['input'], 'hello');
+      expect((await capture([]))['input'], isEmpty);
+    });
+
+    test('an empty single input stays representable', () async {
+      expect((await capture(['']))['input'], '');
+    });
+
+    test('multiple inputs are still sent as an array', () async {
+      expect((await capture(['a', 'b']))['input'], ['a', 'b']);
     });
   });
 }

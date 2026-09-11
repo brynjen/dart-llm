@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-09-11
+
+### Fixed
+- Embedding an empty string failed with a 400. OpenAI embeds a bare `""` but rejects an array containing one ("Invalid 'input[0]': input cannot be an empty string"), and `embed` always sent an array. A single input is now sent as a bare string — the shape OpenAI's own examples use, and the only one that can represent an empty input.
+- A complete tool call was dropped whenever the turn ended with `finish_reason: "stop"`, which OpenAI reports intermittently and OpenAI-compatible servers report deterministically for a named `tool_choice`.
+- A `finish_reason: "tool_calls"` frame with no calls accumulated emitted no terminal chunk at all, so the stream ended with nothing marked `done`: `chatResponse` reported no usage and a fabricated `stop`, and the tool loop raised `ToolLoopIncompleteException`. Every terminal frame now yields exactly one terminal chunk.
+- A complete tool call was dropped when the stream ended without a terminal frame — a proxy cutoff or a server hiccup.
+
+### Changed
+- A turn that ends while carrying complete tool calls now reports `LLMFinishReason.toolCalls`, whatever the provider spelled. The OpenAI specification defines `finish_reason` as `tool_calls` "if the model called a tool", and providers violate it routinely. Code branching on `LLMFinishReason.stop` for a tool-calling turn must move to `toolCalls`. `length`, `contentFilter` and `refusal` are never reclassified: a truncated call is not executable, and a declined turn must stay visibly declined.
+
 ## [0.4.0] - 2026-08-30
 
 ### Added

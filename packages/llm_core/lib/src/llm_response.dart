@@ -82,6 +82,67 @@ enum LLMFinishReason {
       _ => LLMFinishReason.unknown,
     };
   }
+
+  /// Whether a turn ending with this reason may be reclassified as a tool-call
+  /// turn when the model produced complete tool calls.
+  ///
+  /// False for the reasons that contradict an executable call:
+  /// * [length] — generation was cut off, so the arguments may be truncated
+  ///   mid-JSON. The caller has to see a truncation and retry, not receive a
+  ///   malformed call that fails at execution.
+  /// * [contentFilter] and [refusal] — the provider declined the turn. These
+  ///   are exactly the values a caller checks before treating a response as
+  ///   valid output (see [refusal]); overwriting one would hide a safety
+  ///   outcome behind a call the provider itself did not stand behind.
+  ///
+  /// LiteLLM draws the same line, for the same stated reason — "don't
+  /// overwrite for other - potential error finish reasons".
+  ///
+  /// The switch is exhaustive on purpose: a new member of this enum will not
+  /// compile until this decision has been made for it explicitly.
+  bool get canBecomeToolCalls => switch (this) {
+    stop || toolCalls || unknown => true,
+    length || contentFilter || refusal => false,
+  };
+
+  /// Resolves the finish reason of a turn that carried complete tool calls.
+  ///
+  /// The OpenAI specification defines `finish_reason` as `tool_calls` "if the
+  /// model called a tool" — a classification of what the turn did, not an
+  /// opaque provider token. Providers violate this routinely:
+  ///
+  /// * vLLM reports `stop` for a named `tool_choice`, streaming and not;
+  /// * Ollama's native `/api/chat` reports `stop` and delivers the calls on an
+  ///   earlier, non-final frame;
+  /// * OpenAI itself reports `stop` alongside a complete call intermittently;
+  /// * Gemini has no tool-call status at all.
+  ///
+  /// One protocol-level rule covers all of them: a turn that ends while
+  /// carrying complete, executable tool calls is a tool-call turn, whatever
+  /// the provider spelled — unless its own reason contradicts the call being
+  /// executable (see [canBecomeToolCalls]).
+  ///
+  /// [reported] is the provider's reason, already mapped through
+  /// [fromProvider]; pass null when the provider gave none.
+  /// [hasCompleteToolCalls] must be true only for **finished** calls. Fragments
+  /// still arriving on `LLMChunkMessage.toolCallDeltas` never count: an
+  /// argument fragment is part of a JSON document that only parses once every
+  /// fragment has been concatenated.
+  ///
+  /// Only ever upgrades. A reported [toolCalls] is returned unchanged even when
+  /// no calls were parsed, so a provider claiming a tool-call finish is never
+  /// contradicted by this library.
+  ///
+  /// Call this **at a turn boundary only**. Mid-stream the accumulation is
+  /// partial and the turn has not ended, so the question is not yet meaningful.
+  static LLMFinishReason? resolve({
+    required LLMFinishReason? reported,
+    required bool hasCompleteToolCalls,
+  }) {
+    if (!hasCompleteToolCalls) return reported;
+    if (reported == null) return LLMFinishReason.toolCalls;
+    return reported.canBecomeToolCalls ? LLMFinishReason.toolCalls : reported;
+  }
 }
 
 /// Represents a complete (non-streaming) response from an LLM.

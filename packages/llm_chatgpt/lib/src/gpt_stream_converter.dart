@@ -23,6 +23,9 @@ class GPTStreamConverter {
     // different from the call open at its index therefore starts a new call.
     final accumulated = <GPTToolCall>[];
     final openAt = <int, int>{};
+    // Kept so a flush at end of stream can reuse the response's id/model/
+    // created instead of inventing them.
+    GPTChunk? lastChunk;
 
     await for (final output
         in response.stream
@@ -78,7 +81,27 @@ class GPTStreamConverter {
             yield chunk;
           }
 
-          if (finishReason == 'tool_calls' && accumulated.isNotEmpty) {
+          // Classification and emission are separate questions. Whether the
+          // turn is a tool-call turn is a protocol rule shared by every
+          // backend ([LLMFinishReason.resolve]); whether the accumulated calls
+          // get flushed is a question of the turn having ended at all.
+          final reported = finishReason == null
+              ? null
+              : LLMFinishReason.fromProvider(finishReason);
+          // The guard is load-bearing: `accumulated` is non-empty from the
+          // first fragment, so without it every mid-stream event would read as
+          // an end of turn.
+          final turnEnded = finishReason != null;
+          final endsWithToolCalls =
+              turnEnded &&
+              accumulated.isNotEmpty &&
+              LLMFinishReason.resolve(
+                    reported: reported,
+                    hasCompleteToolCalls: true,
+                  ) ==
+                  LLMFinishReason.toolCalls;
+
+          if (endsWithToolCalls) {
             final toolCallChunk = GPTChunk(
               id: chunk.id,
               created: chunk.created,
@@ -98,9 +121,23 @@ class GPTStreamConverter {
               ],
             );
             emitted = true;
+            accumulated.clear();
+            openAt.clear();
             yield toolCallChunk;
-          } else if (finishReason != null && finishReason != 'tool_calls') {
+          } else if (turnEnded) {
+            // Every terminal frame yields exactly one terminal chunk. The old
+            // `finishReason != 'tool_calls'` guard meant a `tool_calls` finish
+            // with nothing accumulated matched neither branch, so the stream
+            // ended with no `done` chunk at all: `chatResponse` reported no
+            // usage and a fabricated `stop`, and StreamToolExecutor saw no
+            // final assistant answer and threw ToolLoopIncompleteException.
+            //
+            // Clearing here is what stops the end-of-stream flush resurrecting
+            // calls this frame rejected — `length` cut the arguments mid-JSON,
+            // a filter or refusal means the provider did not stand behind them.
             emitted = true;
+            accumulated.clear();
+            openAt.clear();
             yield chunk;
           }
 
@@ -110,6 +147,7 @@ class GPTStreamConverter {
             // A fragment-only event, which previously yielded nothing at all.
             yield _toolCallDeltaChunk(chunk, rawToolCallDeltas);
           }
+          lastChunk = chunk;
         } on LLMApiException {
           // A real API failure, not a malformed frame — never swallow it.
           rethrow;
@@ -117,6 +155,60 @@ class GPTStreamConverter {
           // Continue stream on parse errors
         }
       }
+    }
+
+    // The stream ended without a terminal frame ever arriving — a proxy cutoff
+    // or a server hiccup. Calls complete at that point used to be dropped in
+    // silence, because emission was gated on the finish reason alone.
+    final pendingCalls = _flushToolCalls(accumulated, lastChunk);
+    if (pendingCalls != null) yield pendingCalls;
+  }
+
+  /// Emits calls that were complete when the stream ended without ever sending
+  /// a terminal frame, or `null` when there is nothing executable outstanding.
+  ///
+  /// Completeness is decided by parsing the arguments rather than by trusting
+  /// the accumulation. There is no provider signal at an abrupt end of stream:
+  /// the same state describes a finished call and one cut off mid-arguments,
+  /// and the payload is the only evidence of which it was. A call whose
+  /// arguments do not parse — including one that only ever received its name —
+  /// stays a fragment, exactly as a `length` truncation does.
+  static GPTChunk? _flushToolCalls(
+    List<GPTToolCall> accumulated,
+    GPTChunk? lastChunk,
+  ) {
+    if (accumulated.isEmpty || lastChunk == null) return null;
+    final complete = accumulated.where(_hasParsableArguments).toList();
+    accumulated.clear();
+    if (complete.isEmpty) return null;
+    return GPTChunk(
+      id: lastChunk.id,
+      created: lastChunk.created,
+      model: lastChunk.model,
+      systemFingerprint: lastChunk.systemFingerprint,
+      choices: [
+        GPTChunkChoice(
+          index: 0,
+          delta: GPTChunkChoiceDelta(
+            role: null,
+            content: null,
+            toolCalls: complete,
+          ),
+          logProbs: null,
+          finishReason: 'tool_calls',
+        ),
+      ],
+    );
+  }
+
+  static bool _hasParsableArguments(GPTToolCall call) {
+    final arguments = call.function.arguments;
+    if (arguments.isEmpty) return false;
+    try {
+      json.decode(arguments);
+      return true;
+    } catch (_) {
+      return false;
     }
   }
 

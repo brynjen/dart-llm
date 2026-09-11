@@ -6,6 +6,8 @@ import 'package:llm_ollama/src/ollama_stream_converter.dart';
 import 'package:test/test.dart';
 
 void main() {
+  _toolCallTurnTests();
+
   group('OllamaStreamConverter', () {
     test('parses NDJSON split across transport chunk boundaries', () async {
       final frame1 = json.encode({
@@ -73,6 +75,82 @@ void main() {
           ),
         ),
       );
+    });
+  });
+}
+
+void _toolCallTurnTests() {
+  /// The exact two-frame shape captured from Ollama's native `/api/chat`
+  /// against qwen3:8b: the complete call arrives on a non-terminal frame, and
+  /// the terminal frame reports `stop` and carries no calls at all.
+  String capturedToolCallTurn() => [
+    json.encode({
+      'model': 'qwen3:8b',
+      'created_at': '2026-09-11T10:00:00.000Z',
+      'message': {
+        'role': 'assistant',
+        'content': '',
+        'tool_calls': [
+          {
+            'id': 'call_3ud5qy0o',
+            'function': {
+              'index': 0,
+              'name': 'get_weather',
+              'arguments': {'city': 'Oslo'},
+            },
+          },
+        ],
+      },
+      'done': false,
+    }),
+    json.encode({
+      'model': 'qwen3:8b',
+      'created_at': '2026-09-11T10:00:01.000Z',
+      'message': {'role': 'assistant', 'content': ''},
+      'done': true,
+      'done_reason': 'stop',
+      'prompt_eval_count': 120,
+      'eval_count': 18,
+    }),
+  ].map((line) => '$line\n').join();
+
+  group('OllamaStreamConverter tool-call turns', () {
+    test('a turn that called a tool is reported as a tool-call turn', () async {
+      // `done_reason` is `stop` on every Ollama turn, tool call or not, and the
+      // calls land on the frame before the terminal one. Reading the terminal
+      // frame in isolation therefore always said `stop`, which contradicts the
+      // calls the same turn produced.
+      final response = http.StreamedResponse(
+        Stream.value(utf8.encode(capturedToolCallTurn())),
+        200,
+      );
+
+      final parsed = await OllamaStreamConverter.toLLMStream(response).toList();
+
+      expect(parsed.last.done, isTrue);
+      expect(parsed.last.finishReason, LLMFinishReason.toolCalls);
+      // The calls themselves still arrive where Ollama put them.
+      expect(parsed.first.message?.toolCalls?.single.name, 'get_weather');
+      // Token counts on the terminal frame must survive the rebuild.
+      expect(parsed.last.promptEvalCount, 120);
+      expect(parsed.last.evalCount, 18);
+    });
+
+    test('a turn without tool calls keeps its reported reason', () async {
+      final plain = json.encode({
+        'model': 'qwen3:8b',
+        'created_at': '2026-09-11T10:00:00.000Z',
+        'message': {'role': 'assistant', 'content': 'Hello'},
+        'done': true,
+        'done_reason': 'stop',
+      });
+      final response = http.StreamedResponse(
+        Stream.value(utf8.encode('$plain\n')),
+        200,
+      );
+
+      final parsed = await OllamaStreamConverter.toLLMStream(response).toList();
+      expect(parsed.last.finishReason, LLMFinishReason.stop);
     });
   });
 }

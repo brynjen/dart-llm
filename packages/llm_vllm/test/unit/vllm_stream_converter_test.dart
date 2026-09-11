@@ -6,6 +6,8 @@ import 'package:llm_vllm/src/vllm_stream_converter.dart';
 import 'package:test/test.dart';
 
 void main() {
+  _turnEndEmissionTests();
+
   group('VLLMStreamConverter', () {
     test('parses SSE split across transport chunk boundaries', () async {
       final payload = _sse([
@@ -177,6 +179,112 @@ void main() {
 
       final parsed = await VLLMStreamConverter.toLLMStream(response).toList();
       expect(parsed.single.message?.content, 'ok');
+    });
+
+    test('a complete call is kept when the finish reason is stop', () async {
+      // vLLM reports `stop` even when the choice carried tool calls. The
+      // converter used to match only `tool_calls`, fall through, and yield a
+      // bare chunk — dropping a complete, executable call. Downstream that is
+      // a round with no content and no calls, indistinguishable from the model
+      // idling, and a whole round of decode wasted.
+      final response = http.StreamedResponse(
+        Stream.value(
+          utf8.encode(
+            _sse([
+              {
+                'id': 'chatcmpl-test',
+                'created': 1700000000,
+                'model': 'test-model',
+                'choices': [
+                  {
+                    'index': 0,
+                    'delta': {
+                      'tool_calls': [
+                        {
+                          'id': 'call_1',
+                          'index': 0,
+                          'type': 'function',
+                          'function': {
+                            'name': 'calculator',
+                            'arguments': '{"expression":"2+2"}',
+                          },
+                        },
+                      ],
+                    },
+                    'finish_reason': null,
+                  },
+                ],
+              },
+              {
+                'id': 'chatcmpl-test',
+                'created': 1700000000,
+                'model': 'test-model',
+                'choices': [
+                  {'index': 0, 'delta': {}, 'finish_reason': 'stop'},
+                ],
+              },
+            ]),
+          ),
+        ),
+        200,
+      );
+
+      final parsed = await VLLMStreamConverter.toLLMStream(response).toList();
+      final calls = parsed.last.message?.toolCalls;
+      expect(calls, isNotNull, reason: 'the call must survive a stop finish');
+      expect(calls!.single.name, 'calculator');
+      expect(calls.single.arguments, '{"expression":"2+2"}');
+    });
+
+    test('a call cut off by length stays a truncation', () async {
+      // The opposite case, and it must not be normalised: arguments cut
+      // mid-JSON are not executable, so the caller has to see the truncation
+      // and retry rather than receive a malformed call.
+      final response = http.StreamedResponse(
+        Stream.value(
+          utf8.encode(
+            _sse([
+              {
+                'id': 'chatcmpl-test',
+                'created': 1700000000,
+                'model': 'test-model',
+                'choices': [
+                  {
+                    'index': 0,
+                    'delta': {
+                      'tool_calls': [
+                        {
+                          'id': 'call_1',
+                          'index': 0,
+                          'type': 'function',
+                          'function': {
+                            'name': 'calculator',
+                            'arguments': '{"expression"',
+                          },
+                        },
+                      ],
+                    },
+                    'finish_reason': null,
+                  },
+                ],
+              },
+              {
+                'id': 'chatcmpl-test',
+                'created': 1700000000,
+                'model': 'test-model',
+                'choices': [
+                  {'index': 0, 'delta': {}, 'finish_reason': 'length'},
+                ],
+              },
+            ]),
+          ),
+        ),
+        200,
+      );
+
+      final parsed = await VLLMStreamConverter.toLLMStream(response).toList();
+      expect(parsed.last.message?.toolCalls, isNull);
+      expect(parsed.last.finishReason, LLMFinishReason.length);
     });
 
     test('accumulates streamed tool call arguments', () async {
@@ -831,4 +939,201 @@ String _sse(List<Map<String, dynamic>> frames) {
   buffer.writeln('data: [DONE]');
   buffer.writeln();
   return buffer.toString();
+}
+
+/// SSE frames with no `[DONE]` sentinel — the shape a proxy cutoff produces.
+String _sseUnterminated(List<Map<String, dynamic>> frames) {
+  final buffer = StringBuffer();
+  for (final frame in frames) {
+    buffer.writeln('data: ${json.encode(frame)}');
+    buffer.writeln();
+  }
+  return buffer.toString();
+}
+
+Map<String, dynamic> _callFrame({
+  required String arguments,
+  String? name,
+  String? id,
+  String? finish,
+}) => {
+  'id': 'chatcmpl-test',
+  'created': 1700000000,
+  'model': 'test-model',
+  'choices': [
+    {
+      'index': 0,
+      'delta': {
+        'tool_calls': [
+          {
+            'id': ?id,
+            'index': 0,
+            'type': 'function',
+            'function': {'name': ?name, 'arguments': arguments},
+          },
+        ],
+      },
+      'finish_reason': finish,
+    },
+  ],
+};
+
+Map<String, dynamic> _finishFrame(String finish) => {
+  'id': 'chatcmpl-test',
+  'created': 1700000000,
+  'model': 'test-model',
+  'choices': [
+    {'index': 0, 'delta': <String, dynamic>{}, 'finish_reason': finish},
+  ],
+};
+
+void _turnEndEmissionTests() {
+  group('VLLMStreamConverter turn-end emission', () {
+    test('a complete call survives a stream that never terminates', () async {
+      // Gating emission on the finish reason lost this outright: a proxy
+      // cutoff or server hiccup ends the stream with the call fully
+      // accumulated and no `finish_reason` to trigger the flush. The call was
+      // complete and executable, and it was dropped in silence.
+      final response = http.StreamedResponse(
+        Stream.value(
+          utf8.encode(
+            _sseUnterminated([
+              _callFrame(
+                id: 'call_1',
+                name: 'calculator',
+                arguments: '{"expression":"2+2"}',
+              ),
+            ]),
+          ),
+        ),
+        200,
+      );
+
+      final parsed = await VLLMStreamConverter.toLLMStream(response).toList();
+      final calls = parsed.last.message?.toolCalls;
+      expect(
+        calls,
+        isNotNull,
+        reason: 'an unterminated stream must not eat it',
+      );
+      expect(calls!.single.name, 'calculator');
+      expect(calls.single.arguments, '{"expression":"2+2"}');
+    });
+
+    test('a call cut off mid-arguments is not flushed at stream end', () async {
+      // The counterpart to the test above: same absence of a terminal frame,
+      // but the arguments never closed. There is no provider signal either
+      // way at an abrupt end of stream, so the payload decides — and this one
+      // is not executable.
+      final response = http.StreamedResponse(
+        Stream.value(
+          utf8.encode(
+            _sseUnterminated([
+              _callFrame(
+                id: 'call_1',
+                name: 'calculator',
+                arguments: '{"expression"',
+              ),
+            ]),
+          ),
+        ),
+        200,
+      );
+
+      final parsed = await VLLMStreamConverter.toLLMStream(response).toList();
+      for (final chunk in parsed) {
+        expect(
+          chunk.message?.toolCalls,
+          anyOf(isNull, isEmpty),
+          reason: 'truncated JSON must stay a fragment',
+        );
+      }
+    });
+
+    test('an unrecognized finish spelling still yields the call', () async {
+      // The rule is the presence of complete calls, not a known string. A
+      // server spelling its terminal reason differently used to drop them.
+      final response = http.StreamedResponse(
+        Stream.value(
+          utf8.encode(
+            _sse([
+              _callFrame(
+                id: 'call_1',
+                name: 'calculator',
+                arguments: '{"expression":"2+2"}',
+              ),
+              _finishFrame('eos_token'),
+            ]),
+          ),
+        ),
+        200,
+      );
+
+      final parsed = await VLLMStreamConverter.toLLMStream(response).toList();
+      final calls = parsed.last.message?.toolCalls;
+      expect(calls, isNotNull);
+      expect(calls!.single.name, 'calculator');
+      expect(parsed.last.finishReason, LLMFinishReason.toolCalls);
+    });
+
+    test('a filtered turn does not yield its calls, at the frame or at the '
+        'end of the stream', () async {
+      // The provider declined the turn. Executing what it produced anyway
+      // would bury a safety outcome behind a tool call — and the end-of-stream
+      // flush must not resurrect what the terminal frame rejected.
+      final response = http.StreamedResponse(
+        Stream.value(
+          utf8.encode(
+            _sse([
+              _callFrame(
+                id: 'call_1',
+                name: 'calculator',
+                arguments: '{"expression":"2+2"}',
+              ),
+              _finishFrame('content_filter'),
+            ]),
+          ),
+        ),
+        200,
+      );
+
+      final parsed = await VLLMStreamConverter.toLLMStream(response).toList();
+      expect(parsed.last.finishReason, LLMFinishReason.contentFilter);
+      for (final chunk in parsed) {
+        expect(
+          chunk.message?.toolCalls,
+          anyOf(isNull, isEmpty),
+          reason: 'a declined turn must never surface an executable call',
+        );
+      }
+    });
+
+    test(
+      'a truncated call is not resurrected at the end of the stream',
+      () async {
+        // The `length` frame drops the accumulation; nothing may hand it back.
+        final response = http.StreamedResponse(
+          Stream.value(
+            utf8.encode(
+              _sse([
+                _callFrame(
+                  id: 'call_1',
+                  name: 'calculator',
+                  arguments: '{"expression"',
+                ),
+                _finishFrame('length'),
+              ]),
+            ),
+          ),
+          200,
+        );
+
+        final parsed = await VLLMStreamConverter.toLLMStream(response).toList();
+        expect(parsed.last.finishReason, LLMFinishReason.length);
+        for (final chunk in parsed) {
+          expect(chunk.message?.toolCalls, anyOf(isNull, isEmpty));
+        }
+      },
+    );
+  });
 }

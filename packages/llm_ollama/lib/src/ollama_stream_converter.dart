@@ -21,6 +21,11 @@ class OllamaStreamConverter {
     final readTimeout = config.readTimeout;
     final carryBuffer = StringBuffer();
     var malformedLineCount = 0;
+    // Ollama delivers complete tool calls on an earlier frame and the finish
+    // on the terminal one, so the terminal frame alone cannot tell whether the
+    // turn called a tool. One HTTP response is one turn — the loop re-issues a
+    // request per round — so this never needs resetting.
+    var turnCarriedToolCalls = false;
 
     await for (final chunk
         in response.stream
@@ -61,7 +66,12 @@ class OllamaStreamConverter {
             throw LLMApiException('Ollama stream error: ${decoded['error']}');
           }
           final ollamaChunk = OllamaChunk.fromJson(decoded);
-          yield ollamaChunk;
+          if (ollamaChunk.message?.toolCalls?.isNotEmpty ?? false) {
+            turnCarriedToolCalls = true;
+          }
+          yield (ollamaChunk.done ?? false)
+              ? _withResolvedFinishReason(ollamaChunk, turnCarriedToolCalls)
+              : ollamaChunk;
           malformedLineCount = 0;
         } on LLMApiException {
           rethrow;
@@ -81,6 +91,35 @@ class OllamaStreamConverter {
         malformedLineCount: malformedLineCount,
       );
     }
+  }
+
+  /// Rebuilds a terminal chunk whose finish reason disagrees with the calls
+  /// the turn actually produced.
+  ///
+  /// Ollama's `done_reason` is `stop` even for a turn that called a tool, and
+  /// the calls arrive on the frame before the terminal one. Per the OpenAI
+  /// specification `finish_reason` is `tool_calls` "if the model called a
+  /// tool", so the turn is reclassified here rather than in
+  /// [OllamaChunk.fromJson] — the DTO parses a single frame and has no way to
+  /// know what the rest of the turn carried.
+  static OllamaChunk _withResolvedFinishReason(
+    OllamaChunk chunk,
+    bool turnCarriedToolCalls,
+  ) {
+    final resolved = LLMFinishReason.resolve(
+      reported: chunk.finishReason,
+      hasCompleteToolCalls: turnCarriedToolCalls,
+    );
+    if (resolved == chunk.finishReason) return chunk;
+    return OllamaChunk(
+      model: chunk.model,
+      createdAt: chunk.createdAt,
+      message: chunk.message,
+      done: chunk.done,
+      promptEvalCount: chunk.promptEvalCount,
+      evalCount: chunk.evalCount,
+      finishReason: resolved,
+    );
   }
 
   static int _recordMalformedLine({

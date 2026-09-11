@@ -93,6 +93,8 @@ class VLLMStreamConverter {
           vllmTrace(traceId, 'stream.done', 'chunks=$traceChunks');
           final carryChunk = _flushCarry(thinkingSplitter, lastChunk);
           if (carryChunk != null) yield carryChunk;
+          final pendingCalls = _flushToolCalls(accumulatedToolCalls, lastChunk);
+          if (pendingCalls != null) yield pendingCalls;
           return;
         }
 
@@ -125,7 +127,28 @@ class VLLMStreamConverter {
           final hasThinking = choice?.delta.thinking != null;
           final rawToolCallDeltas = choice?.delta.toolCalls;
 
-          if (finishReason == 'tool_calls' && accumulatedToolCalls.isNotEmpty) {
+          // Classification and emission are separate questions. Whether the
+          // turn is a tool-call turn is a protocol rule shared by every
+          // backend ([LLMFinishReason.resolve]); whether the accumulated calls
+          // get flushed is a question of the turn having ended at all.
+          final reported = finishReason == null
+              ? null
+              : LLMFinishReason.fromProvider(finishReason);
+          // A terminal frame is the only in-band turn boundary. The guard is
+          // load-bearing: `accumulatedToolCalls` is non-empty from the first
+          // fragment, so without it every mid-stream event would read as an
+          // end of turn.
+          final turnEnded = finishReason != null;
+          final endsWithToolCalls =
+              turnEnded &&
+              accumulatedToolCalls.isNotEmpty &&
+              LLMFinishReason.resolve(
+                    reported: reported,
+                    hasCompleteToolCalls: true,
+                  ) ==
+                  LLMFinishReason.toolCalls;
+
+          if (endsWithToolCalls) {
             // Accumulation above already folded in any fragment this same
             // chunk carried, so this covers both terminal shapes vLLM emits:
             // a lone `{}` delta, and a final fragment fused with the finish
@@ -133,10 +156,18 @@ class VLLMStreamConverter {
             yield _toolCallChunk(chunk, accumulatedToolCalls);
             accumulatedToolCalls.clear();
             openToolCallAt.clear();
-          } else if (finishReason != null ||
+          } else if (turnEnded ||
               hasContent ||
               hasThinking ||
               chunk.usage != null) {
+            if (turnEnded) {
+              // The turn ended on a reason that forbids executing what was
+              // accumulated — `length` cut the arguments mid-JSON, a filter or
+              // refusal means the provider did not stand behind the call. Drop
+              // them here so the end-of-stream flush cannot resurrect them.
+              accumulatedToolCalls.clear();
+              openToolCallAt.clear();
+            }
             yield chunk;
           } else if (rawToolCallDeltas != null &&
               rawToolCallDeltas.isNotEmpty) {
@@ -171,6 +202,45 @@ class VLLMStreamConverter {
     // this point — nothing can complete the tag anymore.
     final carryChunk = _flushCarry(thinkingSplitter, lastChunk);
     if (carryChunk != null) yield carryChunk;
+    final pendingCalls = _flushToolCalls(accumulatedToolCalls, lastChunk);
+    if (pendingCalls != null) yield pendingCalls;
+  }
+
+  /// Emits calls that were complete when the stream ended without ever sending
+  /// a terminal frame, or `null` when there is nothing executable outstanding.
+  ///
+  /// Gating emission on the finish reason alone lost these: a proxy cutoff or
+  /// a server hiccup ends the stream with the calls fully accumulated and no
+  /// `finish_reason` to trigger the flush, and they were dropped in silence.
+  /// A terminal frame that forbids execution clears the accumulation itself,
+  /// so nothing rejected there can reappear here.
+  ///
+  /// Completeness is decided by parsing the arguments rather than by trusting
+  /// the accumulation. There is no provider signal at an abrupt end of stream:
+  /// the same state describes a finished call and one cut off mid-arguments,
+  /// and the payload is the only evidence of which it was. A call whose
+  /// arguments do not parse — including one that only ever received its name —
+  /// stays a fragment, exactly as a `length` truncation does.
+  static VLLMChunk? _flushToolCalls(
+    List<VLLMToolCall> accumulated,
+    VLLMChunk? lastChunk,
+  ) {
+    if (accumulated.isEmpty || lastChunk == null) return null;
+    final complete = accumulated.where(_hasParsableArguments).toList();
+    accumulated.clear();
+    if (complete.isEmpty) return null;
+    return _toolCallChunk(lastChunk, complete);
+  }
+
+  static bool _hasParsableArguments(VLLMToolCall call) {
+    final arguments = call.function.arguments;
+    if (arguments.isEmpty) return false;
+    try {
+      json.decode(arguments);
+      return true;
+    } catch (_) {
+      return false;
+    }
   }
 
   /// Builds the exception for an in-stream `error` event.

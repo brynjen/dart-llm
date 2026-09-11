@@ -5,6 +5,8 @@ import 'package:llm_claude/src/claude_message_converter.dart';
 import 'package:test/test.dart';
 
 void main() {
+  _emptyContentTests();
+
   group('ClaudeMessageConverter', () {
     test('extracts system message into system field', () {
       final messages = [
@@ -183,6 +185,74 @@ void main() {
       final imageBlock = content.firstWhere((b) => b['type'] == 'image');
       expect(imageBlock['source']['media_type'], 'image/webp');
       expect(imageBlock['source']['data'], fakeBase64);
+    });
+  });
+}
+
+void _emptyContentTests() {
+  /// Every text block the converter produced, flattened.
+  List<String> textsOf(Map<String, dynamic> message) =>
+      (message['content'] as List)
+          .cast<Map<String, dynamic>>()
+          .where((block) => block['type'] == 'text')
+          .map((block) => block['text'] as String)
+          .toList();
+
+  group('ClaudeMessageConverter empty content', () {
+    test('an empty message becomes a non-whitespace placeholder', () {
+      // Anthropic has no valid representation of an empty message: `''`, `[]`,
+      // an empty text block and a whitespace-only text block are all rejected
+      // ("text content blocks must contain non-whitespace text"), and so is an
+      // empty `messages` array. The converter has always substituted a
+      // placeholder; it just used a single space, which the API rejects for
+      // exactly that reason.
+      for (final role in [LLMRole.user, LLMRole.assistant]) {
+        final result = ClaudeMessageConverter.convert([
+          if (role == LLMRole.assistant)
+            LLMMessage(role: LLMRole.user, content: 'hi'),
+          LLMMessage(role: role, content: ''),
+        ]);
+        final texts = textsOf(result.messages.last);
+        expect(texts, isNotEmpty, reason: '$role must produce a text block');
+        for (final text in texts) {
+          expect(text, isNotEmpty, reason: '$role: minLength is 1');
+          expect(
+            text.trim(),
+            isNotEmpty,
+            reason: '$role: an all-whitespace block is rejected too',
+          );
+        }
+      }
+    });
+
+    test('real content is never replaced', () {
+      final result = ClaudeMessageConverter.convert([
+        LLMMessage(role: LLMRole.user, content: 'Hello'),
+      ]);
+      expect(textsOf(result.messages.single), ['Hello']);
+    });
+
+    test('an assistant turn carrying only tool calls needs no placeholder', () {
+      final result = ClaudeMessageConverter.convert([
+        LLMMessage(role: LLMRole.user, content: 'weather?'),
+        LLMMessage(
+          role: LLMRole.assistant,
+          content: null,
+          toolCalls: [
+            {
+              'id': 'toolu_1',
+              'type': 'function',
+              'function': {
+                'name': 'get_weather',
+                'arguments': '{"city":"Oslo"}',
+              },
+            },
+          ],
+        ),
+      ]);
+      final blocks = (result.messages.last['content'] as List)
+          .cast<Map<String, dynamic>>();
+      expect(blocks.single['type'], 'tool_use');
     });
   });
 }
