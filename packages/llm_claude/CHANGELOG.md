@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-09-17
+
+### Changed
+- A `max_tokens` turn now returns its tool calls. Input that doesn't decode is returned in `invalidToolCalls` instead of `toolCalls`.
+
 ## [0.5.0] - 2026-09-11
 
 ### Fixed

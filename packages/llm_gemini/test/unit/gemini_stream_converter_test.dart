@@ -266,6 +266,43 @@ void main() {
       expect(chunks.last.finishReason, LLMFinishReason.toolCalls);
     });
 
+    test('a call cut off at max_output_tokens surfaces as invalid', () async {
+      // Unterminated fragments used to be swallowed into `{}`, running the
+      // tool with arguments the model never finished writing.
+      final body =
+          _created() +
+          _sseLine({
+            'event_type': 'step.start',
+            'index': 0,
+            'step': {
+              'type': 'function_call',
+              'id': 'fc_1',
+              'name': 'get_weather',
+            },
+          }) +
+          _sseLine({
+            'event_type': 'step.delta',
+            'index': 0,
+            'delta': {'type': 'arguments_delta', 'arguments': '{"location":'},
+          }) +
+          _completed(status: 'incomplete');
+
+      final chunks = await GeminiStreamConverter.toLLMStream(
+        _makeResponse(body),
+        model: 'gemini-3.5-flash-lite',
+      ).toList();
+
+      expect(chunks.last.finishReason, LLMFinishReason.length);
+      for (final chunk in chunks) {
+        expect(chunk.message?.toolCalls, anyOf(isNull, isEmpty));
+      }
+      final invalid = chunks
+          .expand((c) => c.message?.invalidToolCalls ?? const [])
+          .single;
+      expect(invalid.name, 'get_weather');
+      expect(invalid.arguments, '{"location":');
+    });
+
     test('maps completed status to a stop finish reason', () async {
       final body = _created() + _textDelta('Hi') + _completed();
 

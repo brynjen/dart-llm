@@ -54,7 +54,8 @@ class GPTChunk extends LLMChunk {
                      : choices[0].finishReason != null ||
                            choices[0].delta.content != null ||
                            choices[0].delta.thinking != null ||
-                           choices[0].delta.toolCalls != null
+                           choices[0].delta.toolCalls != null ||
+                           choices[0].delta.invalidToolCalls != null
                      ? LLMRole.assistant
                      : null,
                  toolCalls: choices[0].delta.toolCalls
@@ -67,6 +68,7 @@ class GPTChunk extends LLMChunk {
                        ),
                      )
                      .toList(growable: false),
+                 invalidToolCalls: choices[0].delta.invalidToolCalls,
                  toolCallDeltas:
                      choices[0].delta.toolCallDeltas?.toLLMToolCallDeltas,
                ),
@@ -178,6 +180,7 @@ class GPTChunkChoiceDelta {
     required this.toolCalls,
     this.thinking,
     this.toolCallDeltas,
+    this.invalidToolCalls,
   });
 
   final String? role;
@@ -190,6 +193,10 @@ class GPTChunkChoiceDelta {
   /// fragments on [toolCalls] exactly as before, and the converter decides
   /// which of them represent progress rather than a finished call.
   final List<GPTToolCall>? toolCallDeltas;
+
+  /// Calls whose arguments do not decode, set only by the stream converter at
+  /// a turn boundary. See [LLMInvalidToolCall].
+  final List<LLMInvalidToolCall>? invalidToolCalls;
 
   /// Reasoning delta from OpenAI-compatible servers.
   ///

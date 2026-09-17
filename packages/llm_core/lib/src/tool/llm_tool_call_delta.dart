@@ -7,8 +7,9 @@
 ///
 /// A delta is **never executable**. Its [argumentsDelta] is one fragment of a
 /// JSON document that only parses once every fragment has been concatenated —
-/// the complete, runnable call still arrives on `LLMChunkMessage.toolCalls`
-/// when the backend signals the call is finished.
+/// the finished call arrives on `LLMChunkMessage.toolCalls` when the backend
+/// signals the call is finished, or on `LLMChunkMessage.invalidToolCalls` when
+/// its arguments do not decode.
 class LLMToolCallDelta {
   /// Creates a fragment of a streamed tool call.
   const LLMToolCallDelta({

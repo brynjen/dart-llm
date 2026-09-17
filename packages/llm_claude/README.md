@@ -15,12 +15,13 @@ Available on [pub.dev](https://pub.dev/packages/llm_claude).
 - Structured output (`JsonSchemaFormat` via native `output_config.format`; `JsonFormat` via system-message injection)
 - Builder pattern for fluent configuration
 - Configurable retry and timeout policies
+- `extraHeaders`, e.g. to enable `anthropic-beta` features
 
 ## Installation
 
 ```yaml
 dependencies:
-  llm_claude: ^0.3.2
+  llm_claude: ^0.6.0
 ```
 
 ## Prerequisites
@@ -86,6 +87,28 @@ final stream = repo.streamChat(
   'claude-haiku-4-5-20251001',
   messages: [LLMMessage(role: LLMRole.user, content: 'What is the weather in Oslo?')],
   tools: [WeatherTool()],
+);
+```
+
+Tools run automatically; pass `LLMChatOptions(autoExecuteTools: false)` to
+handle `chunk.message?.toolCalls` yourself. Claude names the tool in
+`content_block_start`, so `chunk.message?.toolCallDeltas` reports it before any
+argument arrives.
+
+A turn cut off by `max_tokens` finishes as `LLMFinishReason.length` and still
+returns its tool blocks: those whose input decodes on `toolCalls`, the cut one on
+`chunk.message?.invalidToolCalls` with its raw input and the parse error. The
+same applies to unvalidated partial JSON from the fine-grained tool streaming
+beta. Invalid calls are never executed; the tool loop answers them with a tool
+error. A `refusal` turn returns no calls.
+
+`extraHeaders` makes beta features reachable:
+
+```dart
+final repo = ClaudeChatRepository(
+  apiKey: 'your-api-key',
+  // Protocol headers, `x-api-key` and `anthropic-version` always take precedence.
+  extraHeaders: {'anthropic-beta': 'fine-grained-tool-streaming-2025-05-14'},
 );
 ```
 

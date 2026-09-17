@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import 'package:llm_core/src/tool/llm_invalid_tool_call.dart';
+
 /// Represents a tool call made by an LLM.
 class LLMToolCall {
   /// Creates a typed tool call.
@@ -62,6 +64,52 @@ class LLMToolCall {
     if (decoded is Map<String, dynamic>) return decoded;
     if (decoded is Map) return Map<String, dynamic>.from(decoded);
     throw const FormatException('Tool call arguments must decode to an object');
+  }
+
+  /// Why [arguments] cannot be decoded, or `null` when [argumentsJson] would
+  /// succeed.
+  ///
+  /// [requireArguments] treats empty arguments as incomplete rather than as a
+  /// call with no arguments. That is the right reading only where no provider
+  /// signal says the call finished — a stream that stopped abruptly after a
+  /// name-only fragment. At a terminal frame an empty payload is a genuine
+  /// no-argument call and decodes to `{}`.
+  String? argumentsError({bool requireArguments = false}) {
+    if (requireArguments && arguments.trim().isEmpty) {
+      return 'Tool call arguments are empty';
+    }
+    try {
+      argumentsJson;
+      return null;
+    } on FormatException catch (e) {
+      return e.message;
+    }
+  }
+
+  /// Splits [calls] into those whose arguments decode and those that do not.
+  ///
+  /// Order is preserved within each list. See [argumentsError] for
+  /// [requireArguments].
+  static ({List<LLMToolCall> valid, List<LLMInvalidToolCall> invalid})
+  partition(Iterable<LLMToolCall> calls, {bool requireArguments = false}) {
+    final valid = <LLMToolCall>[];
+    final invalid = <LLMInvalidToolCall>[];
+    for (final call in calls) {
+      final error = call.argumentsError(requireArguments: requireArguments);
+      if (error == null) {
+        valid.add(call);
+      } else {
+        invalid.add(
+          LLMInvalidToolCall(
+            id: call.id,
+            name: call.name,
+            arguments: call.arguments,
+            error: error,
+          ),
+        );
+      }
+    }
+    return (valid: valid, invalid: invalid);
   }
 
   @override

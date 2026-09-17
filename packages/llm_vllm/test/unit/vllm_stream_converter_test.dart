@@ -238,8 +238,8 @@ void main() {
 
     test('a call cut off by length stays a truncation', () async {
       // The opposite case, and it must not be normalised: arguments cut
-      // mid-JSON are not executable, so the caller has to see the truncation
-      // and retry rather than receive a malformed call.
+      // mid-JSON are not executable, so the caller sees the truncation and the
+      // call as invalid rather than receiving a malformed executable call.
       final response = http.StreamedResponse(
         Stream.value(
           utf8.encode(
@@ -284,6 +284,7 @@ void main() {
 
       final parsed = await VLLMStreamConverter.toLLMStream(response).toList();
       expect(parsed.last.message?.toolCalls, isNull);
+      expect(parsed.last.message?.invalidToolCalls?.single.name, 'calculator');
       expect(parsed.last.finishReason, LLMFinishReason.length);
     });
 
@@ -497,9 +498,16 @@ void main() {
         );
 
         final parsed = await VLLMStreamConverter.toLLMStream(response).toList();
-        final delta = parsed.single.message!.toolCallDeltas!.single;
+        final delta = parsed.first.message!.toolCallDeltas!.single;
         expect(delta.name, 'get_weather');
         expect(delta.argumentsDelta, isNull, reason: 'function was $function');
+        // The stream then ends abruptly with only the name received: the call
+        // is surfaced as invalid, never as executable.
+        expect(parsed.last.message?.toolCalls, isNull);
+        expect(
+          parsed.last.message?.invalidToolCalls?.single.name,
+          'get_weather',
+        );
       }
     });
 
@@ -956,6 +964,7 @@ Map<String, dynamic> _callFrame({
   String? name,
   String? id,
   String? finish,
+  int index = 0,
 }) => {
   'id': 'chatcmpl-test',
   'created': 1700000000,
@@ -967,7 +976,7 @@ Map<String, dynamic> _callFrame({
         'tool_calls': [
           {
             'id': ?id,
-            'index': 0,
+            'index': index,
             'type': 'function',
             'function': {'name': ?name, 'arguments': arguments},
           },
@@ -1020,35 +1029,41 @@ void _turnEndEmissionTests() {
       expect(calls.single.arguments, '{"expression":"2+2"}');
     });
 
-    test('a call cut off mid-arguments is not flushed at stream end', () async {
-      // The counterpart to the test above: same absence of a terminal frame,
-      // but the arguments never closed. There is no provider signal either
-      // way at an abrupt end of stream, so the payload decides — and this one
-      // is not executable.
-      final response = http.StreamedResponse(
-        Stream.value(
-          utf8.encode(
-            _sseUnterminated([
-              _callFrame(
-                id: 'call_1',
-                name: 'calculator',
-                arguments: '{"expression"',
-              ),
-            ]),
+    test(
+      'a call cut off mid-arguments is surfaced as invalid at stream end',
+      () async {
+        // The counterpart to the test above: same absence of a terminal frame,
+        // but the arguments never closed. There is no provider signal either
+        // way at an abrupt end of stream, so the payload decides — and this one
+        // is not executable, but it is not dropped either.
+        final response = http.StreamedResponse(
+          Stream.value(
+            utf8.encode(
+              _sseUnterminated([
+                _callFrame(
+                  id: 'call_1',
+                  name: 'calculator',
+                  arguments: '{"expression"',
+                ),
+              ]),
+            ),
           ),
-        ),
-        200,
-      );
-
-      final parsed = await VLLMStreamConverter.toLLMStream(response).toList();
-      for (final chunk in parsed) {
-        expect(
-          chunk.message?.toolCalls,
-          anyOf(isNull, isEmpty),
-          reason: 'truncated JSON must stay a fragment',
+          200,
         );
-      }
-    });
+
+        final parsed = await VLLMStreamConverter.toLLMStream(response).toList();
+        for (final chunk in parsed) {
+          expect(
+            chunk.message?.toolCalls,
+            anyOf(isNull, isEmpty),
+            reason: 'truncated JSON must never be executable',
+          );
+        }
+        final invalid = parsed.last.message!.invalidToolCalls!.single;
+        expect(invalid.name, 'calculator');
+        expect(invalid.arguments, '{"expression"');
+      },
+    );
 
     test('an unrecognized finish spelling still yields the call', () async {
       // The rule is the presence of complete calls, not a known string. A
@@ -1108,10 +1123,189 @@ void _turnEndEmissionTests() {
       }
     });
 
+    test('a tool_calls finish with unterminated arguments is restored to '
+        'length', () async {
+      // vLLM overwrites `length` with `tool_calls` once any tool-call delta
+      // went out (vllm-project/vllm#53269). The payload proves the cut.
+      final response = http.StreamedResponse(
+        Stream.value(
+          utf8.encode(
+            _sse([
+              _callFrame(
+                id: 'call_1',
+                name: 'write_file',
+                arguments: '{"path":"/app/x.py","content":"def f(',
+              ),
+              _finishFrame('tool_calls'),
+            ]),
+          ),
+        ),
+        200,
+      );
+
+      final parsed = await VLLMStreamConverter.toLLMStream(response).toList();
+      expect(parsed.last.finishReason, LLMFinishReason.length);
+      for (final chunk in parsed) {
+        expect(chunk.message?.toolCalls, anyOf(isNull, isEmpty));
+      }
+      final invalid = parsed.last.message!.invalidToolCalls!.single;
+      expect(invalid.id, 'call_1');
+      expect(invalid.name, 'write_file');
+      expect(invalid.arguments, '{"path":"/app/x.py","content":"def f(');
+      expect(invalid.error, isNotEmpty);
+    });
+
+    test('a tool_calls finish with complete arguments is unchanged', () async {
+      final response = http.StreamedResponse(
+        Stream.value(
+          utf8.encode(
+            _sse([
+              _callFrame(
+                id: 'call_1',
+                name: 'calculator',
+                arguments: '{"expression":"2+2"}',
+              ),
+              _finishFrame('tool_calls'),
+            ]),
+          ),
+        ),
+        200,
+      );
+
+      final parsed = await VLLMStreamConverter.toLLMStream(response).toList();
+      expect(parsed.last.finishReason, LLMFinishReason.toolCalls);
+      expect(parsed.last.message!.toolCalls!.single.name, 'calculator');
+      expect(parsed.last.message!.invalidToolCalls, isNull);
+    });
+
     test(
-      'a truncated call is not resurrected at the end of the stream',
+      'a cut second call restores length and keeps the first call',
       () async {
-        // The `length` frame drops the accumulation; nothing may hand it back.
+        final response = http.StreamedResponse(
+          Stream.value(
+            utf8.encode(
+              _sse([
+                _callFrame(
+                  id: 'call_1',
+                  name: 'calculator',
+                  arguments: '{"expression":"2+2"}',
+                ),
+                _callFrame(
+                  id: 'call_2',
+                  name: 'write_file',
+                  arguments: '{"path":"/app/x.py","content":"def',
+                  index: 1,
+                ),
+                _finishFrame('tool_calls'),
+              ]),
+            ),
+          ),
+          200,
+        );
+
+        final parsed = await VLLMStreamConverter.toLLMStream(response).toList();
+        expect(parsed.last.finishReason, LLMFinishReason.length);
+        expect(parsed.last.message!.toolCalls!.single.id, 'call_1');
+        expect(parsed.last.message!.invalidToolCalls!.single.id, 'call_2');
+      },
+    );
+
+    test('a final fragment fused with a tool_calls finish, still unterminated, '
+        'restores length', () async {
+      final response = http.StreamedResponse(
+        Stream.value(
+          utf8.encode(
+            _sse([
+              _callFrame(
+                id: 'call_1',
+                name: 'write_file',
+                arguments: '{"path":"/app/x.py",',
+              ),
+              _callFrame(arguments: '"content":"def f(', finish: 'tool_calls'),
+            ]),
+          ),
+        ),
+        200,
+      );
+
+      final parsed = await VLLMStreamConverter.toLLMStream(response).toList();
+      expect(parsed.last.finishReason, LLMFinishReason.length);
+      for (final chunk in parsed) {
+        expect(chunk.message?.toolCalls, anyOf(isNull, isEmpty));
+      }
+      expect(
+        parsed.last.message!.invalidToolCalls!.single.arguments,
+        '{"path":"/app/x.py","content":"def f(',
+      );
+    });
+
+    test('bad JSON before a complete last call is not a truncation', () async {
+      // Only the last call can be cut by the token limit. An earlier call that
+      // does not decode is the model writing bad JSON.
+      final response = http.StreamedResponse(
+        Stream.value(
+          utf8.encode(
+            _sse([
+              _callFrame(
+                id: 'call_1',
+                name: 'calculator',
+                arguments: '{"expression":}',
+              ),
+              _callFrame(
+                id: 'call_2',
+                name: 'calculator',
+                arguments: '{"expression":"2+2"}',
+                index: 1,
+              ),
+              _finishFrame('tool_calls'),
+            ]),
+          ),
+        ),
+        200,
+      );
+
+      final parsed = await VLLMStreamConverter.toLLMStream(response).toList();
+      expect(parsed.last.finishReason, LLMFinishReason.toolCalls);
+      expect(parsed.last.message!.toolCalls!.single.id, 'call_2');
+      expect(parsed.last.message!.invalidToolCalls!.single.id, 'call_1');
+    });
+
+    test('a length finish surfaces both complete and cut calls', () async {
+      // The spec-correct shape, as OpenAI itself sends it: the reason stays a
+      // truncation and the calls come back split, not dropped.
+      final response = http.StreamedResponse(
+        Stream.value(
+          utf8.encode(
+            _sse([
+              _callFrame(
+                id: 'call_1',
+                name: 'calculator',
+                arguments: '{"expression":"2+2"}',
+              ),
+              _callFrame(
+                id: 'call_2',
+                name: 'calculator',
+                arguments: '{"expression"',
+                index: 1,
+              ),
+              _finishFrame('length'),
+            ]),
+          ),
+        ),
+        200,
+      );
+
+      final parsed = await VLLMStreamConverter.toLLMStream(response).toList();
+      expect(parsed.last.finishReason, LLMFinishReason.length);
+      expect(parsed.last.message!.toolCalls!.single.id, 'call_1');
+      expect(parsed.last.message!.invalidToolCalls!.single.id, 'call_2');
+    });
+
+    test(
+      'a truncated call is surfaced once, and never as executable',
+      () async {
+        // The `length` frame surfaces the call as invalid and clears the
+        // accumulation; the end-of-stream flush must not hand it back again.
         final response = http.StreamedResponse(
           Stream.value(
             utf8.encode(
@@ -1133,6 +1327,10 @@ void _turnEndEmissionTests() {
         for (final chunk in parsed) {
           expect(chunk.message?.toolCalls, anyOf(isNull, isEmpty));
         }
+        expect(
+          parsed.where((c) => c.message?.invalidToolCalls != null),
+          hasLength(1),
+        );
       },
     );
   });

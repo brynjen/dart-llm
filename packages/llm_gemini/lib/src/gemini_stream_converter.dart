@@ -236,6 +236,16 @@ class GeminiStreamConverter {
               return best;
             }
 
+            // Split by whether the arguments decode: an interaction cut
+            // short at `max_output_tokens` can end mid-JSON, and such a call
+            // is surfaced as invalid rather than run.
+            final split = LLMToolCall.partition([
+              for (final entry in functionCalls.entries)
+                entry.value.toToolCall(
+                  entry.key,
+                  signature: signatureFor(entry.key),
+                ),
+            ]);
             yield GeminiChunk(
               model: resolvedModel,
               done: false,
@@ -244,13 +254,8 @@ class GeminiStreamConverter {
               message: LLMChunkMessage(
                 content: null,
                 role: LLMRole.assistant,
-                toolCalls: [
-                  for (final entry in functionCalls.entries)
-                    entry.value.toToolCall(
-                      entry.key,
-                      signature: signatureFor(entry.key),
-                    ),
-                ],
+                toolCalls: split.valid.isEmpty ? null : split.valid,
+                invalidToolCalls: split.invalid.isEmpty ? null : split.invalid,
               ),
             );
           }
@@ -306,7 +311,8 @@ class GeminiStreamConverter {
   /// [LLMFinishReason.resolve]. Routing through it rather than returning
   /// `toolCalls` outright also fixes the truncation case: an interaction cut
   /// short at `max_output_tokens` has arguments that may stop mid-JSON, and it
-  /// now stays [LLMFinishReason.length] instead of claiming an executable call.
+  /// stays [LLMFinishReason.length]; its calls are surfaced split into valid
+  /// and invalid rather than claimed executable.
   ///
   /// The `status` spellings are normalized first, since they are Gemini's own
   /// vocabulary rather than anything [LLMFinishReason.fromProvider] knows.
@@ -346,29 +352,23 @@ class _GeminiFunctionCallStep {
   /// Concatenated `arguments_delta` fragments.
   final StringBuffer arguments = StringBuffer();
 
+  /// Builds the call with the concatenated fragments verbatim.
+  ///
+  /// Fragments that do not decode are kept as they are rather than replaced by
+  /// `step.start`'s arguments or `{}`: that ran the tool with arguments the
+  /// model never finished writing. The caller splits such a call out as
+  /// invalid.
   LLMToolCall toToolCall(int index, {String? signature}) {
     final raw = arguments.toString();
-    Map<String, dynamic> args = initialArguments ?? const <String, dynamic>{};
-    if (raw.isNotEmpty) {
-      try {
-        final decoded = json.decode(raw);
-        if (decoded is Map<String, dynamic>) {
-          args = decoded;
-        } else if (decoded is Map) {
-          args = Map<String, dynamic>.from(decoded);
-        }
-      } catch (_) {
-        // Keep whatever `step.start` provided when the fragments do not form
-        // valid JSON.
-      }
-    }
     final callId = (id != null && id!.isNotEmpty) ? id! : 'gemini_call_$index';
     return LLMToolCall(
       id: signature == null || signature.isEmpty
           ? callId
           : '$callId${GeminiMessageConverter.signatureSeparator}$signature',
       name: name,
-      arguments: json.encode(args),
+      arguments: raw.isNotEmpty
+          ? raw
+          : json.encode(initialArguments ?? const <String, dynamic>{}),
     );
   }
 }

@@ -167,22 +167,22 @@ Add the package(s) you need to your `pubspec.yaml`:
 ```yaml
 dependencies:
   # For Ollama backend
-  llm_ollama: ^0.3.2
+  llm_ollama: ^0.6.0
 
   # For vLLM OpenAI-compatible servers
-  llm_vllm: ^0.3.2
+  llm_vllm: ^0.6.0
 
   # For ChatGPT/OpenAI backend
-  llm_chatgpt: ^0.3.2
+  llm_chatgpt: ^0.6.0
 
   # For Anthropic Claude backend
-  llm_claude: ^0.3.2
+  llm_claude: ^0.6.0
 
   # For Google Gemini backend
-  llm_gemini: ^0.3.2
+  llm_gemini: ^0.6.0
 
   # For local llama.cpp inference
-  llm_llamacpp: ^0.3.2
+  llm_llamacpp: ^0.6.0
 ```
 
 Each backend depends on `llm_core`, so you only need it directly when writing
@@ -190,7 +190,7 @@ your own backend or programming against the abstractions:
 
 ```yaml
 dependencies:
-  llm_core: ^0.3.2
+  llm_core: ^0.6.0
 ```
 
 ## Package Details
@@ -203,6 +203,7 @@ Core abstractions shared by all backends:
 - `LLMMessage`, `LLMMessageContent`, `LLMRole` - Typed message content and role types
 - `LLMChunk`, `LLMChunkMessage` - Streaming chunk types
 - `LLMTool`, `LLMToolParam`, `LLMToolCall` - Tool/function calling types
+- `LLMToolCallDelta`, `LLMInvalidToolCall` - Tool calls still streaming, and finished calls whose arguments don't decode
 - `LLMEmbedding` - Embedding types
 - `LLMResponse`, `LLMUsage`, `LLMFinishReason` - Response metadata, usage, and finish details
 - `LLMResponseFormat` - Structured output: `JsonFormat`, `JsonSchemaFormat`
@@ -334,6 +335,19 @@ final stream = repo.streamChat('model',
   tools: [CalculatorTool()],
 );
 ```
+
+By default the repository runs the tool loop for you: it executes each call,
+streams the result as a `role: tool` chunk, and continues the conversation. Pass
+`LLMChatOptions(autoExecuteTools: false)` to receive the calls on
+`chunk.message?.toolCalls` and run them yourself.
+
+A call whose arguments are not valid JSON is never executed. It arrives on
+`chunk.message?.invalidToolCalls` (and `LLMResponse.invalidToolCalls`) with the
+raw text and the parse error, the same way LangChain and the Vercel AI SDK
+surface them. The usual cause is a turn cut off by the output token limit, in
+which case the finish reason is `LLMFinishReason.length`. The tool loop answers
+an invalid call with a tool error, so the model can try again. See
+[docs/TOOL_RESPONSE_CHAT_LOOP.md](docs/TOOL_RESPONSE_CHAT_LOOP.md).
 
 ## Structured Output
 
@@ -510,8 +524,13 @@ import 'package:llm_core/llm_core.dart';
 
 final metrics = DefaultLLMMetrics();
 
-// Metrics are automatically recorded by repositories that support them
-// Access metrics:
+final repo = OllamaChatRepository.builder()
+  .metrics(metrics)
+  .build();
+
+// ... make requests; each one is recorded unless the request passes
+// LLMChatOptions(recordMetrics: false).
+
 final stats = metrics.getMetrics();
 // Keys are prefixed with the model id the request was made against:
 print('Total requests: ${stats['qwen3:0.6b.total_requests']}');

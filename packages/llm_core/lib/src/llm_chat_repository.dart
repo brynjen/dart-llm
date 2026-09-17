@@ -5,6 +5,7 @@ import 'package:llm_core/src/exceptions.dart';
 import 'package:llm_core/src/llm_message.dart';
 import 'package:llm_core/src/llm_response.dart';
 import 'package:llm_core/src/stream_chat_options.dart';
+import 'package:llm_core/src/tool/llm_invalid_tool_call.dart';
 import 'package:llm_core/src/tool/llm_tool.dart';
 import 'package:llm_core/src/tool/llm_tool_call.dart';
 import 'package:llm_core/src/validation.dart';
@@ -40,13 +41,19 @@ abstract class LLMChatRepository {
   /// - `message.content` - Partial text content (accumulate to get full response)
   /// - `message.thinking` - Thinking/reasoning content (if `think: true`)
   /// - `message.toolCalls` - Tool calls requested by the model
+  /// - `message.invalidToolCalls` - Finished tool calls whose arguments do not
+  ///   decode (never executed; usually a turn cut off at the token limit)
+  /// - `message.toolCallDeltas` - Fragments of tool calls still streaming
+  /// - `finishReason` - Why the turn ended (on the final chunk)
   /// - `done` - Whether this is the final chunk
   /// - `promptEvalCount` - Number of tokens in the prompt (only on final chunk)
   /// - `evalCount` - Number of tokens generated (only on final chunk)
   ///
   /// **Tool Calling:**
-  /// When tools are provided and the model requests them, the method automatically:
-  /// 1. Executes the requested tools
+  /// When tools are provided and the model requests them, the method automatically
+  /// (unless `LLMChatOptions.autoExecuteTools` is false):
+  /// 1. Executes the requested tools; each invalid call is answered with a tool
+  ///    error instead of being run
   /// 2. Adds tool results to the conversation
   /// 3. Continues the conversation with the tool results
   /// 4. Repeats until a final response (no more tool calls) is received
@@ -114,6 +121,8 @@ abstract class LLMChatRepository {
   /// A [Future<LLMResponse>] containing:
   /// - `content` - The complete text response (after all tool calls are executed)
   /// - `toolCalls` - Any final tool calls (if the response ended with tool calls)
+  /// - `invalidToolCalls` - Final tool calls whose arguments do not decode
+  /// - `finishReason` - Why the response ended
   /// - `promptEvalCount` - Number of tokens in the prompt
   /// - `evalCount` - Number of tokens generated
   /// - `doneReason` - Reason the response ended (e.g., 'stop', 'length', 'tool_calls')
@@ -163,6 +172,7 @@ abstract class LLMChatRepository {
     String? content;
     String? thinking;
     List<LLMToolCall>? finalToolCalls;
+    List<LLMInvalidToolCall>? finalInvalidToolCalls;
     int? promptEvalCount;
     int? evalCount;
     String? doneReason;
@@ -180,6 +190,7 @@ abstract class LLMChatRepository {
     // emit them ahead of their own terminal chunk — so keying off `done`
     // alone lost them entirely for those three.
     final pendingToolCalls = <LLMToolCall>[];
+    final pendingInvalidToolCalls = <LLMInvalidToolCall>[];
     var turnClosed = false;
 
     await for (final chunk in streamChat(
@@ -222,7 +233,9 @@ abstract class LLMChatRepository {
         // above keys off the same signal.
         if (chunk.message!.role == LLMRole.tool) {
           pendingToolCalls.clear();
+          pendingInvalidToolCalls.clear();
           finalToolCalls = null;
+          finalInvalidToolCalls = null;
           turnClosed = false;
         }
 
@@ -236,6 +249,7 @@ abstract class LLMChatRepository {
             (message.content != null ||
                 message.thinking != null ||
                 message.toolCalls != null ||
+                message.invalidToolCalls != null ||
                 message.toolCallDeltas != null);
         if (turnClosed && carriesAssistantPayload) {
           // `finalToolCalls` goes too: the promoted calls belonged to the turn
@@ -243,18 +257,25 @@ abstract class LLMChatRepository {
           // response instead. Backends running their own tool loop (llama.cpp)
           // emit no tool-role chunk, so this is the only boundary signal.
           pendingToolCalls.clear();
+          pendingInvalidToolCalls.clear();
           finalToolCalls = null;
+          finalInvalidToolCalls = null;
           turnClosed = false;
         }
 
         if (message.toolCalls?.isNotEmpty ?? false) {
           pendingToolCalls.addAll(message.toolCalls!);
         }
+        if (message.invalidToolCalls?.isNotEmpty ?? false) {
+          pendingInvalidToolCalls.addAll(message.invalidToolCalls!);
+        }
 
         if ((chunk.done ?? false) &&
             chunk.message!.role == LLMRole.assistant &&
             (chunk.message!.toolCalls == null ||
-                chunk.message!.toolCalls!.isEmpty)) {
+                chunk.message!.toolCalls!.isEmpty) &&
+            (chunk.message!.invalidToolCalls == null ||
+                chunk.message!.invalidToolCalls!.isEmpty)) {
           sawFinalAssistantAnswer = true;
         }
       }
@@ -266,6 +287,11 @@ abstract class LLMChatRepository {
         // cannot erase the calls the turn actually carried.
         if (pendingToolCalls.isNotEmpty) {
           finalToolCalls = List<LLMToolCall>.unmodifiable(pendingToolCalls);
+        }
+        if (pendingInvalidToolCalls.isNotEmpty) {
+          finalInvalidToolCalls = List<LLMInvalidToolCall>.unmodifiable(
+            pendingInvalidToolCalls,
+          );
         }
         // A turn can end with more than one `done` chunk — several backends
         // report the finish reason first and token counts in a trailing
@@ -316,6 +342,7 @@ abstract class LLMChatRepository {
       finishReason: resolvedFinishReason,
       providerMetadata: providerMetadata,
       toolCalls: finalToolCalls,
+      invalidToolCalls: finalInvalidToolCalls,
     );
   }
 

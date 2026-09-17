@@ -51,10 +51,12 @@ class VLLMChunk extends LLMChunk {
                      : choices[0].finishReason != null ||
                            choices[0].delta.content != null ||
                            choices[0].delta.thinking != null ||
-                           choices[0].delta.toolCalls != null
+                           choices[0].delta.toolCalls != null ||
+                           choices[0].delta.invalidToolCalls != null
                      ? LLMRole.assistant
                      : null,
                  toolCalls: choices[0].delta.toolCalls?.toLLMToolCalls,
+                 invalidToolCalls: choices[0].delta.invalidToolCalls,
                  toolCallDeltas:
                      choices[0].delta.toolCallDeltas?.toLLMToolCallDeltas,
                ),
@@ -125,6 +127,7 @@ class VLLMChunkChoiceDelta {
     required this.thinking,
     required this.toolCalls,
     this.toolCallDeltas,
+    this.invalidToolCalls,
   });
 
   final String? role;
@@ -138,6 +141,10 @@ class VLLMChunkChoiceDelta {
   /// fragments on [toolCalls] exactly as before, and the converter decides
   /// which of them represent progress rather than a finished call.
   final List<VLLMToolCall>? toolCallDeltas;
+
+  /// Calls whose arguments do not decode, set only by the stream converter at
+  /// a turn boundary. See [LLMInvalidToolCall].
+  final List<LLMInvalidToolCall>? invalidToolCalls;
 
   factory VLLMChunkChoiceDelta.fromJson(Map<String, dynamic> json) =>
       VLLMChunkChoiceDelta(

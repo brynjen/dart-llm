@@ -27,14 +27,14 @@ Most users should depend on a backend implementation (it re-exports `llm_core` t
 
 ```yaml
 dependencies:
-  llm_ollama: ^0.3.2
+  llm_ollama: ^0.6.0
 ```
 
 If you're implementing your own backend, depend on `llm_core` directly:
 
 ```yaml
 dependencies:
-  llm_core: ^0.3.2
+  llm_core: ^0.6.0
 ```
 
 ## Core Types
@@ -61,15 +61,16 @@ final multimodal = LLMMessage(
 
 ### Repository Interface
 
-Only `streamChat` is abstract. `capabilitiesForModel`, `chatResponse`,
-`embed` and `batchEmbed` ship with working defaults — `chatResponse` collects
-`streamChat` and drives the tool loop, `batchEmbed` falls back to `embed` — so a
-new backend can start by implementing `streamChat` alone and override the rest
-where the provider offers something better.
+`streamChat` and `embed` are abstract. `capabilitiesForModel`, `chatResponse`
+and `batchEmbed` ship with working defaults — `chatResponse` collects
+`streamChat` (which runs the tool loop) into one `LLMResponse`, `batchEmbed`
+falls back to `embed` — so a new backend implements `streamChat` and `embed`
+(throwing `UnsupportedError` when the provider has no embeddings) and overrides
+the rest where the provider offers something better.
 
 ```dart
 abstract class LLMChatRepository {
-  // Abstract: the one member a backend must implement.
+  // Abstract: every backend implements this and embed.
   Stream<LLMChunk> streamChat(
     String model, {
     required List<LLMMessage> messages,
@@ -129,6 +130,40 @@ class MyTool extends LLMTool {
   @override
   Future<String> execute(Map<String, dynamic> args, {dynamic extra}) async {
     return 'Result: ${args['input']}';
+  }
+}
+```
+
+### Tool calls in the stream
+
+A chunk can carry three kinds of tool-call data:
+
+- `message.toolCallDeltas` — fragments of a call still streaming. The first one
+  names the tool, so a UI can show it early. Never executable.
+- `message.toolCalls` — finished calls whose arguments decode to a JSON object.
+- `message.invalidToolCalls` — finished calls whose arguments do not decode
+  (`LLMInvalidToolCall`: `name`, raw `arguments`, `id`, `error`). Never executed.
+  Usually the turn hit the output token limit, and `finishReason` is
+  `LLMFinishReason.length`. This follows LangChain's `invalid_tool_calls` and the
+  Vercel AI SDK.
+
+`LLMResponse` carries the final turn's `toolCalls` and `invalidToolCalls`. With
+tools and `autoExecuteTools` on (the default), valid calls run automatically and
+each invalid one is answered with a tool error so the model can retry. Backend
+authors split accumulated calls with `LLMToolCall.partition` and classify the
+turn with `LLMFinishReason.resolve`; see `docs/TOOL_RESPONSE_CHAT_LOOP.md` in
+the repository.
+
+```dart
+await for (final chunk in repo.streamChat(model,
+    messages: messages,
+    tools: [MyTool()],
+    options: const LLMChatOptions(autoExecuteTools: false))) {
+  for (final call in chunk.message?.toolCalls ?? const <LLMToolCall>[]) {
+    print('run ${call.name} with ${call.argumentsJson}');
+  }
+  for (final bad in chunk.message?.invalidToolCalls ?? const <LLMInvalidToolCall>[]) {
+    print('${bad.name} not run: ${bad.error}');
   }
 }
 ```
@@ -276,7 +311,8 @@ Optional metrics collection for monitoring LLM operations:
 // Use default implementation
 final metrics = DefaultLLMMetrics();
 
-// Metrics are automatically recorded by repositories
+// Recorded by any repository built with it, e.g.
+// OllamaChatRepository.builder().metrics(metrics).build().
 // Access collected metrics:
 final stats = metrics.getMetrics();
 // Every key is prefixed with the model id the request was made against:
@@ -329,7 +365,7 @@ the specific type you care about.
 - `ThinkingNotSupportedException` - Model doesn't support thinking
 - `ToolsNotSupportedException` - Model doesn't support tools
 - `VisionNotSupportedException` - Model doesn't support vision
-- `ToolLoopIncompleteException` - `chatResponse` hit `maxToolAttempts` without a final answer
+- `ToolLoopIncompleteException` - The tool loop ended without a final answer (attempts exhausted or stream cut off)
 - `LLMApiException` - API request failed (carries `statusCode`)
 - `ModelLoadException` - Model loading failed
 
@@ -391,8 +427,8 @@ All optional, all wired through any backend's builder or constructor:
 - `LLMMetrics` / `DefaultLLMMetrics` — request counts, latency percentiles, tokens
 - `LLMLogger` / `DefaultLLMLogger` — logging through `package:logging`; emits
   nothing until you subscribe to the `logging` stream
-- `StreamToolExecutor` — the tool-execution loop `chatResponse` uses; call it
-  directly if you drive the loop yourself
+- `StreamToolExecutor` — the tool-execution loop every HTTP backend's
+  `streamChat` uses; call it directly if you drive the loop yourself
 - `ChatRepositoryBuilderBase` — the shared builder surface every backend
   inherits: `.maxToolAttempts()` (default 90), `.retryConfig()`,
   `.timeoutConfig()`, `.rateLimiter()`, `.responseCache()`, `.metrics()`,

@@ -1,5 +1,6 @@
 import 'package:llm_core/src/llm_message.dart';
 import 'package:llm_core/src/llm_response.dart';
+import 'package:llm_core/src/tool/llm_invalid_tool_call.dart';
 import 'package:llm_core/src/tool/llm_tool_call.dart';
 import 'package:llm_core/src/tool/llm_tool_call_delta.dart';
 
@@ -59,6 +60,7 @@ class LLMChunkMessage {
     this.thinking,
     this.toolCallId,
     this.toolCalls,
+    this.invalidToolCalls,
     this.toolCallDeltas,
     this.images,
     this.rawContent,
@@ -85,6 +87,14 @@ class LLMChunkMessage {
   /// on [toolCallDeltas] until the backend signals it is finished.
   final List<LLMToolCall>? toolCalls;
 
+  /// Calls the model finished emitting whose arguments do not decode.
+  ///
+  /// Set on the same chunk as [toolCalls], at the end of a turn. Typical cause:
+  /// the turn hit the token limit mid-arguments, in which case the chunk's
+  /// finish reason is [LLMFinishReason.length]. These are never executed; see
+  /// [LLMInvalidToolCall].
+  final List<LLMInvalidToolCall>? invalidToolCalls;
+
   /// Fragments of tool calls that are still arriving.
   ///
   /// Backends that stream tool calls announce the tool's name in their first
@@ -94,8 +104,8 @@ class LLMChunkMessage {
   ///
   /// These are **never executable** — an argument fragment is part of a JSON
   /// document that only parses once all fragments are concatenated. The
-  /// complete call always arrives on [toolCalls] at the end of the call,
-  /// exactly as it did before deltas existed.
+  /// finished call arrives at the end of the call on [toolCalls], or on
+  /// [invalidToolCalls] when its concatenated arguments do not decode.
   ///
   /// A backend that delivers a whole tool call in a single event emits no
   /// deltas at all. That is not a gap: it has no partial state to report, and

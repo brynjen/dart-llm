@@ -168,15 +168,18 @@ void main() {
       ).toList();
 
       final call = chunks
-          .firstWhere((c) => c.message?.toolCalls?.isNotEmpty ?? false)
+          .firstWhere((c) => c.message?.invalidToolCalls?.isNotEmpty ?? false)
           .message!
-          .toolCalls!
+          .invalidToolCalls!
           .single;
 
-      // The truncation is visible rather than erased.
+      // The truncation is visible rather than erased, and never executable.
+      expect(call.name, 'run_command');
       expect(call.arguments, '{"command": "rm -r');
-      expect(call.arguments, isNot('{}'));
-      expect(() => call.argumentsJson, throwsFormatException);
+      expect(call.error, isNotEmpty);
+      for (final chunk in chunks) {
+        expect(chunk.message?.toolCalls, anyOf(isNull, isEmpty));
+      }
     });
 
     test('a complete tool call keeps the wire text verbatim', () async {
@@ -406,7 +409,10 @@ void main() {
 }
 
 void _toolCallTurnTests() {
-  String turnEndingWith(String stopReason) =>
+  String turnEndingWith(
+    String stopReason, {
+    String partialJson = '{"city":"Oslo"}',
+  }) =>
       _sse('message_start', {
         'message': {
           'model': 'claude-opus-4-6',
@@ -424,10 +430,7 @@ void _toolCallTurnTests() {
       }) +
       _sse('content_block_delta', {
         'index': 0,
-        'delta': {
-          'type': 'input_json_delta',
-          'partial_json': '{"city":"Oslo"}',
-        },
+        'delta': {'type': 'input_json_delta', 'partial_json': partialJson},
       }) +
       _sse('content_block_stop', {'index': 0}) +
       _sse('message_delta', {
@@ -468,18 +471,37 @@ void _toolCallTurnTests() {
       );
     });
 
-    test('a turn cut off by max_tokens stays a truncation', () async {
-      // The arguments may be cut mid-JSON — the comment on the verbatim
-      // pass-through above says so explicitly — so the caller has to see the
-      // truncation rather than receive a call that fails at execution.
+    test(
+      'a max_tokens turn stays a truncation and keeps a complete call',
+      () async {
+        // The reason is never upgraded, but a call whose input decodes is still
+        // returned — the shape OpenAI gives a `length` turn.
+        final parsed = await ClaudeStreamConverter.toLLMStream(
+          _makeResponse(turnEndingWith('max_tokens')),
+        ).toList();
+
+        expect(parsed.last.finishReason, LLMFinishReason.length);
+        final withCalls = parsed.where(
+          (c) => c.message?.toolCalls?.isNotEmpty ?? false,
+        );
+        expect(withCalls.single.message!.toolCalls!.single.name, 'get_weather');
+      },
+    );
+
+    test('max_tokens mid tool input surfaces an invalid call', () async {
       final parsed = await ClaudeStreamConverter.toLLMStream(
-        _makeResponse(turnEndingWith('max_tokens')),
+        _makeResponse(turnEndingWith('max_tokens', partialJson: '{"city":"Os')),
       ).toList();
 
       expect(parsed.last.finishReason, LLMFinishReason.length);
       for (final chunk in parsed) {
         expect(chunk.message?.toolCalls, anyOf(isNull, isEmpty));
       }
+      final invalid = parsed
+          .expand((c) => c.message?.invalidToolCalls ?? const [])
+          .single;
+      expect(invalid.id, 'toolu_01T1x1');
+      expect(invalid.arguments, '{"city":"Os');
     });
 
     test('the raw stop_reason is still preserved verbatim', () async {

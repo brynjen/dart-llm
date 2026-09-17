@@ -7,6 +7,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-09-17
+
+### Added
+- **llm_core** — `LLMInvalidToolCall` and `invalidToolCalls` on chunks and `LLMResponse`: finished tool calls whose arguments don't decode, with the raw text and parse error (as LangChain and the Vercel AI SDK do). `LLMToolCall.partition` splits calls into valid and invalid.
+
+### Fixed
+- **llm_vllm** — a tool call cut off by `max_tokens` was returned as an executable call with broken JSON, because vLLM reports `tool_calls` for such turns (vllm-project/vllm#53269). The turn now finishes as `length` with the cut call on `invalidToolCalls`.
+- **llm_gemini** — undecodable argument fragments were replaced with `{}`, running the tool without arguments.
+
+### Changed
+- **All backends** — a `length` turn returns its tool calls split into valid and invalid instead of dropping them, matching the OpenAI API. The tool loop runs only valid calls and answers invalid ones with a tool error.
+- All packages bumped to `0.6.0`; `llm_core` constraint updated to `^0.6.0`.
+
+## [0.5.0] - 2026-09-11
+
+### Added
+- **llm_core** — `LLMFinishReason.resolve`: one shared rule for classifying a tool-call turn.
+
+### Fixed
+- **All backends** — complete tool calls were dropped when a provider ended the turn with `stop` (vLLM named `tool_choice`, OpenAI intermittently, Claude `end_turn`) or when the stream ended without a terminal frame.
+- **llm_core** — `chatResponse` returned `toolCalls: null` for Ollama, Claude and Gemini, and `finishReason` could contradict `toolCalls`.
+- **llm_chatgpt** — embedding an empty string failed with a 400.
+- **llm_claude** — an empty message was rejected with a 400.
+
+### Changed
+- **All backends** — a turn carrying complete tool calls reports `LLMFinishReason.toolCalls`, whatever the provider spelled. Code branching on `stop` for a tool-calling turn must move to `toolCalls`.
+- All packages bumped to `0.5.0`; `llm_core` constraint updated to `^0.5.0`.
+
+## [0.4.0] - 2026-08-30
+
+### Added
+- **llm_core** — `LLMToolCallDelta` and `LLMChunkMessage.toolCallDeltas`: tool calls surface while streaming, so the tool name is known before its arguments finish (ChatGPT, vLLM, Claude, Gemini).
+- **All HTTP backends** — `extraHeaders` on repositories and builders.
+
+### Fixed
+- **llm_core** — zero-argument tool calls always failed; token counts were lost when a turn ended with several `done` chunks; `529` was not retryable; `ToolLoopIncompleteException.attemptsUsed` always reported `0`.
+- **llm_chatgpt, llm_vllm** — parallel tool calls sharing `index: 0` were merged; ChatGPT non-streaming responses kept only the first tool call, and mid-stream `error` events were ignored.
+- **llm_claude** — a truncated tool call ran with no arguments; mid-stream errors carried no `statusCode`.
+- **llm_gemini** — non-numeric mid-stream error codes were never retryable.
+
+### Changed
+- The empty priming delta is no longer yielded (ChatGPT, vLLM).
+- All packages bumped to `0.4.0`; `llm_core` constraint updated to `^0.4.0`.
+
 ## [0.3.2] - 2026-08-18
 
 ### Added

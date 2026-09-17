@@ -29,6 +29,7 @@ export 'src/llm_capabilities.dart';
 // Tools
 export 'src/tool/llm_tool.dart';
 export 'src/tool/llm_tool_param.dart';
+export 'src/tool/llm_invalid_tool_call.dart';
 export 'src/tool/llm_tool_call.dart';
 export 'src/tool/llm_tool_call_delta.dart';
 

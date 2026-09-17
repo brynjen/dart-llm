@@ -92,33 +92,26 @@ class GPTStreamConverter {
           // first fragment, so without it every mid-stream event would read as
           // an end of turn.
           final turnEnded = finishReason != null;
-          final endsWithToolCalls =
+          // A filter or refusal means the provider did not stand behind the
+          // calls, so they are not surfaced. Every other ending surfaces them
+          // — `length` included, as OpenAI returns them: the reason stays a
+          // truncation and the calls come back split by whether their
+          // arguments decode.
+          final surfacesToolCalls =
               turnEnded &&
               accumulated.isNotEmpty &&
-              LLMFinishReason.resolve(
-                    reported: reported,
-                    hasCompleteToolCalls: true,
-                  ) ==
-                  LLMFinishReason.toolCalls;
+              (reported == null ||
+                  reported.canBecomeToolCalls ||
+                  reported == LLMFinishReason.length);
 
-          if (endsWithToolCalls) {
-            final toolCallChunk = GPTChunk(
-              id: chunk.id,
-              created: chunk.created,
-              model: chunk.model,
-              systemFingerprint: chunk.systemFingerprint,
-              choices: [
-                GPTChunkChoice(
-                  index: 0,
-                  delta: GPTChunkChoiceDelta(
-                    role: null,
-                    content: null,
-                    toolCalls: List<GPTToolCall>.from(accumulated),
-                  ),
-                  logProbs: null,
-                  finishReason: 'tool_calls',
-                ),
-              ],
+          if (surfacesToolCalls) {
+            final toolCallChunk = _toolCallChunk(
+              chunk,
+              accumulated,
+              finishReason: LLMFinishReason.resolve(
+                reported: reported,
+                hasCompleteToolCalls: true,
+              )!,
             );
             emitted = true;
             accumulated.clear();
@@ -133,8 +126,8 @@ class GPTStreamConverter {
             // final assistant answer and threw ToolLoopIncompleteException.
             //
             // Clearing here is what stops the end-of-stream flush resurrecting
-            // calls this frame rejected — `length` cut the arguments mid-JSON,
-            // a filter or refusal means the provider did not stand behind them.
+            // calls this frame rejected — a filter or refusal means the
+            // provider did not stand behind them.
             emitted = true;
             accumulated.clear();
             openAt.clear();
@@ -164,52 +157,83 @@ class GPTStreamConverter {
     if (pendingCalls != null) yield pendingCalls;
   }
 
-  /// Emits calls that were complete when the stream ended without ever sending
-  /// a terminal frame, or `null` when there is nothing executable outstanding.
+  /// Emits the calls outstanding when the stream ended without ever sending a
+  /// terminal frame, or `null` when nothing was accumulated.
   ///
-  /// Completeness is decided by parsing the arguments rather than by trusting
-  /// the accumulation. There is no provider signal at an abrupt end of stream:
-  /// the same state describes a finished call and one cut off mid-arguments,
-  /// and the payload is the only evidence of which it was. A call whose
-  /// arguments do not parse — including one that only ever received its name —
-  /// stays a fragment, exactly as a `length` truncation does.
+  /// There is no provider signal at an abrupt end of stream: the same state
+  /// describes a finished call and one cut off mid-arguments, and the payload
+  /// is the only evidence of which it was. Calls are therefore split by
+  /// whether their arguments decode, and empty arguments count as incomplete
+  /// — a call that only ever received its name was cut off, not finished.
   static GPTChunk? _flushToolCalls(
     List<GPTToolCall> accumulated,
     GPTChunk? lastChunk,
   ) {
     if (accumulated.isEmpty || lastChunk == null) return null;
-    final complete = accumulated.where(_hasParsableArguments).toList();
+    final chunk = _toolCallChunk(
+      lastChunk,
+      accumulated,
+      finishReason: LLMFinishReason.toolCalls,
+      requireArguments: true,
+    );
     accumulated.clear();
-    if (complete.isEmpty) return null;
+    final delta = chunk.choices.first.delta;
+    if (delta.toolCalls == null && delta.invalidToolCalls == null) return null;
+    return chunk;
+  }
+
+  /// Builds the chunk that closes a turn carrying [accumulated] calls, split
+  /// into [GPTChunkChoiceDelta.toolCalls] and
+  /// [GPTChunkChoiceDelta.invalidToolCalls] by whether their arguments decode.
+  static GPTChunk _toolCallChunk(
+    GPTChunk source,
+    List<GPTToolCall> accumulated, {
+    required LLMFinishReason finishReason,
+    bool requireArguments = false,
+  }) {
+    final valid = <GPTToolCall>[];
+    final invalid = <LLMInvalidToolCall>[];
+    for (final call in accumulated) {
+      final name = call.function.name;
+      // A fragment that never received a name identifies no tool at all.
+      if (name == null) continue;
+      final error = LLMToolCall(
+        id: call.id,
+        name: name,
+        arguments: call.function.arguments,
+      ).argumentsError(requireArguments: requireArguments);
+      if (error == null) {
+        valid.add(call);
+      } else {
+        invalid.add(
+          LLMInvalidToolCall(
+            id: call.id,
+            name: name,
+            arguments: call.function.arguments,
+            error: error,
+          ),
+        );
+      }
+    }
     return GPTChunk(
-      id: lastChunk.id,
-      created: lastChunk.created,
-      model: lastChunk.model,
-      systemFingerprint: lastChunk.systemFingerprint,
+      id: source.id,
+      created: source.created,
+      model: source.model,
+      systemFingerprint: source.systemFingerprint,
       choices: [
         GPTChunkChoice(
           index: 0,
           delta: GPTChunkChoiceDelta(
             role: null,
             content: null,
-            toolCalls: complete,
+            toolCalls: valid.isEmpty ? null : valid,
+            invalidToolCalls: invalid.isEmpty ? null : invalid,
           ),
           logProbs: null,
-          finishReason: 'tool_calls',
+          finishReason: finishReason.providerName,
         ),
       ],
     );
-  }
-
-  static bool _hasParsableArguments(GPTToolCall call) {
-    final arguments = call.function.arguments;
-    if (arguments.isEmpty) return false;
-    try {
-      json.decode(arguments);
-      return true;
-    } catch (_) {
-      return false;
-    }
   }
 
   /// Builds the exception for an in-stream `error` event.

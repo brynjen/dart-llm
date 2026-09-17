@@ -4,7 +4,7 @@ This document describes how tool calls and tool results flow through the chat st
 
 ## Stream Chunk Types
 
-Consumers of `streamChat()` receive three types of chunks. Handle all three to display the full tool calling flow:
+Consumers of `streamChat()` receive these kinds of chunks. Handle all of them to display the full tool calling flow:
 
 ### 1. Content Chunks (Assistant Text)
 
@@ -12,19 +12,51 @@ Consumers of `streamChat()` receive three types of chunks. Handle all three to d
 - `chunk.message?.role` - `LLMRole.assistant`
 - `chunk.message?.thinking` - Optional reasoning content (when `think: true`)
 
-### 2. Tool Call Chunks (Model Requests Tools)
+### 2. Tool Call Progress Chunks (Call Still Streaming)
+
+- `chunk.message?.toolCallDeltas` - Fragments of calls that are still arriving
+- The first fragment for an `index` carries the tool `name` (and `id`), so a UI
+  can show which tool is running before its arguments finish
+- **Never executable**: `argumentsDelta` is one fragment of a JSON document
+- Emitted by ChatGPT, vLLM, Claude and Gemini. Ollama and llama.cpp receive each
+  call whole, so they emit none — the call arrives on `toolCalls` directly
+
+### 3. Tool Call Chunks (Model Requests Tools)
 
 - `chunk.message?.toolCalls` - Non-null when the model requests tool execution
-- Typically on the final chunk of a round (`chunk.done == true`)
+- Arrives at the end of a round, either on the terminal chunk
+  (`chunk.done == true`) or just before it — Claude, Gemini and Ollama deliver
+  calls on an earlier chunk
 - Each `LLMToolCall` has: `name`, `arguments`, `id` (or synthesized)
+- Only calls whose `arguments` decode to a JSON object appear here
 
-### 3. Tool Result Chunks (Tool Execution Output)
+### 4. Invalid Tool Call Chunks (Arguments Do Not Decode)
+
+- `chunk.message?.invalidToolCalls` - Set on the same chunk as `toolCalls`
+- Each `LLMInvalidToolCall` has: `name`, `arguments` (raw text), `id`, `error`
+- **Never executed.** The usual cause is a turn cut off by the output token
+  limit (`chunk.finishReason == LLMFinishReason.length`); the other is a model
+  writing malformed JSON
+- Same shape as LangChain's `invalid_tool_calls` and the Vercel AI SDK's
+  `invalid: true` tool calls
+
+### 5. Tool Result Chunks (Tool Execution Output)
 
 - `chunk.message?.role == LLMRole.tool`
 - `chunk.message?.content` - The tool's return value
 - `chunk.message?.toolCallId` - Links to the tool call (canonical identifier)
 
-Tool result chunks are emitted by the executor after each tool runs, before the next API request. To display "Tool X returned: Y", build a map from tool call chunks (`toolCallId -> toolName` from `message?.toolCalls`) and look up the name when processing tool result chunks.
+Tool result chunks are emitted by the executor after each tool runs, before the next API request. To display "Tool X returned: Y", build a map from tool call chunks (`toolCallId -> toolName` from `message?.toolCalls` and `message?.invalidToolCalls`) and look up the name when processing tool result chunks.
+
+An invalid call also gets a tool result chunk: a tool error saying the call was
+not run and why, with a hint to produce a shorter call when the turn hit the
+token limit. In the next request the invalid call is echoed with `{}` arguments,
+because some servers (vLLM) decode assistant tool-call arguments in history and
+reject the request with a `400` otherwise.
+
+With `LLMChatOptions(autoExecuteTools: false)` the executor does not run and no
+tool result chunks are emitted; handle `toolCalls` and `invalidToolCalls`
+yourself.
 
 ## Flow Summary
 
@@ -32,10 +64,11 @@ Tool result chunks are emitted by the executor after each tool runs, before the 
 User message
     |
     v
-[API Request 1] --> Stream: content chunks, then chunk with toolCalls
-    |
+[API Request 1] --> Stream: content chunks, toolCallDeltas,
+    |                  then chunk with toolCalls / invalidToolCalls
     v
-Executor runs tools --> Stream: tool result chunks (role: tool)
+Executor runs valid calls,
+answers invalid ones with a tool error --> Stream: tool result chunks (role: tool)
     |
     v
 [API Request 2] with [user, assistant(tool_calls), tool(result), ...]
@@ -93,25 +126,41 @@ One rule covers all of them, and every backend applies it through
 > contradicts the call being executable.
 
 `length`, `contentFilter` and `refusal` are the contradictions and are never
-reclassified. A truncated turn's arguments may stop mid-JSON, so the caller has
-to see the truncation and retry rather than execute a malformed call; a filtered
-or refused turn must stay visibly declined rather than hide a safety outcome
-behind a call the provider did not stand behind.
+reclassified.
 
-For the same reason, **emission never depends on the finish reason**. Accumulated
-calls are flushed when the turn ends — a terminal frame, or the stream closing —
-so a spelling this library has not seen, or a proxy cutting the stream off before
-any terminal frame arrives, cannot silently drop a complete call. At an abrupt
-end of stream there is no provider signal either way, so a call counts as
-complete only if its accumulated arguments parse.
+- **`length`** stays a truncation, but its calls are still returned, split by
+  whether their arguments decode: complete calls on `toolCalls`, the cut one on
+  `invalidToolCalls`. This is what the OpenAI API itself returns, and how
+  LangChain and the Vercel AI SDK surface it.
+- **`contentFilter` and `refusal`** withhold the calls: a declined turn must stay
+  visibly declined rather than hide a safety outcome behind a call the provider
+  did not stand behind.
+
+Adapters correct a provider's known violation of the specification before
+resolving. **vLLM** reports `tool_calls` for a turn cut off by `max_tokens`
+mid-arguments: its streaming path overwrites the reason once any tool-call delta
+went out (vllm-project/vllm#53269, closed as not planned). `llm_vllm` restores
+`length` when the **last** call's arguments do not decode. Only the last call
+can be cut by the token limit; an earlier undecodable call next to a complete
+last one is malformed JSON from the model, and the turn stays `toolCalls`.
+
+**Emission never depends on the finish reason.** Accumulated calls are flushed
+when the turn ends — a terminal frame, or the stream closing — so a spelling this
+library has not seen, or a proxy cutting the stream off before any terminal frame
+arrives, cannot silently drop a call. At an abrupt end of stream there is no
+provider signal either way, so a call counts as valid only if its accumulated
+arguments are non-empty and decode; the rest are surfaced as invalid.
 
 A new backend inherits this by calling `LLMFinishReason.resolve` at its turn
-boundary. It should not re-implement the rule.
+boundary and `LLMToolCall.partition` on the calls it accumulated. It should not
+re-implement either rule.
 
 ## Code Path
 
 - Tool execution: [packages/llm_core/lib/src/tool_executor.dart](../packages/llm_core/lib/src/tool_executor.dart)
-- Tool result emission: `StreamToolExecutor.executeTools` yields `LLMChunk` with `role: LLMRole.tool` after each tool runs
+- Tool result emission: `StreamToolExecutor.executeTools` yields `LLMChunk` with `role: LLMRole.tool` after each tool runs, and for each invalid call
+- Valid/invalid split: `LLMToolCall.partition` in [packages/llm_core/lib/src/tool/llm_tool_call.dart](../packages/llm_core/lib/src/tool/llm_tool_call.dart)
+- vLLM finish-reason correction: [packages/llm_vllm/lib/src/vllm_stream_converter.dart](../packages/llm_vllm/lib/src/vllm_stream_converter.dart)
 - Ollama message format: [packages/llm_ollama/lib/src/message_converter.dart](../packages/llm_ollama/lib/src/message_converter.dart)
 - Claude message format: [packages/llm_claude/lib/src/claude_message_converter.dart](../packages/llm_claude/lib/src/claude_message_converter.dart)
 - Gemini step format: [packages/llm_gemini/lib/src/gemini_message_converter.dart](../packages/llm_gemini/lib/src/gemini_message_converter.dart)

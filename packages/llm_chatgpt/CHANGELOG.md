@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-09-17
+
+### Changed
+- Tool calls are no longer dropped on `length` or at an abrupt end of stream. Calls whose arguments don't decode are returned in `invalidToolCalls`.
+
 ## [0.5.0] - 2026-09-11
 
 ### Fixed

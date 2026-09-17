@@ -12,19 +12,21 @@ Part of the [dart-llm](https://github.com/brynjen/dart-llm) ecosystem.
 
 - Streaming chat responses via `/v1/chat/completions`
 - Optional bearer auth for servers started with `--api-key`
-- Tool/function calling
+- Tool/function calling, with tool names streamed before arguments finish
 - Vision payloads through OpenAI-compatible message content
 - Embeddings via `/v1/embeddings`
 - Model listing via `/v1/models`
 - Thinking/reasoning stream support when enabled by the served model
-- Structured output through OpenAI-compatible `response_format`
+- Structured output through OpenAI-compatible `response_format`, plus
+  vLLM-native `structured_outputs` (regex, choice, grammar, structural tag)
 - Multi-instance `VLLMPool` for routing, concurrency limits, and health checks
+- `extraHeaders` for arbitrary headers on every request (gateways, tracing)
 
 ## Installation
 
 ```yaml
 dependencies:
-  llm_vllm: ^0.3.2
+  llm_vllm: ^0.6.0
 ```
 
 ## Prerequisites
@@ -60,6 +62,9 @@ await for (final chunk in stream) {
 final repo = VLLMChatRepository(
   baseUrl: 'http://localhost:8000',
   apiKey: 'your-vllm-api-key',
+  // Optional: sent on every request, including embeddings and pool health
+  // checks. Protocol headers and `authorization` always take precedence.
+  extraHeaders: {'x-request-source': 'my-app'},
 );
 ```
 
@@ -84,6 +89,26 @@ final stream = repo.streamChat(
   options: const LLMChatOptions(autoExecuteTools: false),
 );
 ```
+
+While a call streams, `chunk.message?.toolCallDeltas` reports the tool name
+before its arguments finish. The finished call arrives on
+`chunk.message?.toolCalls`.
+
+#### Calls cut off by `max_tokens`
+
+vLLM reports `finish_reason: "tool_calls"` for a turn whose call was cut off by
+`max_tokens` mid-arguments, hiding the truncation (vllm-project/vllm#53269,
+closed upstream as not planned). `llm_vllm` corrects this: when the last call's
+arguments do not decode, the turn finishes as `LLMFinishReason.length` and the
+cut call arrives on `chunk.message?.invalidToolCalls` instead of `toolCalls`,
+with its raw text and the parse error. Complete calls from the same turn stay
+on `toolCalls`.
+
+An invalid call is never executed. With automatic execution the tool loop
+answers it with a tool error telling the model it hit the output token limit,
+and echoes it back with `{}` arguments — vLLM rejects a request whose history
+contains undecodable tool-call arguments with a `400`. Raise `maxOutputTokens`,
+or ask the model to split large writes across several calls.
 
 ### Structured Output
 
@@ -353,8 +378,8 @@ options: const LLMChatOptions(think: true, reasoningBudget: 512),
 ```
 
 When no budget is set, `reasoningEffort` maps to vLLM's native
-`reasoning_effort` (a soft knob that needs no reasoning parser). vLLM accepts
-`low`/`medium`/`high`, so the portable scale clamps:
+`reasoning_effort` (a soft knob that needs no reasoning parser). The portable
+scale clamps to `low`/`medium`/`high`:
 
 | `ReasoningEffort` | wire value |
 |---|---|
@@ -363,6 +388,12 @@ When no budget is set, `reasoningEffort` maps to vLLM's native
 | `medium` | `medium` |
 | `high`, `xhigh`, `max` | `high` |
 
+Each served model validates `reasoning_effort` against its own vocabulary —
+Qwen3.8, for example, accepts `low`/`medium`/`xhigh` and rejects `high`. When
+the server answers `400` naming the supported levels, the request is re-sent
+once with the nearest one (`remapVllmReasoningEffort`), so the portable scale
+works regardless of the model's dialect.
+
 If both knobs are set, the budget wins (vLLM is budget-native). Explicit
 `backendOptions['thinking_token_budget']` / `['reasoning_effort']` override
 both. Reasoning-token usage is surfaced as `LLMUsage.reasoningTokens` when the
@@ -370,7 +401,8 @@ server reports `completion_tokens_details.reasoning_tokens`.
 
 Known upstream caveats: the budget is not enforced when MTP speculative
 decoding is enabled (vllm#39573), and a tight budget can truncate tool-call
-arguments on Qwen3.5+ (vllm#44676).
+arguments on Qwen3.5+ (vllm#44676) — such a call arrives on `invalidToolCalls`,
+never as an executable call.
 
 To enable tool calling and native reasoning parsing, start vLLM with:
 

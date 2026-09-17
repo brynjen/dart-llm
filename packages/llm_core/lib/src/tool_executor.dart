@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:llm_core/src/exceptions.dart';
 import 'package:llm_core/src/llm_chunk.dart';
 import 'package:llm_core/src/llm_message.dart';
+import 'package:llm_core/src/llm_response.dart';
+import 'package:llm_core/src/tool/llm_invalid_tool_call.dart';
 import 'package:llm_core/src/tool/llm_tool.dart';
 import 'package:llm_core/src/tool/llm_tool_call.dart';
 
@@ -66,6 +68,8 @@ class StreamToolExecutor {
 
     final List<LLMMessage> workingMessages = List.from(initialMessages);
     final List<LLMToolCall> collectedToolCalls = [];
+    final List<LLMInvalidToolCall> collectedInvalidToolCalls = [];
+    LLMFinishReason? finishReason;
     var accumulatedContent = '';
     var sawDoneChunk = false;
     var sawFinalAssistantResponse = false;
@@ -88,16 +92,27 @@ class StreamToolExecutor {
         sawToolCallsInRound = true;
         collectedToolCalls.addAll(message.toolCalls!);
       }
+      // Invalid calls are part of the round too: the model asked for them and
+      // is owed a tool result, even though they are never executed.
+      if (message?.invalidToolCalls != null &&
+          message!.invalidToolCalls!.isNotEmpty) {
+        sawToolCallsInRound = true;
+        collectedInvalidToolCalls.addAll(message.invalidToolCalls!);
+      }
+      finishReason = chunk.finishReason ?? finishReason;
+
+      final hasCalls =
+          collectedToolCalls.isNotEmpty || collectedInvalidToolCalls.isNotEmpty;
 
       if ((chunk.done ?? false)) {
         sawDoneChunk = true;
-        if (message?.role == LLMRole.assistant && collectedToolCalls.isEmpty) {
+        if (message?.role == LLMRole.assistant && !hasCalls) {
           sawFinalAssistantResponse = true;
         }
       }
 
       // When the stream is done and we have tool calls, execute them.
-      if ((chunk.done ?? false) && collectedToolCalls.isNotEmpty) {
+      if ((chunk.done ?? false) && hasCalls) {
         // If attempts are exhausted, fail explicitly.
         if (toolAttempts <= 0) {
           throw ToolLoopIncompleteException(
@@ -115,9 +130,10 @@ class StreamToolExecutor {
           LLMMessage(
             role: LLMRole.assistant,
             content: accumulatedContent.isEmpty ? null : accumulatedContent,
-            toolCalls: collectedToolCalls
-                .map((tc) => tc.toApiFormat())
-                .toList(growable: false),
+            toolCalls: [
+              for (final tc in collectedToolCalls) tc.toApiFormat(),
+              for (final tc in collectedInvalidToolCalls) tc.toApiFormat(),
+            ],
           ),
         );
 
@@ -171,6 +187,48 @@ class StreamToolExecutor {
               role: LLMRole.tool,
               toolCallId: effectiveToolCallId,
               status: toolCall.name,
+            ),
+          );
+
+          toolCallIndex++;
+        }
+
+        // Invalid calls are never executed — following LangChain and the
+        // Vercel AI SDK. The model gets the parse error as the tool result so
+        // it can re-issue the call, and when the turn was cut off by the token
+        // limit it is told so, since re-issuing the same call unchanged would
+        // be cut off again.
+        for (final invalidCall in collectedInvalidToolCalls) {
+          final effectiveToolCallId =
+              (invalidCall.id != null && invalidCall.id!.isNotEmpty)
+              ? invalidCall.id!
+              : 'tool_${toolCallIndex}_${invalidCall.name}';
+          final toolResponseStr = finishReason == LLMFinishReason.length
+              ? 'Tool ${invalidCall.name} was not called: the response hit '
+                    'the output token limit before the arguments were '
+                    'complete. Produce a shorter call, for example by '
+                    'splitting the work across several calls.'
+              : 'Tool ${invalidCall.name} was not called: its arguments are '
+                    'not valid JSON (${invalidCall.error}).';
+
+          yield LLMChunk(
+            model: model,
+            createdAt: DateTime.now(),
+            message: LLMChunkMessage(
+              content: toolResponseStr,
+              role: LLMRole.tool,
+              toolCallId: effectiveToolCallId,
+            ),
+            status: invalidCall.name,
+            done: false,
+          );
+
+          workingMessages.add(
+            LLMMessage(
+              content: toolResponseStr,
+              role: LLMRole.tool,
+              toolCallId: effectiveToolCallId,
+              status: invalidCall.name,
             ),
           );
 

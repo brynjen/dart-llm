@@ -6,9 +6,8 @@ We currently support the following versions with security updates:
 
 | Version | Supported          |
 | ------- | ------------------ |
-| 0.3.x   | :white_check_mark: |
-| 0.2.x   | :x:                |
-| 0.1.x   | :x:                |
+| 0.6.x   | :white_check_mark: |
+| < 0.6   | :x:                |
 
 ## Reporting a Vulnerability
 
@@ -153,7 +152,7 @@ The following are **not** considered security vulnerabilities:
 ## Security Updates
 
 Security updates will be:
-- Released as patch versions (e.g., 0.3.0 → 0.3.1)
+- Released as patch versions (e.g., 0.6.0 → 0.6.1)
 - Documented in CHANGELOG.md
 - Announced via GitHub releases
 - Backported to supported versions when possible

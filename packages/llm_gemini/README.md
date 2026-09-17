@@ -16,6 +16,7 @@ Available on [pub.dev](https://pub.dev/packages/llm_gemini).
 - Embeddings (single and batch)
 - Builder pattern for fluent configuration
 - Configurable retry and timeout policies
+- `extraHeaders` for arbitrary headers on every request
 
 ### Interactions API
 
@@ -35,7 +36,9 @@ endpoint. What this changes for callers:
   (keyed by step index), and the usage counters with no first-class slot:
   `total_tokens`, `total_thought_tokens`, `total_cached_tokens`,
   `total_tool_use_tokens`.
-- Tool calls carry the server-provided call id.
+- Tool calls carry the server-provided call id. When the model sent a thought
+  signature, it rides inside that id (after `::sig::`) so the tool loop echoes it
+  back, which multi-turn function calling requires.
 
 Embeddings still use the `embedContent` / `batchEmbedContents` endpoints.
 
@@ -43,7 +46,7 @@ Embeddings still use the `embedContent` / `batchEmbedContents` endpoints.
 
 ```yaml
 dependencies:
-  llm_gemini: ^0.3.2
+  llm_gemini: ^0.6.0
 ```
 
 ## Prerequisites
@@ -111,6 +114,16 @@ final stream = repo.streamChat(
   tools: [WeatherTool()],
 );
 ```
+
+Tools run automatically; pass `LLMChatOptions(autoExecuteTools: false)` to
+handle `chunk.message?.toolCalls` yourself. The tool name is reported on
+`chunk.message?.toolCallDeltas` from `step.start`, before any argument fragment.
+
+Argument fragments are passed through verbatim. When they do not decode — an
+interaction cut short at `max_output_tokens` (finish reason
+`LLMFinishReason.length`) — the call arrives on
+`chunk.message?.invalidToolCalls` with its raw arguments and the parse error,
+and is never executed; the tool loop answers it with a tool error.
 
 ### Structured Output
 

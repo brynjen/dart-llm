@@ -43,14 +43,14 @@ The project uses the Repository pattern to abstract LLM interactions:
 
 ```dart
 abstract class LLMChatRepository {
-  // The one member every backend must implement.
+  // Every backend implements these two.
   Stream<LLMChunk> streamChat(...);
+  Future<List<LLMEmbedding>> embed(...);   // throw UnsupportedError without embeddings
 
   // Provided with working defaults; override where the backend can do better.
   LLMCapabilities capabilitiesForModel(String model);
-  Future<LLMResponse> chatResponse(...);   // collects streamChat, runs the tool loop
-  Future<List<LLMEmbedding>> embed(...);
-  Future<List<LLMEmbedding>> batchEmbed(...);
+  Future<LLMResponse> chatResponse(...);   // collects streamChat into one response
+  Future<List<LLMEmbedding>> batchEmbed(...);   // defaults to embed
 }
 ```
 
@@ -94,15 +94,35 @@ abstract class LLMTool {
 **Flow**:
 1. User provides tools to `streamChat()`
 2. Model requests tool execution via tool calls
-3. Repository automatically executes tools
-4. Tool results are added to conversation
-5. Process repeats until final response
+3. Repository executes the valid calls (`StreamToolExecutor`)
+4. Tool results are streamed as `role: tool` chunks and added to the conversation
+5. Process repeats until a final response, or until `maxToolAttempts` runs out
+   (`ToolLoopIncompleteException`)
 
 **Design Decisions**:
-- **Automatic Execution**: Tools are executed automatically (no manual intervention)
+- **Automatic by Default**: Tools run automatically; `LLMChatOptions(autoExecuteTools: false)`
+  hands the calls to the caller instead
 - **Loop Handling**: Repository handles the tool execution loop internally
 - **Extra Context**: `extra` parameter allows passing user context to tools
 - **Backend Agnostic**: Tool interface works across all backends
+- **Progress Before Completion**: calls still streaming appear on
+  `LLMChunkMessage.toolCallDeltas`, so a UI can name the running tool early
+- **Invalid Calls Are Surfaced, Never Run**: a finished call whose arguments do
+  not decode lands on `LLMChunkMessage.invalidToolCalls` (`LLMInvalidToolCall`,
+  raw text plus parse error), mirroring LangChain's `invalid_tool_calls` and the
+  Vercel AI SDK. The executor answers it with a tool error and echoes it with
+  `{}` arguments, since servers such as vLLM reject undecodable arguments in
+  history
+
+### Finish Reasons
+
+`LLMFinishReason` follows the OpenAI specification. A turn that carried tool
+calls finishes as `toolCalls` whatever the provider spelled
+(`LLMFinishReason.resolve`), except that `length`, `contentFilter` and `refusal`
+are never upgraded. A `length` turn still returns its calls, split into valid
+and invalid. Adapters correct known provider violations before resolving: vLLM
+reports `tool_calls` for a turn cut off by `max_tokens`, and `llm_vllm` restores
+`length`. Details in `docs/TOOL_RESPONSE_CHAT_LOOP.md`.
 
 ### Structured Output Architecture
 
@@ -172,8 +192,8 @@ final options = LLMChatOptions(
 1. **LLMChatRepository**: Abstract interface for chat operations
 2. **LLMMessage**: Message representation with roles (user, assistant, system, tool)
 3. **LLMChunk**: Streaming response chunks
-4. **LLMResponse**: Complete response wrapper
-5. **LLMTool**: Tool definition interface
+4. **LLMResponse**: Complete response wrapper, with `LLMUsage` and `LLMFinishReason`
+5. **LLMTool**, **LLMToolCall**, **LLMToolCallDelta**, **LLMInvalidToolCall**: Tool definition, finished calls, streaming fragments, and calls whose arguments do not decode
 6. **LLMResponseFormat**: Structured output format (sealed class: `JsonFormat`, `JsonSchemaFormat`)
 7. **Exceptions**: Common exception types
 8. **Validation**: Input validation utilities
@@ -203,7 +223,7 @@ final options = LLMChatOptions(
 **Implementation Details**:
 - Uses HTTP client for API communication
 - Supports Ollama-specific features (thinking tokens)
-- Handles SSE (Server-Sent Events) streaming
+- Handles NDJSON streaming from the native `/api/chat` endpoint
 - Implements retry logic with exponential backoff
 - `supportsStructuredOutput(model)` queries `/api/show` capabilities for schema support
 
@@ -310,8 +330,9 @@ final options = LLMChatOptions(
 - Streaming is a step machine (`step.start` / `step.delta` / `step.stop`)
   rather than a `candidates[]` array; `arguments_delta` fragments are
   concatenated to form tool-call arguments
-- `thought_signature` values are captured and exposed via
-  `LLMChunk.providerMetadata`, which multi-turn function calling requires
+- `thought_signature` values are captured, exposed via
+  `LLMChunk.providerMetadata`, and carried inside the tool call id so the tool
+  loop echoes them back, which multi-turn function calling requires
 - Implements retry logic with exponential backoff
 
 ## Design Patterns
@@ -387,24 +408,20 @@ LLMChatRepository repo = LlamaCppChatRepository(...);
 2. **Add dependency** on `llm_core` (workspace resolution):
    ```yaml
    dependencies:
-     llm_core: ^0.3.2
+     llm_core: ^0.6.0
    ```
-3. **Implement LLMChatRepository**:
+3. **Extend LLMChatRepository**. `streamChat` and `embed` are abstract;
+   `chatResponse`, `batchEmbed` and `capabilitiesForModel` have working defaults:
    ```dart
-   class MyBackendChatRepository implements LLMChatRepository {
+   class MyBackendChatRepository extends LLMChatRepository {
      @override
      Stream<LLMChunk> streamChat(...) {
        // Implementation
      }
-     
-     @override
-     Future<LLMResponse> chatResponse(...) {
-       // Can use default implementation or override
-     }
-     
+
      @override
      Future<List<LLMEmbedding>> embed(...) {
-       // Implementation
+       // Implementation, or throw UnsupportedError
      }
    }
    ```
@@ -415,7 +432,9 @@ LLMChatRepository repo = LlamaCppChatRepository(...);
    ```
 5. **Handle structured output** if the API supports it natively, otherwise inject via system message
 6. **Propagate responseFormat** in tool-loop `LLMChatOptions` construction
-7. **Handle tool execution** if supported
+7. **Handle tool execution** if supported: at the turn boundary, classify the
+   turn with `LLMFinishReason.resolve` and split accumulated calls with
+   `LLMToolCall.partition` into `toolCalls` and `invalidToolCalls`
 8. **Export** the repository in `lib/my_backend.dart`
 
 ### Adding New Features to Core
@@ -471,7 +490,7 @@ Exception
   ├── ThinkingNotSupportedException — think: true against a model without it
   ├── ToolsNotSupportedException    — tools passed to a model without tool support
   ├── VisionNotSupportedException   — images passed to a non-vision model
-  ├── ToolLoopIncompleteException   — chatResponse exhausted maxToolAttempts
+  ├── ToolLoopIncompleteException   — tool loop ended without a final answer (attempts exhausted or stream cut)
   └── ModelLoadException            — local model failed to load (llm_llamacpp)
 ```
 

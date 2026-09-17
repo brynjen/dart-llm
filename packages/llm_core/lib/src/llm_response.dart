@@ -1,4 +1,5 @@
 import 'package:llm_core/src/llm_message.dart';
+import 'package:llm_core/src/tool/llm_invalid_tool_call.dart';
 import 'package:llm_core/src/tool/llm_tool_call.dart';
 
 /// Token usage reported by a model provider.
@@ -87,9 +88,12 @@ enum LLMFinishReason {
   /// turn when the model produced complete tool calls.
   ///
   /// False for the reasons that contradict an executable call:
-  /// * [length] — generation was cut off, so the arguments may be truncated
-  ///   mid-JSON. The caller has to see a truncation and retry, not receive a
-  ///   malformed call that fails at execution.
+  /// * [length] — generation was cut off. Per the OpenAI specification the
+  ///   turn *is* a truncation, whatever it carried, and the last call's
+  ///   arguments may end mid-JSON. The calls are still surfaced, split by
+  ///   whether their arguments decode (`LLMChunkMessage.toolCalls` and
+  ///   `LLMChunkMessage.invalidToolCalls`), exactly as LangChain and the Vercel
+  ///   AI SDK do; only the reason is never upgraded.
   /// * [contentFilter] and [refusal] — the provider declined the turn. These
   ///   are exactly the values a caller checks before treating a response as
   ///   valid output (see [refusal]); overwriting one would hide a safety
@@ -130,8 +134,11 @@ enum LLMFinishReason {
   /// fragment has been concatenated.
   ///
   /// Only ever upgrades. A reported [toolCalls] is returned unchanged even when
-  /// no calls were parsed, so a provider claiming a tool-call finish is never
-  /// contradicted by this library.
+  /// no calls were parsed, so this rule never contradicts a provider claiming a
+  /// tool-call finish. A backend adapter may still correct a *specific, known*
+  /// violation before calling this: vLLM reports `tool_calls` for a turn cut
+  /// off by `max_tokens` mid-arguments (vllm-project/vllm#53269, closed not
+  /// planned), which its adapter restores to [length].
   ///
   /// Call this **at a turn boundary only**. Mid-stream the accumulation is
   /// partial and the turn has not ended, so the question is not yet meaningful.
@@ -157,6 +164,7 @@ class LLMResponse {
     required this.promptEvalCount,
     required this.evalCount,
     required this.toolCalls,
+    this.invalidToolCalls,
     this.thinking,
     LLMUsage? usage,
     LLMFinishReason? finishReason,
@@ -199,6 +207,12 @@ class LLMResponse {
 
   /// Tool calls requested by the model.
   final List<LLMToolCall>? toolCalls;
+
+  /// Tool calls from the final turn whose arguments do not decode.
+  ///
+  /// Never executed. Check [finishReason]: [LLMFinishReason.length] means the
+  /// turn was cut off mid-arguments. See [LLMInvalidToolCall].
+  final List<LLMInvalidToolCall>? invalidToolCalls;
 
   /// First-class token usage metadata.
   final LLMUsage usage;

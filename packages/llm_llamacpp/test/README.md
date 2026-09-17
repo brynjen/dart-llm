@@ -3,9 +3,10 @@
 Two suites:
 
 - **`test/unit/`** — pure Dart. No model, no native library, no network. Covers
-  the build hook (ABI fingerprint, native artifact version, desktop and Android
-  bundle collection), tool-call parsing and injection, the streaming UTF-8
-  decoder, and response-format injection.
+  the build hook (ABI fingerprint, native artifact version, asset types, desktop
+  and Android bundle collection, SPIRV-Headers lookup), tool-call parsing and
+  injection, stop-token resolution, the streaming UTF-8 decoder, and
+  response-format injection.
 - **`test/integration/`** — loads a real GGUF model through the native library.
   Tagged `integration` and skipped automatically when no model is available.
 
@@ -78,6 +79,9 @@ dart test test/all_tests.dart
 | `tool_definition_injector_test.dart` | Per-family tool definition formatting |
 | `response_format_injection_test.dart` | Structured-output system-message injection |
 | `streaming_utf8_decoder_test.dart` | Multi-byte characters split across tokens |
+| `build_hook_asset_types_test.dart` | The hook emits no code assets when none are requested |
+| `spirv_headers_locator_test.dart` | Locating SPIRV-Headers for the Android Vulkan build |
+| `stop_token_resolver_test.dart` | Turn-end markers from the chat template plus `stopTokens` |
 
 ### Integration tests — `test/integration/`
 

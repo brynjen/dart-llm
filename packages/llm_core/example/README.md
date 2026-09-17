@@ -51,6 +51,7 @@ switch (response.finishReason) {
   case LLMFinishReason.refusal:
     throw StateError('Provider safety classifiers declined the request.');
   case LLMFinishReason.length:
+    // A cut-off tool call is on response.invalidToolCalls, never executed.
     throw StateError('Truncated — raise maxOutputTokens.');
   case LLMFinishReason.contentFilter:
     throw StateError('Output was filtered.');

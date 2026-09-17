@@ -146,7 +146,8 @@ dart-llm/
 # Run all unit tests (excludes integration tests)
 melos run test:unit
 
-# Run all tests including integration (requires API keys)
+# Run all tests including integration (requires API keys and live servers;
+# the ChatGPT, Claude and Gemini suites call paid or rate-limited APIs)
 melos run test:integration
 
 # Run tests for a specific package
@@ -162,7 +163,7 @@ cd packages/llm_core && dart test --coverage=coverage
 - **Integration tests**: Test interactions between components
 - **Test files**: Should be in the `test/` directory with `_test.dart` suffix
 - **Test organization**: Group related tests using `group()` function
-- **Integration tests**: Tag with `@Tags(['integration'])` so they can be excluded from CI
+- **Integration tests**: Tag with `tags: ['integration']` (per test or group) so `melos run test:unit` excludes them
 
 Example test structure:
 
@@ -170,17 +171,23 @@ Example test structure:
 import 'package:test/test.dart';
 import 'package:llm_core/llm_core.dart';
 
+// Not exported: lives in packages/llm_core/test/unit/.
+import 'mock_llm_chat_repository.dart';
+
 void main() {
   group('FeatureName', () {
-    test('should do something', () {
+    test('collects the streamed response', () async {
       // Arrange
-      final repository = MockLLMChatRepository();
-      
+      final repository = MockLLMChatRepository()..setResponse('Hello');
+
       // Act
-      final result = repository.someMethod();
-      
+      final response = await repository.chatResponse(
+        'test-model',
+        messages: [LLMMessage(role: LLMRole.user, content: 'Hi')],
+      );
+
       // Assert
-      expect(result, isNotNull);
+      expect(response.content, 'Hello');
     });
   });
 }
@@ -331,10 +338,12 @@ melos run publish:dry-run
 
 ### Versioning
 
-We follow [Semantic Versioning](https://semver.org/):
-- **MAJOR**: Breaking changes
-- **MINOR**: New features (backward compatible)
-- **PATCH**: Bug fixes (backward compatible)
+We follow [Semantic Versioning](https://semver.org/) for pre-1.0 packages:
+- **MINOR** (`0.x.0`): New features and breaking changes
+- **PATCH** (`0.x.y`): Bug fixes (backward compatible)
+
+All packages are released in lockstep at the same version, and every backend's
+`llm_core` constraint is raised to match.
 
 ## Additional Resources
 

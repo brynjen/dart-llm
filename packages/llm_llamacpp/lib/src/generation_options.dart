@@ -8,7 +8,11 @@
 ///   maxTokens: 1024,
 /// );
 ///
-/// final stream = repo.streamChat('model', messages: messages, options: options);
+/// final stream = repo.streamChatWithGenerationOptions(
+///   'model',
+///   messages: messages,
+///   generationOptions: options,
+/// );
 /// ```
 class GenerationOptions {
   /// Creates generation options with the specified parameters.

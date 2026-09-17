@@ -28,7 +28,7 @@ Part of the [dart-llm](https://github.com/brynjen/dart-llm) ecosystem.
 
 ```yaml
 dependencies:
-  llm_llamacpp: ^0.3.2
+  llm_llamacpp: ^0.6.0
 ```
 
 ## Prerequisites
@@ -69,8 +69,8 @@ together, so a built app keeps working when moved off the build machine.
 
 Prebuilts are produced by `.github/workflows/build-release.yaml`, which reads the
 same `version:` field the hook does, so bumping the package version is what
-triggers a new native release. Release tags are bare versions — `0.3.2`, not
-`v0.3.2` — because that is the tag the hook's download URL is built from.
+triggers a new native release. Release tags are bare versions — `0.6.0`, not
+`v0.6.0` — because that is the tag the hook's download URL is built from.
 
 Two escape hatches, both optional:
 
@@ -494,7 +494,16 @@ bare Pythonic call lists and bare JSON. Add one in
 
 Tools are executed internally and their results are **not** surfaced as
 `role: tool` chunks. A UI that wants to show them needs the tool to report its
-own invocations — see `example_app`'s `CalculatorTool(onInvoke: ...)`.
+own invocations — see `example_app`'s `CalculatorTool(onInvoke: ...)`. Pass
+`LLMChatOptions(autoExecuteTools: false)` to receive the parsed calls on
+`chunk.message?.toolCalls` instead.
+
+Calls are parsed after generation, so there are no `toolCallDeltas`. Every
+payload grammar rejects incomplete input: a call cut off by the token limit
+yields no call at all, and never appears on `toolCalls` or `invalidToolCalls`.
+The isolate reports token counts only, so the finish reason is
+`LLMFinishReason.toolCalls` for a turn that produced calls and `stop` otherwise —
+this backend cannot report `length`.
 
 #### Replay `rawContent` across turns
 
@@ -534,8 +543,14 @@ LlamaCppChatRepository(
   threads: null,        // null = auto-detect
   nGpuLayers: 0,        // Layers to offload to GPU (99 = all)
   maxToolAttempts: 90,  // Max tool calling iterations (default)
+  stopTokens: [],       // Extra turn-end markers, e.g. ['<end_of_turn>'] for Gemma
 );
 ```
+
+`stopTokens` is additional: the markers implied by the model's own chat template
+(ChatML `<|im_end|>`, Llama 3 `<|eot_id|>`) are detected automatically. Set it
+only for a template that is not detected, such as Gemma's `<end_of_turn>` or
+Phi-3's `<|end|>`.
 
 ## Troubleshooting
 
@@ -549,7 +564,8 @@ messages.
 For pure-Dart programs the loader searches, in order:
 1. `LLM_LLAMACPP_LIB_DIR`, if set
 2. The current directory
-3. The usual system locations
+3. The directory of the running executable
+4. The usual system locations
 
 The hook's output lives under `.dart_tool/`, so point the override at it:
 

@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-09-17
+
+### Fixed
+- Argument fragments that did not decode were silently replaced with `{}`, so the tool ran without arguments. Such calls are now returned in `invalidToolCalls`.
+
 ## [0.5.0] - 2026-09-11
 
 ### Fixed

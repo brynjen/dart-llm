@@ -70,7 +70,82 @@ void main() {
           expect(completed.argumentsJson, isNotEmpty);
           expect(finishReason, LLMFinishReason.toolCalls);
         },
+        tags: ['integration'],
         timeout: const Timeout(Duration(minutes: 2)),
+      );
+
+      test(
+        'a call cut off by max_tokens finishes as length with an invalid call',
+        () async {
+          // vLLM reports `tool_calls` for this turn (vllm-project/vllm#53269).
+          // The adapter restores the spec value and surfaces the cut call as
+          // invalid rather than as an executable call with broken JSON.
+          final valid = <LLMToolCall>[];
+          final invalid = <LLMInvalidToolCall>[];
+          LLMFinishReason? finishReason;
+
+          await for (final chunk in repo.streamChat(
+            chatModel,
+            messages: [LLMMessage(role: LLMRole.user, content: _bigFilePrompt)],
+            tools: [_WriteFileTool()],
+            options: const LLMChatOptions(
+              autoExecuteTools: false,
+              maxOutputTokens: 150,
+              backendOptions: _noThinking,
+            ),
+          )) {
+            valid.addAll(chunk.message?.toolCalls ?? const []);
+            invalid.addAll(chunk.message?.invalidToolCalls ?? const []);
+            finishReason = chunk.finishReason ?? finishReason;
+          }
+
+          expect(finishReason, LLMFinishReason.length);
+          expect(valid, isEmpty);
+          expect(invalid.single.name, 'write_file');
+          expect(invalid.single.error, isNotEmpty);
+        },
+        tags: ['integration'],
+        timeout: const Timeout(Duration(minutes: 2)),
+      );
+
+      test(
+        'the tool loop answers a cut call with a tool error the server accepts',
+        () async {
+          // The next round echoes the invalid call with `{}` arguments; the
+          // raw truncated text would be rejected by vLLM's chat preprocessing.
+          var sawToolError = false;
+          var sawSecondRound = false;
+          try {
+            await for (final chunk in repo.streamChat(
+              chatModel,
+              messages: [
+                LLMMessage(role: LLMRole.user, content: _bigFilePrompt),
+              ],
+              tools: [_WriteFileTool()],
+              options: const LLMChatOptions(
+                toolAttempts: 1,
+                maxOutputTokens: 150,
+                backendOptions: _noThinking,
+              ),
+            )) {
+              if (chunk.message?.role == LLMRole.tool) {
+                sawToolError =
+                    chunk.message!.content?.contains('output token limit') ??
+                    false;
+              } else if (sawToolError && chunk.done == true) {
+                sawSecondRound = true;
+              }
+            }
+          } on ToolLoopIncompleteException {
+            // Expected when the model retries and is cut again: the budget
+            // runs out. The server having answered round two is the point.
+          }
+
+          expect(sawToolError, isTrue);
+          expect(sawSecondRound, isTrue);
+        },
+        tags: ['integration'],
+        timeout: const Timeout(Duration(minutes: 3)),
       );
     });
 
@@ -585,4 +660,40 @@ void main() {
       );
     });
   }, skip: toolTestsEnabled ? false : 'Set VLLM_ENABLE_TOOL_TESTS=true');
+}
+
+const _bigFilePrompt =
+    'Use write_file to create /app/big.py containing a Python module with 40 '
+    'fully documented functions. Call the tool immediately, no preamble.';
+
+const _noThinking = <String, dynamic>{
+  'chat_template_kwargs': {'enable_thinking': false},
+};
+
+class _WriteFileTool extends LLMTool {
+  @override
+  String get name => 'write_file';
+
+  @override
+  String get description => 'Write a file';
+
+  @override
+  List<LLMToolParam> get parameters => [
+    LLMToolParam(
+      name: 'path',
+      type: 'string',
+      description: 'Path of the file',
+      isRequired: true,
+    ),
+    LLMToolParam(
+      name: 'content',
+      type: 'string',
+      description: 'Full file content',
+      isRequired: true,
+    ),
+  ];
+
+  @override
+  Future<dynamic> execute(Map<String, dynamic> args, {dynamic extra}) async =>
+      'written';
 }

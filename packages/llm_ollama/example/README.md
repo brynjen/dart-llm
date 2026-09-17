@@ -3,7 +3,7 @@
 ## Prerequisites
 
 1. **Ollama Installation**: Install and run Ollama locally
-   - Download from [ollama.ai](https://ollama.ai)
+   - Download from [ollama.com](https://ollama.com)
    - Start the Ollama service (usually runs automatically)
 
 2. **Model**: Pull a model using Ollama CLI

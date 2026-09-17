@@ -72,6 +72,39 @@ void main() {
       expect(response.finishReason, LLMFinishReason.stop);
     });
 
+    test('surfaces invalid tool calls of the final turn', () async {
+      final mock = MockLLMChatRepository();
+      mock.setStreamChunks([
+        LLMChunk(
+          model: 'test-model',
+          createdAt: DateTime(2026),
+          done: true,
+          finishReason: LLMFinishReason.length,
+          message: LLMChunkMessage(
+            content: null,
+            role: LLMRole.assistant,
+            invalidToolCalls: const [
+              LLMInvalidToolCall(
+                id: 'call_1',
+                name: 'write_file',
+                arguments: '{"content":"def f(',
+                error: 'Unexpected end of input',
+              ),
+            ],
+          ),
+        ),
+      ]);
+
+      final response = await mock.chatResponse(
+        'test-model',
+        messages: [LLMMessage(role: LLMRole.user, content: 'Write it')],
+      );
+
+      expect(response.finishReason, LLMFinishReason.length);
+      expect(response.toolCalls, isNull);
+      expect(response.invalidToolCalls!.single.id, 'call_1');
+    });
+
     test('handles tool calls in response', () async {
       final mock = MockLLMChatRepository();
       mock.setResponse('I will calculate that');

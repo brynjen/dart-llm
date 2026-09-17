@@ -264,11 +264,12 @@ Map<String, dynamic> _callDelta({
   required String arguments,
   String? name,
   String? id,
+  int index = 0,
 }) => {
   'tool_calls': [
     {
       'id': ?id,
-      'index': 0,
+      'index': index,
       'type': 'function',
       'function': {'name': ?name, 'arguments': arguments},
     },
@@ -333,8 +334,8 @@ void _turnEndEmissionTests() {
     );
 
     test('a call cut off by length stays a truncation', () async {
-      // Arguments cut mid-JSON are not executable; the caller has to see the
-      // truncation and retry rather than receive a malformed call.
+      // Arguments cut mid-JSON are not executable; the caller sees the
+      // truncation and the call as invalid, never as an executable call.
       final response = http.StreamedResponse(
         Stream.value(
           utf8.encode(
@@ -358,7 +359,62 @@ void _turnEndEmissionTests() {
       for (final chunk in parsed) {
         expect(chunk.message?.toolCalls, anyOf(isNull, isEmpty));
       }
+      final invalid = parsed.last.message!.invalidToolCalls!.single;
+      expect(invalid.name, 'get_weather');
+      expect(invalid.arguments, '{"city"');
     });
+
+    test(
+      'a length finish surfaces complete calls next to the cut one',
+      () async {
+        // OpenAI returns the calls with a `length` finish; so do LangChain and
+        // the Vercel AI SDK, split by whether the arguments decode.
+        final parsed = await _run([
+          _chunk(
+            _callDelta(
+              id: 'call_1',
+              name: 'get_weather',
+              arguments: '{"city":"Oslo"}',
+            ),
+          ),
+          _chunk(
+            _callDelta(
+              id: 'call_2',
+              name: 'get_weather',
+              arguments: '{"city"',
+              index: 1,
+            ),
+          ),
+          _chunk(<String, dynamic>{}, finish: 'length'),
+        ]);
+
+        expect(parsed.last.finishReason, LLMFinishReason.length);
+        expect(parsed.last.message!.toolCalls!.single.id, 'call_1');
+        expect(parsed.last.message!.invalidToolCalls!.single.id, 'call_2');
+      },
+    );
+
+    test(
+      'a tool_calls finish is passed through even with bad arguments',
+      () async {
+        // OpenAI reports `length` for a truncation itself, so its reason is
+        // trusted as sent. Only the vLLM adapter corrects a known violation.
+        final parsed = await _run([
+          _chunk(
+            _callDelta(
+              id: 'call_1',
+              name: 'get_weather',
+              arguments: '{"city":}',
+            ),
+          ),
+          _chunk(<String, dynamic>{}, finish: 'tool_calls'),
+        ]);
+
+        expect(parsed.last.finishReason, LLMFinishReason.toolCalls);
+        expect(parsed.last.message?.toolCalls, isNull);
+        expect(parsed.last.message!.invalidToolCalls!.single.id, 'call_1');
+      },
+    );
 
     test('a complete call survives a stream that never terminates', () async {
       // A proxy cutoff ends the stream with the call fully accumulated and no
@@ -390,30 +446,37 @@ void _turnEndEmissionTests() {
       expect(calls!.single.name, 'get_weather');
     });
 
-    test('a call cut off mid-arguments is not flushed at stream end', () async {
-      // There is no provider signal either way at an abrupt end of stream, so
-      // the payload decides — and this one is not executable.
-      final response = http.StreamedResponse(
-        Stream.value(
-          utf8.encode(
-            _sseUnterminated([
-              _chunk(
-                _callDelta(
-                  id: 'call_1',
-                  name: 'get_weather',
-                  arguments: '{"city"',
+    test(
+      'a call cut off mid-arguments is surfaced as invalid at stream end',
+      () async {
+        // There is no provider signal either way at an abrupt end of stream, so
+        // the payload decides — and this one is not executable.
+        final response = http.StreamedResponse(
+          Stream.value(
+            utf8.encode(
+              _sseUnterminated([
+                _chunk(
+                  _callDelta(
+                    id: 'call_1',
+                    name: 'get_weather',
+                    arguments: '{"city"',
+                  ),
                 ),
-              ),
-            ]),
+              ]),
+            ),
           ),
-        ),
-        200,
-      );
+          200,
+        );
 
-      final parsed = await GPTStreamConverter.toLLMStream(response).toList();
-      for (final chunk in parsed) {
-        expect(chunk.message?.toolCalls, anyOf(isNull, isEmpty));
-      }
-    });
+        final parsed = await GPTStreamConverter.toLLMStream(response).toList();
+        for (final chunk in parsed) {
+          expect(chunk.message?.toolCalls, anyOf(isNull, isEmpty));
+        }
+        expect(
+          parsed.last.message!.invalidToolCalls!.single.name,
+          'get_weather',
+        );
+      },
+    );
   });
 }

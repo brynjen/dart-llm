@@ -15,12 +15,13 @@ Available on [pub.dev](https://pub.dev/packages/llm_chatgpt).
 - Reasoning models: per-model detection, `reasoning_effort` mapping, and streaming usage
 - Structured output (`json_object` and native `json_schema` with `strict`)
 - Configurable base URL for OpenAI-compatible servers
+- `extraHeaders` for arbitrary headers on every request
 
 ## Installation
 
 ```yaml
 dependencies:
-  llm_chatgpt: ^0.3.2
+  llm_chatgpt: ^0.6.0
 ```
 
 ## Prerequisites
@@ -55,6 +56,18 @@ final stream = repo.streamChat('gpt-5.4-nano',
   tools: [MyTool()],
 );
 ```
+
+Tools run automatically; pass `LLMChatOptions(autoExecuteTools: false)` to
+handle `chunk.message?.toolCalls` yourself. While a call streams,
+`chunk.message?.toolCallDeltas` reports the tool name before its arguments
+finish. Parallel calls are kept apart even when an OpenAI-compatible server
+sends them all with `index: 0`.
+
+The finish reason is passed through as OpenAI reports it. A turn cut off by
+`max_tokens` finishes as `LLMFinishReason.length`, and its calls are still
+returned: complete ones on `toolCalls`, the cut one on
+`chunk.message?.invalidToolCalls` with its raw arguments and the parse error.
+Invalid calls are never executed; the tool loop answers them with a tool error.
 
 ### Structured Output
 
@@ -179,6 +192,9 @@ final stream = repo.streamChat(
 final repo = ChatGPTChatRepository(
   apiKey: 'your-key',
   baseUrl: 'https://my-openai-compatible-host',
+  // Optional: sent on every request. Protocol headers and `authorization`
+  // always take precedence.
+  extraHeaders: {'x-request-source': 'my-app'},
 );
 ```
 

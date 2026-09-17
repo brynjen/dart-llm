@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-09-17
+
+### Added
+- `LLMInvalidToolCall`, `LLMChunkMessage.invalidToolCalls` and `LLMResponse.invalidToolCalls`: tool calls whose arguments don't decode are returned here, with the raw text and the parse error. This matches LangChain's `invalid_tool_calls` and the Vercel AI SDK.
+- `LLMToolCall.argumentsError` and `LLMToolCall.partition`.
+
+### Changed
+- A `length` turn now returns its tool calls, split into valid and invalid, instead of dropping them. The finish reason stays `length`, as in the OpenAI API.
+- `StreamToolExecutor` runs only the valid calls. Each invalid call gets a tool error back (with a hint when the output token limit was hit) and is echoed with `{}` as its arguments.
+
 ## [0.5.0] - 2026-09-11
 
 ### Added

@@ -18,6 +18,7 @@ Part of the [dart-llm](https://github.com/brynjen/dart-llm) ecosystem.
 - Structured output (JSON mode and JSON Schema via the native `format` field)
 - Model management (list, pull, show, version)
 - Multi-instance pooling with health checks and per-model routing (`OllamaPool`)
+- `extraHeaders` for arbitrary headers on every request (reverse proxies, auth gateways)
 
 ## Streaming Reliability Guarantees
 
@@ -29,7 +30,7 @@ Part of the [dart-llm](https://github.com/brynjen/dart-llm) ecosystem.
 
 ```yaml
 dependencies:
-  llm_ollama: ^0.3.2
+  llm_ollama: ^0.6.0
 ```
 
 ## Prerequisites
@@ -103,6 +104,11 @@ final stream = repo.streamChat('qwen3:0.6b',
   tools: [MyTool()],
 );
 ```
+
+Ollama emits each tool call whole, as soon as its parser recognises one, so
+calls arrive on `chunk.message?.toolCalls` with no `toolCallDeltas`. Ollama
+reports `done_reason: "stop"` even for a tool-calling turn; `llm_ollama`
+reports it as `LLMFinishReason.toolCalls`, per the OpenAI specification.
 
 ### Vision
 
@@ -252,7 +258,7 @@ final info = await ollamaRepo.showModel('qwen3:0.6b');
 
 // Pull a model
 await for (final progress in ollamaRepo.pullModel('qwen3:0.6b')) {
-  print('${progress.status}: ${progress.progress * 100}%');
+  print('${progress.status}: ${progress.completed}/${progress.total}');
 }
 
 // Get version
@@ -402,8 +408,9 @@ A client you supply is never closed for you.
 ## Notes
 
 - **Retries are off by default.** Pass a `RetryConfig` to enable them.
-- **`batchEmbed` does not batch.** Ollama's `/api/embed` takes one input at a
-  time, so `batchEmbed` delegates to `embed`. It exists for interface parity.
+- **`embed` already batches.** It sends every input in one `/api/embed`
+  request, so `batchEmbed` simply delegates to `embed`; it exists for interface
+  parity.
 - Portable `LLMChatOptions` fields (`temperature`, `topP`, `topK`,
   `maxOutputTokens`, `stopSequences`) are mapped into Ollama's nested
   `options` object for you — you only need raw `backendOptions['options']` for

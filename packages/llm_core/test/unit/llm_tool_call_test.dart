@@ -118,4 +118,46 @@ void main() {
       );
     });
   });
+
+  group('LLMToolCall.partition', () {
+    test('splits by whether the arguments decode, preserving order', () {
+      final split = LLMToolCall.partition([
+        LLMToolCall(name: 'a', arguments: '{"x":1}', id: 'c1'),
+        LLMToolCall(name: 'b', arguments: '{"x":', id: 'c2'),
+        LLMToolCall(name: 'c', arguments: '', id: 'c3'),
+        LLMToolCall(name: 'd', arguments: 'null', id: 'c4'),
+        LLMToolCall(name: 'e', arguments: '[1,2]', id: 'c5'),
+      ]);
+
+      expect(split.valid.map((c) => c.id), ['c1', 'c3', 'c4']);
+      expect(split.invalid.map((c) => c.id), ['c2', 'c5']);
+      final cut = split.invalid.first;
+      expect(cut.name, 'b');
+      expect(cut.arguments, '{"x":');
+      expect(cut.error, isNotEmpty);
+    });
+
+    test('requireArguments treats empty arguments as incomplete', () {
+      final split = LLMToolCall.partition([
+        LLMToolCall(name: 'a', arguments: '', id: 'c1'),
+      ], requireArguments: true);
+
+      expect(split.valid, isEmpty);
+      expect(split.invalid.single.id, 'c1');
+    });
+
+    test('an invalid call echoes empty arguments in API format', () {
+      const call = LLMInvalidToolCall(
+        id: 'c1',
+        name: 'write_file',
+        arguments: '{"content":"def f(',
+        error: 'Unexpected end of input',
+      );
+      expect(call.toApiFormat(), {
+        'id': 'c1',
+        'type': 'function',
+        'function': {'name': 'write_file', 'arguments': '{}'},
+      });
+    });
+  });
 }

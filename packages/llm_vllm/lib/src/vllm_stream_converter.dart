@@ -139,21 +139,28 @@ class VLLMStreamConverter {
           // fragment, so without it every mid-stream event would read as an
           // end of turn.
           final turnEnded = finishReason != null;
-          final endsWithToolCalls =
+          // A filter or refusal means the provider did not stand behind the
+          // calls, so they are not surfaced. Every other ending surfaces them.
+          final surfacesToolCalls =
               turnEnded &&
               accumulatedToolCalls.isNotEmpty &&
-              LLMFinishReason.resolve(
-                    reported: reported,
-                    hasCompleteToolCalls: true,
-                  ) ==
-                  LLMFinishReason.toolCalls;
+              (reported == null ||
+                  reported.canBecomeToolCalls ||
+                  reported == LLMFinishReason.length);
 
-          if (endsWithToolCalls) {
+          if (surfacesToolCalls) {
             // Accumulation above already folded in any fragment this same
             // chunk carried, so this covers both terminal shapes vLLM emits:
             // a lone `{}` delta, and a final fragment fused with the finish
             // reason.
-            yield _toolCallChunk(chunk, accumulatedToolCalls);
+            yield _toolCallChunk(
+              chunk,
+              accumulatedToolCalls,
+              finishReason: _correctedFinishReason(
+                reported: reported,
+                accumulated: accumulatedToolCalls,
+              ),
+            );
             accumulatedToolCalls.clear();
             openToolCallAt.clear();
           } else if (turnEnded ||
@@ -161,10 +168,9 @@ class VLLMStreamConverter {
               hasThinking ||
               chunk.usage != null) {
             if (turnEnded) {
-              // The turn ended on a reason that forbids executing what was
-              // accumulated — `length` cut the arguments mid-JSON, a filter or
-              // refusal means the provider did not stand behind the call. Drop
-              // them here so the end-of-stream flush cannot resurrect them.
+              // A filter or refusal: the provider did not stand behind the
+              // accumulated calls. Drop them here so the end-of-stream flush
+              // cannot resurrect them.
               accumulatedToolCalls.clear();
               openToolCallAt.clear();
             }
@@ -206,42 +212,71 @@ class VLLMStreamConverter {
     if (pendingCalls != null) yield pendingCalls;
   }
 
-  /// Emits calls that were complete when the stream ended without ever sending
-  /// a terminal frame, or `null` when there is nothing executable outstanding.
+  /// Emits the calls outstanding when the stream ended without ever sending a
+  /// terminal frame, or `null` when nothing was accumulated.
   ///
   /// Gating emission on the finish reason alone lost these: a proxy cutoff or
   /// a server hiccup ends the stream with the calls fully accumulated and no
   /// `finish_reason` to trigger the flush, and they were dropped in silence.
-  /// A terminal frame that forbids execution clears the accumulation itself,
-  /// so nothing rejected there can reappear here.
+  /// A terminal frame clears the accumulation itself, so nothing it handled
+  /// can reappear here.
   ///
-  /// Completeness is decided by parsing the arguments rather than by trusting
-  /// the accumulation. There is no provider signal at an abrupt end of stream:
-  /// the same state describes a finished call and one cut off mid-arguments,
-  /// and the payload is the only evidence of which it was. A call whose
-  /// arguments do not parse — including one that only ever received its name —
-  /// stays a fragment, exactly as a `length` truncation does.
+  /// There is no provider signal at an abrupt end of stream: the same state
+  /// describes a finished call and one cut off mid-arguments, and the payload
+  /// is the only evidence of which it was. Calls are therefore split by
+  /// whether their arguments decode, and empty arguments count as incomplete
+  /// — a call that only ever received its name was cut off, not finished.
   static VLLMChunk? _flushToolCalls(
     List<VLLMToolCall> accumulated,
     VLLMChunk? lastChunk,
   ) {
     if (accumulated.isEmpty || lastChunk == null) return null;
-    final complete = accumulated.where(_hasParsableArguments).toList();
+    final chunk = _toolCallChunk(
+      lastChunk,
+      accumulated,
+      finishReason: LLMFinishReason.toolCalls,
+      requireArguments: true,
+    );
     accumulated.clear();
-    if (complete.isEmpty) return null;
-    return _toolCallChunk(lastChunk, complete);
+    final delta = chunk.choices.first.delta;
+    if (delta.toolCalls == null && delta.invalidToolCalls == null) return null;
+    return chunk;
   }
 
-  static bool _hasParsableArguments(VLLMToolCall call) {
-    final arguments = call.function.arguments;
-    if (arguments.isEmpty) return false;
-    try {
-      json.decode(arguments);
-      return true;
-    } catch (_) {
-      return false;
+  /// The finish reason for a turn that ended carrying [accumulated] calls.
+  ///
+  /// Normally [LLMFinishReason.resolve]. The exception corrects a known vLLM
+  /// violation of the OpenAI specification: its streaming path sets
+  /// `finish_reason` to `tool_calls` as soon as any tool-call delta went out
+  /// (`tools_streamed` in `serving.py`), overwriting `length` when
+  /// `max_tokens` cut the arguments. Upstream closed this as not planned
+  /// (vllm-project/vllm#53269). A reported `tool_calls` whose **last** call
+  /// does not decode is therefore restored to `length`. Only the last call
+  /// can be cut by the token limit; an earlier call that does not decode
+  /// followed by one that does is the model writing bad JSON, and the reason
+  /// stays `tool_calls`.
+  static LLMFinishReason _correctedFinishReason({
+    required LLMFinishReason? reported,
+    required List<VLLMToolCall> accumulated,
+  }) {
+    if (reported == LLMFinishReason.toolCalls &&
+        _argumentsError(accumulated.last) != null) {
+      return LLMFinishReason.length;
     }
+    return LLMFinishReason.resolve(
+      reported: reported,
+      hasCompleteToolCalls: true,
+    )!;
   }
+
+  static String? _argumentsError(
+    VLLMToolCall call, {
+    bool requireArguments = false,
+  }) => LLMToolCall(
+    id: call.id,
+    name: call.function.name ?? '',
+    arguments: call.function.arguments,
+  ).argumentsError(requireArguments: requireArguments);
 
   /// Builds the exception for an in-stream `error` event.
   ///
@@ -367,10 +402,36 @@ class VLLMStreamConverter {
     return existing + parsed;
   }
 
+  /// Builds the chunk that closes a turn carrying [accumulated] calls, split
+  /// into [VLLMChunkChoiceDelta.toolCalls] and
+  /// [VLLMChunkChoiceDelta.invalidToolCalls] by whether their arguments
+  /// decode.
   static VLLMChunk _toolCallChunk(
     VLLMChunk source,
-    List<VLLMToolCall> accumulated,
-  ) {
+    List<VLLMToolCall> accumulated, {
+    required LLMFinishReason finishReason,
+    bool requireArguments = false,
+  }) {
+    final valid = <VLLMToolCall>[];
+    final invalid = <LLMInvalidToolCall>[];
+    for (final call in accumulated) {
+      final name = call.function.name;
+      // A fragment that never received a name identifies no tool at all.
+      if (name == null) continue;
+      final error = _argumentsError(call, requireArguments: requireArguments);
+      if (error == null) {
+        valid.add(call);
+      } else {
+        invalid.add(
+          LLMInvalidToolCall(
+            id: call.id,
+            name: name,
+            arguments: call.function.arguments,
+            error: error,
+          ),
+        );
+      }
+    }
     return VLLMChunk(
       id: source.id,
       created: source.created,
@@ -384,10 +445,11 @@ class VLLMStreamConverter {
             role: LLMRole.assistant.name,
             content: null,
             thinking: null,
-            toolCalls: List<VLLMToolCall>.from(accumulated),
+            toolCalls: valid.isEmpty ? null : valid,
+            invalidToolCalls: invalid.isEmpty ? null : invalid,
           ),
           logProbs: null,
-          finishReason: 'tool_calls',
+          finishReason: finishReason.providerName,
         ),
       ],
     );

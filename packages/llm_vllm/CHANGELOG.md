@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-09-17
+
+### Fixed
+- A tool call cut off by `max_tokens` was returned as an executable call with broken JSON, because vLLM reports `tool_calls` for these turns (vllm-project/vllm#53269). The turn now finishes as `length` and the cut call is returned in `invalidToolCalls`.
+
+### Changed
+- Tool calls are no longer dropped on `length` or at an abrupt end of stream. Calls whose arguments don't decode are returned in `invalidToolCalls`.
+
 ## [0.5.0] - 2026-09-11
 
 ### Fixed

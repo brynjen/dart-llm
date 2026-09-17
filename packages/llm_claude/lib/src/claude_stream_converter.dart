@@ -200,43 +200,39 @@ class ClaudeStreamConverter {
             // always — a turn mixing text and tool blocks can end `end_turn`.
             // Per the OpenAI specification the finish reason is `tool_calls`
             // "if the model called a tool", so the classification follows the
-            // blocks rather than the spelling. `max_tokens` is exempt and
-            // stays a truncation: the arguments below are passed through
-            // verbatim precisely because they may be cut mid-JSON.
-            final endsWithToolCalls =
+            // blocks rather than the spelling. `max_tokens` stays a truncation
+            // but its blocks are still surfaced, split by whether their input
+            // decodes — the shape OpenAI, LangChain and the Vercel AI SDK
+            // give a truncated turn. Only a refusal withholds them: the
+            // provider did not stand behind the calls.
+            final reported = LLMFinishReason.fromProvider(stopReason);
+            final surfacesToolCalls =
                 toolBlocks.isNotEmpty &&
-                LLMFinishReason.resolve(
-                      reported: LLMFinishReason.fromProvider(stopReason),
-                      hasCompleteToolCalls: true,
-                    ) ==
-                    LLMFinishReason.toolCalls;
+                (reported.canBecomeToolCalls ||
+                    reported == LLMFinishReason.length);
 
-            if (endsWithToolCalls) {
+            if (surfacesToolCalls) {
+              final split = LLMToolCall.partition(
+                toolBlocks.values.map(
+                  (block) => LLMToolCall(
+                    id: block.id,
+                    name: block.name,
+                    // The accumulated wire text, verbatim. Decoding and
+                    // re-encoding here did two harmful things: it normalized
+                    // whitespace, so Claude was the one backend whose
+                    // concatenated `toolCallDeltas` did not match the
+                    // completed call byte for byte; and malformed input was
+                    // swallowed into `{}`, which ran the tool with *no
+                    // arguments* rather than failing. Truncated JSON is a
+                    // real possibility here — a turn cut short by max_tokens,
+                    // or the fine-grained tool streaming beta, which
+                    // explicitly emits unvalidated partial JSON — and lands
+                    // in `invalidToolCalls` instead.
+                    arguments: block.inputJson.isEmpty ? '{}' : block.inputJson,
+                  ),
+                ),
+              );
               emittedToolCalls = true;
-              // Emit a chunk with accumulated tool calls
-              final toolCalls = toolBlocks.values
-                  .map(
-                    (block) => LLMToolCall(
-                      id: block.id,
-                      name: block.name,
-                      // The accumulated wire text, verbatim. Decoding and
-                      // re-encoding here did two harmful things: it normalized
-                      // whitespace, so Claude was the one backend whose
-                      // concatenated `toolCallDeltas` did not match the
-                      // completed call byte for byte; and malformed input was
-                      // swallowed into `{}`, which ran the tool with *no
-                      // arguments* rather than failing. Truncated JSON is a
-                      // real possibility here — a turn cut short by max_tokens,
-                      // or the fine-grained tool streaming beta, which
-                      // explicitly emits unvalidated partial JSON. Passing the
-                      // text through lets that surface as an error at
-                      // execution instead of a silent, argument-less call.
-                      arguments: block.inputJson.isEmpty
-                          ? '{}'
-                          : block.inputJson,
-                    ),
-                  )
-                  .toList(growable: false);
 
               yield ClaudeChunk(
                 model: resolvedModel,
@@ -245,7 +241,10 @@ class ClaudeStreamConverter {
                 message: LLMChunkMessage(
                   content: null,
                   role: LLMRole.assistant,
-                  toolCalls: toolCalls,
+                  toolCalls: split.valid.isEmpty ? null : split.valid,
+                  invalidToolCalls: split.invalid.isEmpty
+                      ? null
+                      : split.invalid,
                 ),
               );
             }

@@ -39,6 +39,27 @@ class _AlwaysCallsTool extends LLMTool {
       'ok';
 }
 
+class _RecordingTool extends LLMTool {
+  _RecordingTool(this.executed);
+
+  final List<Map<String, dynamic>> executed;
+
+  @override
+  String get name => 'recording_tool';
+
+  @override
+  String get description => 'Records its arguments';
+
+  @override
+  List<LLMToolParam> get parameters => const [];
+
+  @override
+  Future<dynamic> execute(Map<String, dynamic> args, {dynamic extra}) async {
+    executed.add(args);
+    return 'ok';
+  }
+}
+
 LLMChunk _toolCallChunk() => LLMChunk(
   model: 'test-model',
   createdAt: DateTime(2026),
@@ -108,6 +129,98 @@ void main() {
 
         // The budget really did cap the loop.
         expect(rounds, budget);
+      },
+    );
+  });
+
+  group('invalid tool calls', () {
+    test(
+      'valid calls run, invalid calls get a tool error and never run',
+      () async {
+        final executed = <Map<String, dynamic>>[];
+        List<LLMMessage>? nextRoundMessages;
+
+        final executor = StreamToolExecutor(
+          tools: [_RecordingTool(executed)],
+          extra: null,
+          maxToolAttempts: 3,
+          streamChatCallback: (model, messages, tools, extra, attempts) {
+            nextRoundMessages = messages;
+            return Stream.value(
+              LLMChunk(
+                model: model,
+                createdAt: DateTime(2026),
+                done: true,
+                finishReason: LLMFinishReason.stop,
+                message: LLMChunkMessage(
+                  content: 'done',
+                  role: LLMRole.assistant,
+                ),
+              ),
+            );
+          },
+        );
+
+        final chunks = await executor
+            .executeTools(
+              chunkStream: Stream.value(
+                LLMChunk(
+                  model: 'test-model',
+                  createdAt: DateTime(2026),
+                  done: true,
+                  finishReason: LLMFinishReason.length,
+                  message: LLMChunkMessage(
+                    content: null,
+                    role: LLMRole.assistant,
+                    toolCalls: [
+                      LLMToolCall(
+                        name: 'recording_tool',
+                        arguments: '{"n":1}',
+                        id: 'call_1',
+                      ),
+                    ],
+                    invalidToolCalls: const [
+                      LLMInvalidToolCall(
+                        id: 'call_2',
+                        name: 'recording_tool',
+                        arguments: '{"n":',
+                        error: 'Unexpected end of input',
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              model: 'test-model',
+              initialMessages: [LLMMessage(role: LLMRole.user, content: 'go')],
+              toolAttempts: 3,
+            )
+            .toList();
+
+        expect(executed, [
+          {'n': 1},
+        ], reason: 'only the valid call runs');
+
+        final toolResults = chunks
+            .where((c) => c.message?.role == LLMRole.tool)
+            .toList();
+        expect(toolResults.map((c) => c.message!.toolCallId), [
+          'call_1',
+          'call_2',
+        ]);
+        expect(
+          toolResults.last.message!.content,
+          contains('output token limit'),
+        );
+
+        final assistant = nextRoundMessages!.firstWhere(
+          (m) => m.role == LLMRole.assistant,
+        );
+        expect(assistant.toolCalls!.map((c) => c.id), ['call_1', 'call_2']);
+        expect(
+          assistant.toolCalls!.last.arguments,
+          '{}',
+          reason: 'undecodable arguments are not echoed back to the server',
+        );
       },
     );
   });
