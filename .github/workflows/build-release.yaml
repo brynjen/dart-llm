@@ -494,6 +494,10 @@ jobs:
         uses: android-actions/setup-android@v3
         with:
           cmdline-tools-version: 11076708
+          # The action's default is `tools platform-tools`. The obsolete `tools`
+          # package is gone from the SDK repository, so sdkmanager fails on it.
+          # The NDK is installed explicitly in the next step.
+          packages: platform-tools
 
       - name: Install NDK
         run: |
@@ -659,6 +663,10 @@ jobs:
         uses: android-actions/setup-android@v3
         with:
           cmdline-tools-version: 11076708
+          # The action's default is `tools platform-tools`. The obsolete `tools`
+          # package is gone from the SDK repository, so sdkmanager fails on it.
+          # The NDK is installed explicitly in the next step.
+          packages: platform-tools
 
       - name: Install NDK
         run: |
@@ -745,6 +753,10 @@ jobs:
         uses: android-actions/setup-android@v3
         with:
           cmdline-tools-version: 11076708
+          # The action's default is `tools platform-tools`. The obsolete `tools`
+          # package is gone from the SDK repository, so sdkmanager fails on it.
+          # The NDK is installed explicitly in the next step.
+          packages: platform-tools
 
       - name: Install NDK
         run: |
