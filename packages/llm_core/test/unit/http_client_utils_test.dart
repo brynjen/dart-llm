@@ -160,4 +160,59 @@ void main() {
       expect(response.statusCode, 200);
     });
   });
+
+  group('sendStreamingRequest abortTrigger', () {
+    http.StreamedResponse emptyResponse(http.BaseRequest _) =>
+        http.StreamedResponse(const Stream<List<int>>.empty(), 200);
+
+    test('without a trigger the request is an ordinary Request', () async {
+      http.BaseRequest? sent;
+      final helper = HttpClientHelper(
+        httpClient: _CapturingClient((r) {
+          sent = r;
+          return emptyResponse(r);
+        }),
+      );
+
+      await helper.sendStreamingRequest(
+        method: 'POST',
+        uri: Uri.parse('https://example.test/v1/chat'),
+        headers: const {},
+      );
+
+      expect(sent, isA<http.Request>());
+      expect(sent, isNot(isA<http.Abortable>()));
+    });
+
+    test('with a trigger the request is abortable and carries it', () async {
+      http.BaseRequest? sent;
+      final helper = HttpClientHelper(
+        httpClient: _CapturingClient((r) {
+          sent = r;
+          return emptyResponse(r);
+        }),
+      );
+      final trigger = Completer<void>();
+
+      await helper.sendStreamingRequest(
+        method: 'POST',
+        uri: Uri.parse('https://example.test/v1/chat'),
+        headers: const {},
+        abortTrigger: trigger.future,
+      );
+
+      expect(sent, isA<http.Abortable>());
+      expect((sent! as http.Abortable).abortTrigger, same(trigger.future));
+    });
+  });
+}
+
+class _CapturingClient extends http.BaseClient {
+  _CapturingClient(this.onSend);
+
+  final http.StreamedResponse Function(http.BaseRequest) onSend;
+
+  @override
+  Future<http.StreamedResponse> send(http.BaseRequest request) async =>
+      onSend(request);
 }

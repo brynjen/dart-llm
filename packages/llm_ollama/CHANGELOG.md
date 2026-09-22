@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-09-22
+
+### Fixed
+- `RetryConfig.retryableStatusCodes` never applied to streaming requests. A non-2xx arrives as a *returned* response rather than a thrown error, so the retry around the send never saw it and a 429 or 503 from Ollama failed on the first attempt.
+- A failure reported in-band — `200`, then an `error` event on the stream — was not retried either, because it arrives after the send has returned. Both are now re-issued while nothing has reached the caller.
+- Cancelling a `streamChat` subscription aborts the request.
+
+### Changed
+- `tool_name` is read from `LLMMessage.toolName` when set. The previous derivation — walking back to the matching call, then parsing a synthetic id — remains for histories assembled by a caller.
+- All packages bumped to `0.7.0`; `llm_core` constraint updated to `^0.7.0`.
+
 ## [0.6.0] - 2026-09-17
 
 ### Changed

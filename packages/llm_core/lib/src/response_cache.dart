@@ -184,6 +184,14 @@ class CacheKeyGenerator {
   }
 
   /// Generate a stable hash from shared chat options.
+  ///
+  /// Only the options that can change the generated text are hashed. Transport
+  /// and bookkeeping fields are deliberately excluded, because two requests
+  /// differing only in one of them produce the same answer and must share a
+  /// cache entry: `timeout`, `retryConfig`, `useCache`, `cacheTtl`,
+  /// `recordMetrics`, and `usagePerChunk` — the last of these changes only how
+  /// often the token counter is reported mid-stream, and `chatResponse` (the
+  /// only cached path) reads usage from the turn's final frame either way.
   static String optionsHash(
     LLMChatOptions options, {
     bool? think,

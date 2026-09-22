@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:llm_core/llm_core.dart';
 import 'package:test/test.dart';
 
@@ -302,6 +303,159 @@ void main() {
       expect(schema['type'], 'array');
       expect(schema['items']['type'], 'object');
       expect(schema['items']['properties']['name']['type'], 'string');
+    });
+  });
+
+  group('LLMToolParam numeric bounds', () {
+    test('integer emits inclusive minimum and maximum', () {
+      final param = LLMToolParam(
+        name: 'x',
+        type: 'integer',
+        description: 'Normalized x coordinate',
+        minimum: 0,
+        maximum: 1000,
+      );
+
+      final schema = param.toJsonSchema();
+
+      expect(schema['type'], 'integer');
+      expect(schema['minimum'], 0);
+      expect(schema['maximum'], 1000);
+    });
+
+    test('number keeps fractional bounds', () {
+      final param = LLMToolParam(
+        name: 'ratio',
+        type: 'number',
+        description: 'A ratio',
+        minimum: 0.5,
+        maximum: 1.5,
+      );
+
+      final schema = param.toJsonSchema();
+
+      expect(schema['minimum'], 0.5);
+      expect(schema['maximum'], 1.5);
+    });
+
+    test(
+      'an integral bound on an integer serializes without a decimal point',
+      () {
+        final param = LLMToolParam(
+          name: 'count',
+          type: 'integer',
+          description: 'A count',
+          minimum: 2.0,
+          maximum: 8.0,
+        );
+
+        final encoded = jsonEncode(param.toJsonSchema());
+
+        expect(encoded, contains('"minimum":2'));
+        expect(encoded, contains('"maximum":8'));
+        expect(encoded, isNot(contains('2.0')));
+        expect(encoded, isNot(contains('8.0')));
+      },
+    );
+
+    test('each bound can be set on its own', () {
+      final minOnly = LLMToolParam(
+        name: 'a',
+        type: 'integer',
+        description: 'd',
+        minimum: 1,
+      ).toJsonSchema();
+      final maxOnly = LLMToolParam(
+        name: 'b',
+        type: 'integer',
+        description: 'd',
+        maximum: 9,
+      ).toJsonSchema();
+
+      expect(minOnly['minimum'], 1);
+      expect(minOnly.containsKey('maximum'), isFalse);
+      expect(maxOnly['maximum'], 9);
+      expect(maxOnly.containsKey('minimum'), isFalse);
+    });
+
+    test('bounds are omitted by default', () {
+      final schema = LLMToolParam(
+        name: 'x',
+        type: 'integer',
+        description: 'd',
+      ).toJsonSchema();
+
+      expect(schema.containsKey('minimum'), isFalse);
+      expect(schema.containsKey('maximum'), isFalse);
+    });
+
+    // `minimum` has no meaning in JSON Schema beside these types, so emitting
+    // it would tell the model something false.
+    test('bounds are dropped for non-numeric types', () {
+      for (final type in ['string', 'boolean']) {
+        final schema = LLMToolParam(
+          name: 'p',
+          type: type,
+          description: 'd',
+          minimum: 0,
+          maximum: 10,
+        ).toJsonSchema();
+
+        expect(
+          schema.containsKey('minimum'),
+          isFalse,
+          reason: '$type must not carry minimum',
+        );
+        expect(
+          schema.containsKey('maximum'),
+          isFalse,
+          reason: '$type must not carry maximum',
+        );
+      }
+    });
+
+    test('an array bounds its length, not its values', () {
+      final schema = LLMToolParam(
+        name: 'points',
+        type: 'array',
+        description: 'd',
+        items: LLMToolParam(name: 'item', type: 'integer', description: 'd'),
+        minItems: 1,
+        maxItems: 4,
+        minimum: 0,
+        maximum: 10,
+      ).toJsonSchema();
+
+      expect(schema['minItems'], 1);
+      expect(schema['maxItems'], 4);
+      expect(schema.containsKey('minimum'), isFalse);
+      expect(schema.containsKey('maximum'), isFalse);
+    });
+
+    test('an object drops bounds and keeps its properties', () {
+      final schema = LLMToolParam(
+        name: 'region',
+        type: 'object',
+        description: 'd',
+        properties: [
+          LLMToolParam(
+            name: 'x',
+            type: 'integer',
+            description: 'd',
+            isRequired: true,
+            minimum: 0,
+            maximum: 1000,
+          ),
+        ],
+        minimum: 0,
+        maximum: 10,
+      ).toJsonSchema();
+
+      expect(schema.containsKey('minimum'), isFalse);
+      final props = schema['properties'] as Map<String, dynamic>;
+      final x = props['x'] as Map<String, dynamic>;
+      expect(x['minimum'], 0);
+      expect(x['maximum'], 1000);
     });
   });
 }

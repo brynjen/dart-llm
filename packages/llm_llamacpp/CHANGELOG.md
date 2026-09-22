@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-09-22
+
+### Fixed
+- A failing tool produced `Error executing tool: <e>`, a wording no other backend used and which `llm_claude` could not recognize as a failure, so a history built here and replayed against Anthropic lost its error flag. It now matches `llm_core`: `Tool <name> failed: <e>`.
+- Tool result messages carried no tool name at all, leaving Gemini's `function_result.name` empty.
+
+### Added
+- Tool results carry `LLMMessage.toolName` and `LLMMessage.toolResult`.
+
+### Changed
+- All packages bumped to `0.7.0`; `llm_core` constraint updated to `^0.7.0`.
+
 ## [0.6.0] - 2026-09-17
 
 ### Changed

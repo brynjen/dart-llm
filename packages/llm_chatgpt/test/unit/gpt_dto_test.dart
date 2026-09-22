@@ -576,4 +576,55 @@ void main() {
       expect(llmMessage.toolCalls?[1].name, 'search');
     });
   });
+
+  group('cached prompt tokens', () {
+    test('reach LLMUsage on a streamed chunk', () {
+      final chunk = GPTChunk.fromJson(const {
+        'id': 'chatcmpl-1',
+        'created': 1700000000,
+        'model': 'gpt-4o',
+        'choices': <dynamic>[],
+        'usage': {
+          'prompt_tokens': 100,
+          'completion_tokens': 10,
+          'total_tokens': 110,
+          'prompt_tokens_details': {'cached_tokens': 64},
+        },
+      });
+
+      expect(chunk.usage?.cachedTokens, 64);
+      // OpenAI reports cached tokens as a subset of prompt_tokens.
+      expect(chunk.usage!.cachedTokens!, lessThan(chunk.usage!.promptTokens));
+      expect(chunk.usage?.cacheWriteTokens, isNull);
+    });
+
+    test('are null when the provider reports no details', () {
+      final chunk = GPTChunk.fromJson(const {
+        'id': 'chatcmpl-1',
+        'created': 1700000000,
+        'model': 'gpt-4o',
+        'choices': <dynamic>[],
+        'usage': {
+          'prompt_tokens': 100,
+          'completion_tokens': 10,
+          'total_tokens': 110,
+        },
+      });
+
+      expect(chunk.usage?.cachedTokens, isNull);
+    });
+
+    test('a details object without the key no longer throws', () {
+      // Unguarded, this cast threw mid-stream whenever OpenAI sent
+      // `prompt_tokens_details` without `cached_tokens`.
+      final usage = GPTUsage.fromJson(const {
+        'prompt_tokens': 10,
+        'completion_tokens': 5,
+        'total_tokens': 15,
+        'prompt_tokens_details': <String, dynamic>{},
+      });
+
+      expect(usage.usageTokenDetails?.cachedTokens, 0);
+    });
+  });
 }

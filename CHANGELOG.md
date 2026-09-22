@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-09-22
+
+### Added
+- **llm_core** — `RetryUtil.retryingStream` and `ErrorHandlers.isRetryableStreamError`, which own that retry. A read timeout is deliberately excluded: it has already waited `readTimeout`, and retrying it reads as a hang.
+- **llm_core** — `LLMToolResult`: a typed return for `LLMTool.execute` carrying the text the model sees, an `isError` flag, `metadata` the model never sees, and `contentParts` for providers that accept more than text. `execute` still returns `dynamic`, so existing tools are unaffected.
+- **llm_core** — `LLMMessage.thinking`, `.toolName` and `.toolResult` (and `toolName`/`toolResult` on `LLMChunkMessage`). `toolName` removes the `toolCallId` -> name join that `llm_ollama`, `llm_claude`, `llm_gemini` and every consumer were each re-implementing.
+- **llm_core** — `LLMUsage.cachedTokens` and `.cacheWriteTokens`, wired up in llm_vllm, llm_chatgpt, llm_claude and llm_gemini. Prefix-cache hit rate is the one usage number a client could not recover any other way.
+- **llm_core** — `LLMToolParam.minimum` and `.maximum` for `integer` and `number` parameters.
+- **llm_core, llm_vllm** — `LLMChatOptions.usagePerChunk` reaches vLLM's `stream_options.continuous_usage_stats`, putting the server's running token counter on every streamed chunk. That is the difference between a live tokens-per-second readout that is measured and one that is estimated. Ignored by every other backend.
+- **All HTTP backends** — cancelling a `streamChat` subscription aborts the in-flight request. Previously an interrupt arriving mid-generation did nothing: the socket stayed open, the server kept generating, and `await cancel()` did not return until the read timeout.
+
+### Fixed
+- **All HTTP backends** — `RetryConfig.retryableStatusCodes` never applied to streaming requests on llm_chatgpt, llm_claude, llm_gemini or llm_ollama. A non-2xx arrives as a *returned* response rather than a thrown error, so the retry around the send never saw it and a 429 or 503 failed on the first attempt.
+- **All HTTP backends** — a failure reported in-band (`200`, then an `error` event on the stream) was not retried on any backend, because it arrives after the send has returned. Both routes now re-issue the turn while nothing has reached the caller, and never once output has been delivered.
+- **llm_gemini** — `service_unavailable`, the code Google actually sends when a model is over capacity, was missing from the symbolic status map, so that failure carried no status and could never be classified as retryable.
+- **llm_claude** — `promptTokens` under-reported every cached request, and `totalTokens` with it. Anthropic's `input_tokens` counts only the tokens after the last cache breakpoint. **Cost calculations based on `promptTokens` will see different numbers.**
+- **llm_core, llm_claude** — an invalid tool call was answered with wording no backend could recognize as a failure, so Anthropic received it without `is_error` and the model read the parse error as data.
+- **llm_core** — the model's reasoning was dropped when an assistant turn that called a tool was assembled into history.
+- **llm_core** — all five backends rebuilt a tool round's options by hand and all five omitted `useCache`, `cacheTtl` and `recordMetrics`, so those settings stopped applying from the second round on.
+- **llm_vllm** — the stream converter's emission gate keyed off "a chunk carries usage" rather than "this is the terminal usage frame", which with `usagePerChunk` would have surfaced an unfinished tool-call fragment as a complete call and executed the tool twice.
+- **llm_chatgpt** — parsing `prompt_tokens_details` threw when OpenAI sent the object without `cached_tokens`.
+- **llm_llamacpp** — a failing tool produced `Error executing tool: <e>`, a wording no other backend used and which llm_claude could not recognize as a failure; tool results also carried no tool name at all.
+
+### Changed
+- **llm_core** — `LLMMessage.status` is now contractually application-level and never serialized, with the exact key set `toJson()` emits pinned by a test. `toolName` takes over its former double duty as the tool-name channel; `status` is still populated and still read as a fallback.
+- **llm_core** — `LLMChunk.usage`, `.promptEvalCount` and `.evalCount` may appear on every chunk when `usagePerChunk` is set; take the latest rather than accumulating.
+- All packages bumped to `0.7.0`; `llm_core` constraint updated to `^0.7.0`.
+
 ## [0.6.0] - 2026-09-17
 
 ### Added

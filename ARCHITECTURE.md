@@ -193,7 +193,7 @@ final options = LLMChatOptions(
 2. **LLMMessage**: Message representation with roles (user, assistant, system, tool)
 3. **LLMChunk**: Streaming response chunks
 4. **LLMResponse**: Complete response wrapper, with `LLMUsage` and `LLMFinishReason`
-5. **LLMTool**, **LLMToolCall**, **LLMToolCallDelta**, **LLMInvalidToolCall**: Tool definition, finished calls, streaming fragments, and calls whose arguments do not decode
+5. **LLMTool**, **LLMToolCall**, **LLMToolCallDelta**, **LLMInvalidToolCall**, **LLMToolResult**: Tool definition, finished calls, streaming fragments, calls whose arguments do not decode, and the typed outcome of a run
 6. **LLMResponseFormat**: Structured output format (sealed class: `JsonFormat`, `JsonSchemaFormat`)
 7. **Exceptions**: Common exception types
 8. **Validation**: Input validation utilities

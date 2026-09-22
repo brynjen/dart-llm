@@ -35,6 +35,30 @@ abstract class LLMChatRepository {
   /// - [options] - Optional [StreamChatOptions] to encapsulate all options.
   ///   If provided, takes precedence over individual parameters.
   ///
+  /// **Cancellation:**
+  /// Cancelling the subscription aborts the generation. The in-flight request
+  /// is aborted and its socket closed, so an OpenAI-compatible server stops
+  /// generating rather than finishing the turn into a listener that has gone
+  /// away. `cancel()` completes promptly and does not throw.
+  ///
+  /// Cancel through a subscription, not an `await for` loop, which cannot be
+  /// interrupted from outside:
+  ///
+  /// ```dart
+  /// final subscription = repo.streamChat(model, messages: messages).listen(render);
+  /// // ...on user interrupt:
+  /// await subscription.cancel();
+  /// ```
+  ///
+  /// Two things it does not cover. A tool already executing runs to completion,
+  /// because its `Future` belongs to the caller, not to this stream. And an
+  /// in-process backend has no request to abort — `llm_llamacpp` yields per
+  /// token, so a cancel lands within one decode step instead.
+  ///
+  /// Implementations are not required to support this, and the interface is
+  /// unchanged, so existing implementations keep working; an HTTP client that
+  /// ignores `http.Abortable` degrades to ending when the response does.
+  ///
   /// **Returns:**
   /// A [Stream<LLMChunk>] that emits chunks as tokens are generated.
   /// Each chunk contains:

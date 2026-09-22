@@ -406,6 +406,96 @@ void main() {
       expect(chunks.last.model, 'claude-sonnet-4-6');
     });
   });
+
+  group('prompt caching usage', () {
+    Future<LLMChunk> finalChunk({
+      required int inputTokens,
+      int? cacheRead,
+      int? cacheCreation,
+    }) async {
+      final body =
+          _sse('message_start', {
+            'message': {
+              'model': 'claude-opus-4-6',
+              'usage': {
+                'input_tokens': inputTokens,
+                'cache_read_input_tokens': ?cacheRead,
+                'cache_creation_input_tokens': ?cacheCreation,
+              },
+            },
+          }) +
+          _sse('content_block_start', {
+            'index': 0,
+            'content_block': {'type': 'text', 'text': ''},
+          }) +
+          _sse('content_block_delta', {
+            'index': 0,
+            'delta': {'type': 'text_delta', 'text': 'hi'},
+          }) +
+          _sse('content_block_stop', {'index': 0}) +
+          _sse('message_delta', {
+            'delta': {'stop_reason': 'end_turn'},
+            'usage': {'output_tokens': 7},
+          }) +
+          _sse('message_stop', <String, dynamic>{});
+
+      final chunks = await ClaudeStreamConverter.toLLMStream(
+        _makeResponse(body),
+      ).toList();
+      return chunks.last;
+    }
+
+    test('cache counters reach LLMUsage', () async {
+      final chunk = await finalChunk(
+        inputTokens: 8,
+        cacheRead: 92,
+        cacheCreation: 0,
+      );
+
+      expect(chunk.usage?.cachedTokens, 92);
+      expect(chunk.usage?.cacheWriteTokens, 0);
+    });
+
+    test(
+      'promptTokens is the true input total, not the uncached remainder',
+      () async {
+        // Anthropic documents `input_tokens` as only the tokens after the last
+        // cache breakpoint: total = cache_read + cache_creation + input_tokens.
+        // Reporting it raw under-counted every cached request and broke the
+        // contract that cachedTokens is a subset of promptTokens.
+        final chunk = await finalChunk(
+          inputTokens: 8,
+          cacheRead: 80,
+          cacheCreation: 12,
+        );
+
+        expect(chunk.usage?.promptTokens, 100);
+        expect(chunk.promptEvalCount, 100);
+        expect(chunk.usage!.cachedTokens!, lessThan(chunk.usage!.promptTokens));
+        // totalTokens is derived from promptTokens, so it was wrong too.
+        expect(chunk.usage?.totalTokens, 107);
+      },
+    );
+
+    test('an uncached request is unaffected', () async {
+      final chunk = await finalChunk(inputTokens: 10);
+
+      expect(chunk.usage?.promptTokens, 10);
+      expect(chunk.usage?.cachedTokens, isNull);
+      expect(chunk.usage?.cacheWriteTokens, isNull);
+    });
+
+    test('the raw Anthropic counters stay on providerMetadata', () async {
+      final chunk = await finalChunk(
+        inputTokens: 8,
+        cacheRead: 80,
+        cacheCreation: 12,
+      );
+
+      expect(chunk.providerMetadata['cache_read_input_tokens'], 80);
+      expect(chunk.providerMetadata['cache_creation_input_tokens'], 12);
+    });
+  });
 }
 
 void _toolCallTurnTests() {

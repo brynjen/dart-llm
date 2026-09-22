@@ -7,6 +7,7 @@ import 'package:test/test.dart';
 
 void main() {
   _turnEndEmissionTests();
+  _continuousUsageTests();
 
   group('VLLMStreamConverter', () {
     test('parses SSE split across transport chunk boundaries', () async {
@@ -1333,5 +1334,205 @@ void _turnEndEmissionTests() {
         );
       },
     );
+  });
+}
+
+/// Regression guards for `stream_options.continuous_usage_stats`, which makes
+/// vLLM attach `usage` to **every** chunk instead of only the terminal frame.
+///
+/// The frame shapes here are copied from a real run against vLLM: with the
+/// option on, the priming delta carries `completion_tokens: 0`, each output
+/// delta carries a running count, and the terminal `choices: []` usage frame
+/// still arrives at the end.
+void _continuousUsageTests() {
+  Map<String, dynamic> frame(
+    Map<String, dynamic> delta, {
+    required int completion,
+    String? finish,
+  }) => {
+    'id': 'chatcmpl-test',
+    'created': 1700000000,
+    'model': 'test-model',
+    'choices': [
+      {'index': 0, 'delta': delta, 'finish_reason': finish},
+    ],
+    'usage': {
+      'prompt_tokens': 10,
+      'completion_tokens': completion,
+      'total_tokens': 10 + completion,
+    },
+  };
+
+  Map<String, dynamic> usageOnly(int completion) => {
+    'id': 'chatcmpl-test',
+    'created': 1700000000,
+    'model': 'test-model',
+    'choices': <dynamic>[],
+    'usage': {
+      'prompt_tokens': 10,
+      'completion_tokens': completion,
+      'total_tokens': 10 + completion,
+    },
+  };
+
+  Future<List<LLMChunk>> run(String payload) => VLLMStreamConverter.toLLMStream(
+    http.StreamedResponse(Stream.value(utf8.encode(payload)), 200),
+  ).toList();
+
+  group('continuous_usage_stats', () {
+    test('a content turn reports usage on every emitted chunk', () async {
+      final parsed = await run(
+        _sse([
+          // vLLM's priming event, which now carries usage too.
+          frame({'role': 'assistant', 'content': ''}, completion: 0),
+          frame({'content': 'Hel'}, completion: 1),
+          frame({'content': 'lo'}, finish: 'stop', completion: 2),
+          usageOnly(2),
+        ]),
+      );
+
+      expect(
+        parsed.map((c) => c.message?.content ?? '').join(),
+        'Hello',
+        reason: 'content must be unaffected by the usage frames',
+      );
+      for (final chunk in parsed) {
+        expect(
+          chunk.usage,
+          isNotNull,
+          reason: 'every emitted chunk should carry the running counter',
+        );
+      }
+      expect(parsed.map((c) => c.usage!.completionTokens), [1, 2, 2]);
+    });
+
+    test('the empty priming delta is still not emitted', () async {
+      final parsed = await run(
+        _sse([
+          frame({'role': 'assistant', 'content': ''}, completion: 0),
+          frame({'content': 'hi'}, finish: 'stop', completion: 3),
+        ]),
+      );
+
+      // 0.4.0 stopped yielding the priming event because it announces the role
+      // rather than producing output. Gating emission on `usage != null` would
+      // have quietly brought it back, since it now carries usage.
+      expect(parsed, hasLength(1));
+      expect(parsed.single.message?.content, 'hi');
+    });
+
+    test('only the terminal frame reports done', () async {
+      final parsed = await run(
+        _sse([
+          frame({'role': 'assistant', 'content': 'a'}, completion: 1),
+          frame({'content': 'b'}, completion: 2),
+          frame({'content': 'c'}, finish: 'stop', completion: 3),
+        ]),
+      );
+
+      expect(parsed.where((c) => c.done ?? false), hasLength(1));
+      expect(parsed.last.done, isTrue);
+    });
+
+    test(
+      'a tool call still streams as deltas, never as executable calls',
+      () async {
+        // The defect this guards: with usage on every chunk, a fragment-only
+        // event used to fall through to the plain-chunk branch and surface as
+        // `toolCalls`. vLLM's first fragment carries a name and no arguments, and
+        // empty arguments decode to `{}` — so the executor would have dispatched
+        // the tool once with no arguments and again when the call completed.
+        final parsed = await run(
+          _sse([
+            frame({'role': 'assistant', 'content': ''}, completion: 0),
+            frame({
+              'tool_calls': [
+                {
+                  'id': 'call_1',
+                  'index': 0,
+                  'type': 'function',
+                  'function': {'name': 'get_weather'},
+                },
+              ],
+            }, completion: 1),
+            frame({
+              'tool_calls': [
+                {
+                  'index': 0,
+                  'function': {'arguments': '{"city": "Os'},
+                },
+              ],
+            }, completion: 2),
+            frame(
+              {
+                'tool_calls': [
+                  {
+                    'index': 0,
+                    'function': {'arguments': 'lo"}'},
+                  },
+                ],
+              },
+              finish: 'tool_calls',
+              completion: 3,
+            ),
+            usageOnly(3),
+          ]),
+        );
+
+        final beforeTerminal = parsed
+            .where((c) => c.finishReason == null)
+            .toList();
+        for (final chunk in beforeTerminal) {
+          expect(
+            chunk.message?.toolCalls,
+            isNull,
+            reason: 'a fragment is not an executable call',
+          );
+        }
+
+        final deltas = parsed
+            .expand(
+              (c) => c.message?.toolCallDeltas ?? const <LLMToolCallDelta>[],
+            )
+            .toList();
+        expect(deltas, isNotEmpty, reason: 'fragments must surface as deltas');
+        expect(deltas.first.name, 'get_weather');
+
+        final terminal = parsed.firstWhere(
+          (c) => c.message?.toolCalls?.isNotEmpty ?? false,
+        );
+        expect(terminal.message!.toolCalls, hasLength(1));
+        expect(terminal.message!.toolCalls!.single.name, 'get_weather');
+        expect(terminal.message!.toolCalls!.single.argumentsJson, {
+          'city': 'Oslo',
+        });
+        expect(terminal.finishReason, LLMFinishReason.toolCalls);
+      },
+    );
+
+    test('tool-call delta chunks carry the running counter', () async {
+      final parsed = await run(
+        _sse([
+          frame({
+            'tool_calls': [
+              {
+                'id': 'call_1',
+                'index': 0,
+                'type': 'function',
+                'function': {'name': 'get_weather', 'arguments': '{}'},
+              },
+            ],
+          }, completion: 7),
+          _finishFrame('tool_calls'),
+        ]),
+      );
+
+      // Without this the running counter would be dropped on exactly the
+      // chunks a long tool call spends its time in.
+      final delta = parsed.firstWhere(
+        (c) => c.message?.toolCallDeltas?.isNotEmpty ?? false,
+      );
+      expect(delta.usage?.completionTokens, 7);
+    });
   });
 }

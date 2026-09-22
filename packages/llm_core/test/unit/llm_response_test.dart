@@ -128,6 +128,48 @@ void main() {
       expect(response.evalCount, 0);
     });
   });
+
+  group('LLMUsage cache counters', () {
+    test('default to null so "not reported" differs from zero', () {
+      const usage = LLMUsage(promptTokens: 10, completionTokens: 5);
+
+      expect(usage.cachedTokens, isNull);
+      expect(usage.cacheWriteTokens, isNull);
+    });
+
+    test('a zero hit rate is reportable', () {
+      const usage = LLMUsage(
+        promptTokens: 10,
+        completionTokens: 5,
+        cachedTokens: 0,
+      );
+
+      expect(usage.cachedTokens, 0);
+    });
+
+    test('cache counters never inflate the total', () {
+      // They are a subset of promptTokens, so adding them would double-count.
+      const usage = LLMUsage(
+        promptTokens: 100,
+        completionTokens: 10,
+        cachedTokens: 92,
+        cacheWriteTokens: 8,
+      );
+
+      expect(usage.totalTokens, 110);
+    });
+
+    test('an explicit total still wins', () {
+      const usage = LLMUsage(
+        promptTokens: 100,
+        completionTokens: 10,
+        totalTokens: 123,
+        cachedTokens: 92,
+      );
+
+      expect(usage.totalTokens, 123);
+    });
+  });
 }
 
 void _finishReasonResolutionTests() {

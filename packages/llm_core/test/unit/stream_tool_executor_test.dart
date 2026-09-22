@@ -506,4 +506,222 @@ void main() {
       },
     );
   });
+
+  group('tool results carry structure', () {
+    /// Runs one round that calls [toolName] and returns the messages the next
+    /// round was handed, plus every chunk the executor emitted.
+    Future<({List<LLMMessage> messages, List<LLMChunk> chunks})> runRound({
+      required LLMTool tool,
+      String? assistantThinking,
+      String? assistantContent,
+      List<LLMInvalidToolCall>? invalidCalls,
+      LLMFinishReason finishReason = LLMFinishReason.toolCalls,
+    }) async {
+      List<LLMMessage>? nextRoundMessages;
+      final executor = StreamToolExecutor(
+        tools: [tool],
+        extra: null,
+        maxToolAttempts: 3,
+        streamChatCallback: (model, messages, tools, extra, attempts) {
+          nextRoundMessages = messages;
+          return Stream.value(
+            LLMChunk(
+              model: model,
+              createdAt: DateTime(2026),
+              done: true,
+              finishReason: LLMFinishReason.stop,
+              message: LLMChunkMessage(
+                content: 'final answer',
+                role: LLMRole.assistant,
+              ),
+            ),
+          );
+        },
+      );
+
+      final round = LLMChunk(
+        model: 'test-model',
+        createdAt: DateTime(2026),
+        done: true,
+        finishReason: finishReason,
+        message: LLMChunkMessage(
+          content: assistantContent,
+          thinking: assistantThinking,
+          role: LLMRole.assistant,
+          toolCalls: invalidCalls != null
+              ? null
+              : [LLMToolCall(name: tool.name, arguments: '{}', id: 'call_1')],
+          invalidToolCalls: invalidCalls,
+        ),
+      );
+
+      final chunks = await executor
+          .executeTools(
+            chunkStream: Stream.value(round),
+            model: 'test-model',
+            initialMessages: [LLMMessage(role: LLMRole.user, content: 'go')],
+            toolAttempts: 3,
+          )
+          .toList();
+
+      return (messages: nextRoundMessages!, chunks: chunks);
+    }
+
+    test('reasoning survives a tool round', () async {
+      // The assistant message rebuilt for the next round used to keep only
+      // `content`, so everything the model thought before deciding to call a
+      // tool was gone from history.
+      final result = await runRound(
+        tool: _EchoTool(),
+        assistantContent: 'calling a tool',
+        assistantThinking: 'I should use the echo tool here.',
+      );
+
+      final assistant = result.messages.firstWhere(
+        (m) => m.role == LLMRole.assistant,
+      );
+      expect(assistant.thinking, 'I should use the echo tool here.');
+      expect(assistant.content, 'calling a tool');
+      // Still never serialized.
+      expect(assistant.toJson().containsKey('thinking'), isFalse);
+    });
+
+    test('a plain String return is unchanged and not an error', () async {
+      final result = await runRound(tool: _EchoTool());
+
+      final toolMessage = result.messages.lastWhere(
+        (m) => m.role == LLMRole.tool,
+      );
+      expect(toolMessage.content, '{}');
+      expect(toolMessage.toolResult?.isError, isFalse);
+      expect(toolMessage.toolName, 'echo_tool');
+      // `status` still carries the tool name for pre-`toolName` consumers.
+      expect(toolMessage.status, 'echo_tool');
+    });
+
+    test('a null return keeps the exact legacy wording', () async {
+      final result = await runRound(tool: _NullTool());
+
+      final toolMessage = result.messages.lastWhere(
+        (m) => m.role == LLMRole.tool,
+      );
+      expect(toolMessage.content, 'Tool null_tool returned null');
+      expect(toolMessage.toolResult?.isError, isFalse);
+    });
+
+    test('an LLMToolResult passes through with its metadata', () async {
+      final result = await runRound(tool: _StructuredTool());
+
+      final toolMessage = result.messages.lastWhere(
+        (m) => m.role == LLMRole.tool,
+      );
+      expect(toolMessage.content, 'total 0');
+      expect(toolMessage.toolResult?.isError, isFalse);
+      expect(toolMessage.toolResult?.metadata, {'exit_code': 0});
+      // Metadata is for the application and must not reach the model.
+      expect(toolMessage.toJson()['content'], 'total 0');
+      expect(jsonEncode(toolMessage.toJson()), isNot(contains('exit_code')));
+    });
+
+    test('a throwing tool is flagged and keeps the legacy text', () async {
+      final result = await runRound(tool: _ThrowingTool());
+
+      final toolMessage = result.messages.lastWhere(
+        (m) => m.role == LLMRole.tool,
+      );
+      expect(toolMessage.toolResult?.isError, isTrue);
+      // Byte-identical to the pre-LLMToolResult wording: ClaudeMessageConverter
+      // still falls back to matching it for messages it did not build.
+      expect(
+        toolMessage.content,
+        startsWith('Tool throwing_tool failed: Exception: boom'),
+      );
+    });
+
+    test('an invalid call is reported as an error, not as data', () async {
+      // Regression: the executor words this as 'was not called', which the
+      // Claude converter's 'Tool <name> failed:' match missed — so a parse
+      // error reached Anthropic without `is_error`.
+      final result = await runRound(
+        tool: _EchoTool(),
+        invalidCalls: [
+          const LLMInvalidToolCall(
+            id: 'call_1',
+            name: 'echo_tool',
+            arguments: '{"a":',
+            error: 'Unexpected end of input',
+          ),
+        ],
+        finishReason: LLMFinishReason.length,
+      );
+
+      final toolMessage = result.messages.lastWhere(
+        (m) => m.role == LLMRole.tool,
+      );
+      expect(toolMessage.toolResult?.isError, isTrue);
+      expect(toolMessage.toolName, 'echo_tool');
+      expect(toolMessage.content, contains('was not called'));
+      expect(toolMessage.toolResult?.metadata['parse_error'], isNotNull);
+    });
+
+    test('the emitted tool chunk carries the same structure', () async {
+      final result = await runRound(tool: _StructuredTool());
+
+      final toolChunk = result.chunks.firstWhere(
+        (c) => c.message?.role == LLMRole.tool,
+      );
+      expect(toolChunk.message?.toolName, 'structured_tool');
+      expect(toolChunk.message?.toolResult?.metadata, {'exit_code': 0});
+      // Consumers previously had to build a toolCallId -> name map themselves.
+      expect(toolChunk.message?.toolCallId, 'call_1');
+    });
+  });
+}
+
+class _NullTool extends LLMTool {
+  @override
+  String get name => 'null_tool';
+
+  @override
+  String get description => 'Returns null';
+
+  @override
+  List<LLMToolParam> get parameters => const [];
+
+  @override
+  Future<dynamic> execute(Map<String, dynamic> args, {dynamic extra}) async =>
+      null;
+}
+
+class _StructuredTool extends LLMTool {
+  @override
+  String get name => 'structured_tool';
+
+  @override
+  String get description => 'Returns a typed result';
+
+  @override
+  List<LLMToolParam> get parameters => const [];
+
+  @override
+  Future<LLMToolResult> execute(
+    Map<String, dynamic> args, {
+    dynamic extra,
+  }) async =>
+      const LLMToolResult(content: 'total 0', metadata: {'exit_code': 0});
+}
+
+class _ThrowingTool extends LLMTool {
+  @override
+  String get name => 'throwing_tool';
+
+  @override
+  String get description => 'Throws';
+
+  @override
+  List<LLMToolParam> get parameters => const [];
+
+  @override
+  Future<dynamic> execute(Map<String, dynamic> args, {dynamic extra}) async =>
+      throw Exception('boom');
 }

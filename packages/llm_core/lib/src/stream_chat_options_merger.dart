@@ -54,6 +54,7 @@ class StreamChatOptionsMerger {
       useCache: options?.useCache ?? false,
       cacheTtl: options?.cacheTtl,
       recordMetrics: options?.recordMetrics ?? true,
+      usagePerChunk: options?.usagePerChunk ?? false,
     );
   }
 }
@@ -67,6 +68,7 @@ class MergedOptions {
     required this.backendOptions,
     required this.useCache,
     required this.recordMetrics,
+    this.usagePerChunk = false,
     this.extra,
     this.toolAttempts,
     this.responseFormat,
@@ -101,4 +103,57 @@ class MergedOptions {
   final bool useCache;
   final Duration? cacheTtl;
   final bool recordMetrics;
+
+  /// Whether the caller asked for usage on every streamed chunk.
+  ///
+  /// See [LLMChatOptions.usagePerChunk]; honored by `llm_vllm` only.
+  final bool usagePerChunk;
+
+  /// Rebuilds an [LLMChatOptions] carrying every option this merge resolved.
+  ///
+  /// The tool loop re-enters `streamChat` for each round, and each backend used
+  /// to reconstruct the child's options by listing fields by hand. Three were
+  /// missing from all five copies — `useCache`, `cacheTtl` and `recordMetrics`
+  /// — so caching and metrics preferences silently stopped applying from the
+  /// second round onward. Worse, the omission was invisible: a field added to
+  /// [LLMChatOptions] simply never reached round two, and nothing failed.
+  ///
+  /// Rebuilding from [MergedOptions], which already mirrors every field, makes
+  /// that class of bug impossible: a new option is forwarded the moment it is
+  /// added here.
+  ///
+  /// [tools], [extra] and [toolAttempts] are the round's own values, which
+  /// differ from the parent's. [retryConfig] and [backendOptions] override the
+  /// merged values for backends that resolve them further — vLLM passes its
+  /// *normalized* backend options so aliases are not re-expanded every round.
+  LLMChatOptions toChatOptions({
+    List<LLMTool>? tools,
+    dynamic extra,
+    int? toolAttempts,
+    RetryConfig? retryConfig,
+    Map<String, dynamic>? backendOptions,
+  }) {
+    return LLMChatOptions(
+      think: think,
+      tools: tools ?? this.tools,
+      extra: extra ?? this.extra,
+      toolAttempts: toolAttempts ?? this.toolAttempts,
+      autoExecuteTools: autoExecuteTools,
+      backendOptions: backendOptions ?? this.backendOptions,
+      timeout: timeout,
+      retryConfig: retryConfig ?? this.retryConfig,
+      responseFormat: responseFormat,
+      temperature: temperature,
+      topP: topP,
+      topK: topK,
+      maxOutputTokens: maxOutputTokens,
+      stopSequences: stopSequences,
+      reasoningBudget: reasoningBudget,
+      reasoningEffort: reasoningEffort,
+      useCache: useCache,
+      cacheTtl: cacheTtl,
+      recordMetrics: recordMetrics,
+      usagePerChunk: usagePerChunk,
+    );
+  }
 }

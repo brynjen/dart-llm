@@ -75,7 +75,21 @@ class Validation {
     // Validate role-specific requirements
     switch (message.role) {
       case LLMRole.user:
-        // User messages should have content or images
+        // Rejects a user message that carries nothing at all: no content, no
+        // images, no content parts.
+        //
+        // An **empty** content string is not that, and is deliberately
+        // allowed. `LLMMessage(role: user, content: '')` derives a single
+        // empty text part, so `contentParts` is not empty and this does not
+        // fire. That is intentional: every backend here accepts an empty user
+        // message except Anthropic, and `ClaudeMessageConverter` substitutes a
+        // non-whitespace placeholder for it rather than let the same
+        // conversation fail on Claude alone. Rejecting `''` here would make
+        // that placeholder unreachable.
+        //
+        // The three conditions are all needed. `contentParts` alone would not
+        // do: a caller may pass `contentParts: []` explicitly alongside a
+        // non-empty `content`, and that message does carry text.
         if ((message.content == null || message.content!.isEmpty) &&
             (message.images == null || message.images!.isEmpty) &&
             message.contentParts.isEmpty) {

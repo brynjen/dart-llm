@@ -151,6 +151,34 @@ class OllamaChatRepository extends LLMChatRepository
     int? toolAttempts,
     bool think = false,
     LLMChatOptions? options,
+  }) => abortableStream(
+    (abortTrigger) => _streamChat(
+      model,
+      messages: messages,
+      abortTrigger: abortTrigger,
+      tools: tools,
+      extra: extra,
+      toolAttempts: toolAttempts,
+      think: think,
+      options: options,
+    ),
+  );
+
+  /// The body of [streamChat], with the abort trigger threaded through to the
+  /// HTTP request.
+  ///
+  /// Kept separate because [streamChat] must not be an `async*` generator: a
+  /// cancel arriving while a generator is suspended at an `await` does not
+  /// resume it, so nothing would ever fire the trigger. See [abortableStream].
+  Stream<LLMChunk> _streamChat(
+    String model, {
+    required List<LLMMessage> messages,
+    required Future<void> abortTrigger,
+    List<LLMTool> tools = const [],
+    dynamic extra,
+    int? toolAttempts,
+    bool think = false,
+    LLMChatOptions? options,
   }) async* {
     Validation.validateModelName(model);
     Validation.validateMessages(messages);
@@ -187,95 +215,101 @@ class OllamaChatRepository extends LLMChatRepository
     }
     _applyBackendOptions(body, merged);
 
-    final response = await RateLimiterUtil.executeWithRateLimit(
-      rateLimiter: _rateLimiter,
-      operation: () => RetryUtil.executeWithRetry(
-        operation: () => _httpHelper.sendStreamingRequest(
-          method: 'POST',
-          uri: uri,
-          headers: _headers(),
-          body: utf8.encode(json.encode(body)),
-          timeout: merged.timeout,
-        ),
-        config: effectiveRetryConfig,
-        isRetryable: (error) =>
-            ErrorHandlers.isRetryableError(error, effectiveRetryConfig),
-      ),
-    );
+    // A provider can answer `200`, open the stream and only then report
+    // the failure in-band, as an `error` event. That arrives after the
+    // send has returned, so `executeWithRetry` above can never see it —
+    // the same 503 it would have retried three times went unretried.
+    // `sendSucceeded` keeps the two budgets from compounding: a transport
+    // failure is retried by the send, an in-band one by this.
+    var sendSucceeded = false;
+    yield* RetryUtil.retryingStream(
+      config: effectiveRetryConfig,
+      isRetryable: (error) =>
+          sendSucceeded &&
+          ErrorHandlers.isRetryableStreamError(error, effectiveRetryConfig),
+      build: () async* {
+        sendSucceeded = false;
+        final response = await RateLimiterUtil.executeWithRateLimit(
+          rateLimiter: _rateLimiter,
+          operation: () => RetryUtil.executeWithRetry(
+            operation: () => _httpHelper.sendStreamingRequest(
+              abortTrigger: abortTrigger,
+              method: 'POST',
+              uri: uri,
+              headers: _headers(),
+              body: utf8.encode(json.encode(body)),
+              timeout: merged.timeout,
+            ),
+            config: effectiveRetryConfig,
+            isRetryable: (error) =>
+                ErrorHandlers.isRetryableError(error, effectiveRetryConfig),
+          ),
+        );
+        sendSucceeded = true;
 
-    try {
-      switch (response.statusCode) {
-        case 200:
-          final chunkStream = OllamaStreamConverter.toLLMStream(
-            response,
-            timeoutConfig: timeoutConfig,
-          );
-          if (merged.tools.isNotEmpty && merged.autoExecuteTools) {
-            final executor = StreamToolExecutor(
-              tools: merged.tools,
-              extra: merged.extra,
-              maxToolAttempts: merged.toolAttempts ?? maxToolAttempts,
-              streamChatCallback:
-                  (
-                    String model,
-                    List<LLMMessage> messages,
-                    List<LLMTool> tools,
-                    dynamic extra,
-                    int toolAttempts,
-                  ) => streamChat(
-                    model,
-                    messages: messages,
-                    tools: tools,
-                    extra: extra,
-                    options: LLMChatOptions(
-                      think: merged.think,
-                      tools: tools,
-                      extra: extra,
-                      toolAttempts: toolAttempts,
-                      autoExecuteTools: merged.autoExecuteTools,
-                      backendOptions: merged.backendOptions,
-                      timeout: merged.timeout,
-                      retryConfig: effectiveRetryConfig,
-                      responseFormat: merged.responseFormat,
-                      temperature: merged.temperature,
-                      topP: merged.topP,
-                      topK: merged.topK,
-                      maxOutputTokens: merged.maxOutputTokens,
-                      stopSequences: merged.stopSequences,
-                      reasoningBudget: merged.reasoningBudget,
-                      reasoningEffort: merged.reasoningEffort,
-                    ),
-                  ),
-            );
-            yield* executor.executeTools(
-              chunkStream: chunkStream,
-              model: model,
-              initialMessages: messages,
-              toolAttempts: merged.toolAttempts ?? maxToolAttempts,
-            );
-          } else {
-            yield* chunkStream;
+        try {
+          switch (response.statusCode) {
+            case 200:
+              final chunkStream = OllamaStreamConverter.toLLMStream(
+                response,
+                timeoutConfig: timeoutConfig,
+              );
+              if (merged.tools.isNotEmpty && merged.autoExecuteTools) {
+                final executor = StreamToolExecutor(
+                  tools: merged.tools,
+                  extra: merged.extra,
+                  maxToolAttempts: merged.toolAttempts ?? maxToolAttempts,
+                  streamChatCallback:
+                      (
+                        String model,
+                        List<LLMMessage> messages,
+                        List<LLMTool> tools,
+                        dynamic extra,
+                        int toolAttempts,
+                      ) => streamChat(
+                        model,
+                        messages: messages,
+                        tools: tools,
+                        extra: extra,
+                        options: merged.toChatOptions(
+                          tools: tools,
+                          extra: extra,
+                          toolAttempts: toolAttempts,
+                          retryConfig: effectiveRetryConfig,
+                        ),
+                      ),
+                );
+                yield* executor.executeTools(
+                  chunkStream: chunkStream,
+                  model: model,
+                  initialMessages: messages,
+                  toolAttempts: merged.toolAttempts ?? maxToolAttempts,
+                );
+              } else {
+                yield* chunkStream;
+              }
+            case 400:
+              final errorBody = await _httpHelper.readErrorBody(response);
+              await OllamaErrorHandler.handleBadRequestError(
+                errorBody: errorBody,
+                model: model,
+                thinkRequested: merged.think,
+                toolsRequested: merged.tools.isNotEmpty,
+              );
+              break;
+            default:
+              final errorBody = await _httpHelper.readErrorBody(response);
+              _httpHelper.handleHttpError(
+                statusCode: response.statusCode,
+                errorBody: errorBody,
+                defaultMessage: 'Request failed',
+              );
           }
-        case 400:
-          final errorBody = await _httpHelper.readErrorBody(response);
-          await OllamaErrorHandler.handleBadRequestError(
-            errorBody: errorBody,
-            model: model,
-            thinkRequested: merged.think,
-            toolsRequested: merged.tools.isNotEmpty,
-          );
-          break;
-        default:
-          final errorBody = await _httpHelper.readErrorBody(response);
-          _httpHelper.handleHttpError(
-            statusCode: response.statusCode,
-            errorBody: errorBody,
-            defaultMessage: 'Request failed',
-          );
-      }
-    } catch (e) {
-      rethrow;
-    }
+        } catch (e) {
+          rethrow;
+        }
+      },
+    );
   }
 
   @override

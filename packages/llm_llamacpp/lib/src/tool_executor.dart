@@ -1,5 +1,5 @@
 import 'package:llm_core/llm_core.dart'
-    show LLMLogger, LLMMessage, LLMRole, LLMTool, LLMToolCall;
+    show LLMLogger, LLMMessage, LLMRole, LLMTool, LLMToolCall, LLMToolResult;
 
 /// Executes tool calls and returns tool response messages.
 ///
@@ -34,31 +34,39 @@ class ToolExecutor {
         },
       );
 
+      LLMToolResult result;
       try {
         final args = toolCall.argumentsJson;
         logger.fine('Tool args: $args');
-        final toolResponse =
-            await tool.execute(args, extra: extra) ??
-            'Tool ${toolCall.name} returned null';
-        logger.fine('Tool response: $toolResponse');
-
-        workingMessages.add(
-          LLMMessage(
-            role: LLMRole.tool,
-            content: toolResponse.toString(),
-            toolCallId: toolCall.id,
-          ),
+        result = LLMToolResult.from(
+          await tool.execute(args, extra: extra),
+          toolName: toolCall.name,
         );
+        logger.fine('Tool response: ${result.content}');
       } catch (e) {
         logger.warning('Tool execution error: $e');
-        workingMessages.add(
-          LLMMessage(
-            role: LLMRole.tool,
-            content: 'Error executing tool: $e',
-            toolCallId: toolCall.id,
-          ),
+        // Was `'Error executing tool: $e'`, which no other backend produced.
+        // `ClaudeMessageConverter` detects a failed tool by matching the
+        // wording `llm_core` uses, so a history built here and replayed against
+        // Anthropic lost its error flag. Same text as `StreamToolExecutor` now.
+        result = LLMToolResult.failure(
+          'Tool ${toolCall.name} failed: $e',
+          metadata: {'exception': e.toString()},
         );
       }
+
+      workingMessages.add(
+        LLMMessage(
+          role: LLMRole.tool,
+          content: result.content,
+          toolCallId: toolCall.id,
+          // This path set no tool name at all, so a history it produced left
+          // Gemini's `function_result.name` empty.
+          status: toolCall.name,
+          toolName: toolCall.name,
+          toolResult: result,
+        ),
+      );
     }
 
     return workingMessages;

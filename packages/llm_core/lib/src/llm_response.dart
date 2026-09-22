@@ -10,6 +10,8 @@ class LLMUsage {
     required this.completionTokens,
     int? totalTokens,
     this.reasoningTokens,
+    this.cachedTokens,
+    this.cacheWriteTokens,
   }) : totalTokens = totalTokens ?? promptTokens + completionTokens;
 
   /// Tokens consumed by the prompt/input.
@@ -27,6 +29,33 @@ class LLMUsage {
   /// when the provider does not break reasoning tokens out (Claude counts
   /// them inside output tokens; Ollama has no counter).
   final int? reasoningTokens;
+
+  /// Prompt tokens the provider served from its cache, when it reports them.
+  ///
+  /// A **subset** of [promptTokens], not additional to it, so it must never be
+  /// added to a total. Cache hit rate — `cachedTokens / promptTokens` — is the
+  /// single biggest lever on prefill latency, and it is the one usage number a
+  /// client cannot recover any other way.
+  ///
+  /// Null where the provider reports no cache counter (Ollama, llama.cpp).
+  ///
+  /// Providers disagree on whether their input count includes cached tokens:
+  /// OpenAI, vLLM and Gemini report a subset, while Anthropic's `input_tokens`
+  /// **excludes** them (`total = cache_read + cache_creation + input_tokens`).
+  /// `llm_claude` normalizes to the total so this subset relationship holds
+  /// everywhere.
+  final int? cachedTokens;
+
+  /// Prompt tokens written into the provider's cache, when it reports them.
+  ///
+  /// Also a subset of [promptTokens]. Broken out from [cachedTokens] because
+  /// the two are billed differently — Anthropic charges a premium for a cache
+  /// write and a large discount for a read — so cost cannot be derived from
+  /// [promptTokens] alone.
+  ///
+  /// Anthropic (`cache_creation_input_tokens`) is currently the only provider
+  /// that reports this; null everywhere else.
+  final int? cacheWriteTokens;
 }
 
 /// Why a model response finished.

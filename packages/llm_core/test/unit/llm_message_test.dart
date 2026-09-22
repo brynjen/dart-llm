@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:llm_core/llm_core.dart';
 import 'package:test/test.dart';
 
@@ -168,6 +170,73 @@ void main() {
       expect(json['role'], 'user');
       // Status is not included in toJson (it's application-level)
       expect(json.containsKey('status'), false);
+    });
+  });
+
+  group('toJson is the wire format, not a transcript', () {
+    // Pins the *complete* key set per role rather than one absent key, so the
+    // next application-level field added to LLMMessage fails here loudly
+    // instead of silently reaching a provider and becoming part of the prompt.
+    LLMMessage decorated(LLMRole role) => LLMMessage(
+      role: role,
+      content: 'hello',
+      toolCallId: role == LLMRole.tool ? 'call_1' : null,
+      status: 'harness:injected',
+      thinking: 'the model reasoned about this',
+      toolName: 'calculator',
+      toolResult: const LLMToolResult.failure(
+        'boom',
+        metadata: {'exit_code': 2},
+      ),
+    );
+
+    for (final entry in {
+      LLMRole.user: {'role', 'content'},
+      LLMRole.system: {'role', 'content'},
+      LLMRole.assistant: {'role', 'content'},
+      LLMRole.tool: {'role', 'content', 'tool_call_id'},
+    }.entries) {
+      test('${entry.key.name} emits exactly ${entry.value}', () {
+        final json = decorated(entry.key).toJson();
+
+        expect(json.keys.toSet(), entry.value);
+      });
+    }
+
+    test('no application-level field reaches the wire', () {
+      for (final role in LLMRole.values) {
+        final encoded = jsonEncode(decorated(role).toJson());
+
+        expect(encoded, isNot(contains('harness:injected')), reason: '$role');
+        expect(encoded, isNot(contains('the model reasoned')), reason: '$role');
+        expect(encoded, isNot(contains('exit_code')), reason: '$role');
+        expect(encoded, isNot(contains('boom')), reason: '$role');
+      }
+    });
+
+    test('toString stays the wire shape so logs do not leak reasoning', () {
+      expect(
+        decorated(LLMRole.assistant).toString(),
+        isNot(contains('the model reasoned')),
+      );
+    });
+
+    test('the new fields default to null', () {
+      final message = LLMMessage(role: LLMRole.user, content: 'hi');
+
+      expect(message.thinking, isNull);
+      expect(message.toolName, isNull);
+      expect(message.toolResult, isNull);
+    });
+
+    test('thinking does not become a content part', () {
+      final message = LLMMessage(
+        role: LLMRole.user,
+        content: 'hi',
+        thinking: 'reasoning',
+      );
+
+      expect(message.contentParts, [const LLMTextContent('hi')]);
     });
   });
 }

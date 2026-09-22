@@ -37,7 +37,12 @@ class OllamaMessageConverter {
 
     if (message.role == LLMRole.tool && message.toolCallId != null) {
       json['tool_call_id'] = message.toolCallId;
-      final toolName = _deriveToolName(message.toolCallId!, allMessages, index);
+      // `toolName` is set by StreamToolExecutor. The derivation below stays
+      // for histories the caller assembled itself, and for ones serialized
+      // before the field existed.
+      final toolName =
+          message.toolName ??
+          _deriveToolName(message.toolCallId!, allMessages, index);
       if (toolName != null && toolName.isNotEmpty) {
         json['tool_name'] = toolName;
       }

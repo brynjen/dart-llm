@@ -43,127 +43,62 @@ class GeminiStreamConverter {
     final functionCalls = <int, _GeminiFunctionCallStep>{};
     final thoughtSignatures = <int, String>{};
 
-    await for (final line
-        in response.stream
-            .transform(utf8.decoder)
-            .transform(const LineSplitter())) {
-      if (line.startsWith('event:')) {
-        if (line.substring(6).trim() == 'done') break;
-        continue;
-      }
-      if (!line.startsWith('data:')) continue;
+    try {
+      await for (final line
+          in response.stream
+              .transform(utf8.decoder)
+              .transform(const LineSplitter())) {
+        if (line.startsWith('event:')) {
+          if (line.substring(6).trim() == 'done') break;
+          continue;
+        }
+        if (!line.startsWith('data:')) continue;
 
-      final dataStr = line.substring(5).trim();
-      if (dataStr.isEmpty) continue;
-      if (dataStr == '[DONE]') break;
+        final dataStr = line.substring(5).trim();
+        if (dataStr.isEmpty) continue;
+        if (dataStr == '[DONE]') break;
 
-      Map<String, dynamic> data;
-      try {
-        data = json.decode(dataStr) as Map<String, dynamic>;
-      } catch (_) {
-        continue;
-      }
+        Map<String, dynamic> data;
+        try {
+          data = json.decode(dataStr) as Map<String, dynamic>;
+        } catch (_) {
+          continue;
+        }
 
-      switch (data['event_type'] as String?) {
-        // An error reported mid-stream must surface as a thrown exception;
-        // otherwise the stream ends as a *success* with truncated output.
-        case 'error':
-          final error = data['error'] as Map<String, dynamic>? ?? const {};
-          throw LLMApiException(
-            error['message'] as String? ?? 'Gemini API error',
-            statusCode: _statusCodeFor(error['code']),
-            responseBody: dataStr,
-          );
-
-        case 'interaction.created':
-          final interaction =
-              data['interaction'] as Map<String, dynamic>? ?? const {};
-          interactionId = interaction['id'] as String? ?? interactionId;
-          resolvedModel = interaction['model'] as String? ?? resolvedModel;
-          interactionStatus =
-              interaction['status'] as String? ?? interactionStatus;
-
-        case 'step.start':
-          final index = (data['index'] as num?)?.toInt() ?? 0;
-          final step = data['step'] as Map<String, dynamic>? ?? const {};
-          if (step['type'] == 'function_call') {
-            final name = step['name'] as String? ?? '';
-            functionCalls[index] = _GeminiFunctionCallStep(
-              id: step['id'] as String?,
-              name: name,
-              initialArguments: step['arguments'] as Map<String, dynamic>?,
+        switch (data['event_type'] as String?) {
+          // An error reported mid-stream must surface as a thrown exception;
+          // otherwise the stream ends as a *success* with truncated output.
+          case 'error':
+            final error = data['error'] as Map<String, dynamic>? ?? const {};
+            throw LLMApiException(
+              error['message'] as String? ?? 'Gemini API error',
+              statusCode: _statusCodeFor(error['code']),
+              responseBody: dataStr,
             );
-            // The step announces the tool before any argument fragment
-            // arrives, so this is the earliest a consumer can know which tool
-            // is running. Only id and name are reported: `initialArguments` is
-            // a decoded map, not a wire fragment, and putting it on the
-            // string-fragment channel would make concatenation lie.
-            yield GeminiChunk(
-              model: resolvedModel,
-              done: false,
-              createdAt: DateTime.now(),
-              message: LLMChunkMessage(
-                content: null,
-                role: LLMRole.assistant,
-                toolCallDeltas: [
-                  LLMToolCallDelta(
-                    index: index,
-                    id: step['id'] as String?,
-                    name: name,
-                  ),
-                ],
-              ),
-            );
-          }
 
-        case 'step.delta':
-          final index = (data['index'] as num?)?.toInt() ?? 0;
-          final delta = data['delta'] as Map<String, dynamic>? ?? const {};
-          switch (delta['type'] as String?) {
-            case 'text':
-              final text = delta['text'] as String? ?? '';
-              if (text.isEmpty) break;
-              yield GeminiChunk(
-                model: resolvedModel,
-                done: false,
-                createdAt: DateTime.now(),
-                message: LLMChunkMessage(
-                  content: text,
-                  role: LLMRole.assistant,
-                ),
+          case 'interaction.created':
+            final interaction =
+                data['interaction'] as Map<String, dynamic>? ?? const {};
+            interactionId = interaction['id'] as String? ?? interactionId;
+            resolvedModel = interaction['model'] as String? ?? resolvedModel;
+            interactionStatus =
+                interaction['status'] as String? ?? interactionStatus;
+
+          case 'step.start':
+            final index = (data['index'] as num?)?.toInt() ?? 0;
+            final step = data['step'] as Map<String, dynamic>? ?? const {};
+            if (step['type'] == 'function_call') {
+              final name = step['name'] as String? ?? '';
+              functionCalls[index] = _GeminiFunctionCallStep(
+                id: step['id'] as String?,
+                name: name,
+                initialArguments: step['arguments'] as Map<String, dynamic>?,
               );
-
-            case 'thought_summary':
-              final content = delta['content'] as Map<String, dynamic>?;
-              final text = content?['text'] as String? ?? '';
-              if (text.isEmpty) break;
-              yield GeminiChunk(
-                model: resolvedModel,
-                done: false,
-                createdAt: DateTime.now(),
-                message: LLMChunkMessage(
-                  content: null,
-                  role: LLMRole.assistant,
-                  thinking: text,
-                ),
-              );
-
-            // Opaque per-step signature. It has to travel with the step it
-            // belongs to on later turns, so it is accumulated and surfaced
-            // rather than dropped: a missing signature is a known cause of
-            // "Function call is missing a thought_signature" errors.
-            case 'thought_signature':
-              final signature = delta['signature'] as String? ?? '';
-              if (signature.isEmpty) break;
-              thoughtSignatures[index] =
-                  (thoughtSignatures[index] ?? '') + signature;
-
-            // Argument JSON arrives as fragments that only parse once
-            // concatenated across every delta for the step.
-            case 'arguments_delta':
-              final fragment = delta['arguments'] as String? ?? '';
-              if (fragment.isEmpty) break;
-              functionCalls[index]?.arguments.write(fragment);
+              // The step announces the tool before any argument fragment
+              // arrives, so this is the earliest a consumer can know which tool
+              // is running. Only id and name are reported: `initialArguments` is
+              // a decoded map, not a wire fragment, and putting it on the
+              // string-fragment channel would make concatenation lie.
               yield GeminiChunk(
                 model: resolvedModel,
                 done: false,
@@ -172,109 +107,186 @@ class GeminiStreamConverter {
                   content: null,
                   role: LLMRole.assistant,
                   toolCallDeltas: [
-                    LLMToolCallDelta(index: index, argumentsDelta: fragment),
+                    LLMToolCallDelta(
+                      index: index,
+                      id: step['id'] as String?,
+                      name: name,
+                    ),
                   ],
                 ),
               );
+            }
 
-            case 'image':
-              final imageData = delta['data'] as String? ?? '';
-              if (imageData.isEmpty) break;
-              final mimeType = delta['mime_type'] as String? ?? 'image/png';
+          case 'step.delta':
+            final index = (data['index'] as num?)?.toInt() ?? 0;
+            final delta = data['delta'] as Map<String, dynamic>? ?? const {};
+            switch (delta['type'] as String?) {
+              case 'text':
+                final text = delta['text'] as String? ?? '';
+                if (text.isEmpty) break;
+                yield GeminiChunk(
+                  model: resolvedModel,
+                  done: false,
+                  createdAt: DateTime.now(),
+                  message: LLMChunkMessage(
+                    content: text,
+                    role: LLMRole.assistant,
+                  ),
+                );
+
+              case 'thought_summary':
+                final content = delta['content'] as Map<String, dynamic>?;
+                final text = content?['text'] as String? ?? '';
+                if (text.isEmpty) break;
+                yield GeminiChunk(
+                  model: resolvedModel,
+                  done: false,
+                  createdAt: DateTime.now(),
+                  message: LLMChunkMessage(
+                    content: null,
+                    role: LLMRole.assistant,
+                    thinking: text,
+                  ),
+                );
+
+              // Opaque per-step signature. It has to travel with the step it
+              // belongs to on later turns, so it is accumulated and surfaced
+              // rather than dropped: a missing signature is a known cause of
+              // "Function call is missing a thought_signature" errors.
+              case 'thought_signature':
+                final signature = delta['signature'] as String? ?? '';
+                if (signature.isEmpty) break;
+                thoughtSignatures[index] =
+                    (thoughtSignatures[index] ?? '') + signature;
+
+              // Argument JSON arrives as fragments that only parse once
+              // concatenated across every delta for the step.
+              case 'arguments_delta':
+                final fragment = delta['arguments'] as String? ?? '';
+                if (fragment.isEmpty) break;
+                functionCalls[index]?.arguments.write(fragment);
+                yield GeminiChunk(
+                  model: resolvedModel,
+                  done: false,
+                  createdAt: DateTime.now(),
+                  message: LLMChunkMessage(
+                    content: null,
+                    role: LLMRole.assistant,
+                    toolCallDeltas: [
+                      LLMToolCallDelta(index: index, argumentsDelta: fragment),
+                    ],
+                  ),
+                );
+
+              case 'image':
+                final imageData = delta['data'] as String? ?? '';
+                if (imageData.isEmpty) break;
+                final mimeType = delta['mime_type'] as String? ?? 'image/png';
+                yield GeminiChunk(
+                  model: resolvedModel,
+                  done: false,
+                  createdAt: DateTime.now(),
+                  message: LLMChunkMessage(
+                    content: null,
+                    role: LLMRole.assistant,
+                    images: ['data:$mimeType;base64,$imageData'],
+                  ),
+                );
+            }
+
+          // `usage` is cumulative for the interaction; `step_usage` covers only
+          // the step that just closed, so the cumulative one is kept.
+          case 'step.stop':
+            final stepUsage = data['usage'] as Map<String, dynamic>?;
+            if (stepUsage != null) usage = GeminiUsage.fromJson(stepUsage);
+
+          case 'interaction.completed':
+            final interaction =
+                data['interaction'] as Map<String, dynamic>? ?? const {};
+            interactionId = interaction['id'] as String? ?? interactionId;
+            interactionStatus =
+                interaction['status'] as String? ?? interactionStatus;
+            final completedUsage =
+                interaction['usage'] as Map<String, dynamic>?;
+            if (completedUsage != null) {
+              usage = GeminiUsage.fromJson(completedUsage);
+            }
+
+            final metadata = <String, dynamic>{
+              'interaction_id': ?interactionId,
+              'status': ?interactionStatus,
+              if (thoughtSignatures.isNotEmpty)
+                'thought_signatures': <String, String>{
+                  for (final entry in thoughtSignatures.entries)
+                    '${entry.key}': entry.value,
+                },
+              if (usage != null) ...usage.toProviderMetadata(),
+            };
+
+            if (functionCalls.isNotEmpty) {
+              // The steps-based API refuses an echoed function_call unless the
+              // model's thought signature is echoed with it, and LLMMessage has
+              // no signature channel — so the signature rides inside the call
+              // id (see GeminiMessageConverter.signatureSeparator), which
+              // round-trips untouched through StreamToolExecutor. Each call
+              // gets the signature accumulated at or before its step index.
+              String? signatureFor(int callIndex) {
+                String? best;
+                for (final entry in thoughtSignatures.entries) {
+                  if (entry.key <= callIndex) best = entry.value;
+                }
+                return best;
+              }
+
+              // Split by whether the arguments decode: an interaction cut
+              // short at `max_output_tokens` can end mid-JSON, and such a call
+              // is surfaced as invalid rather than run.
+              final split = LLMToolCall.partition([
+                for (final entry in functionCalls.entries)
+                  entry.value.toToolCall(
+                    entry.key,
+                    signature: signatureFor(entry.key),
+                  ),
+              ]);
               yield GeminiChunk(
                 model: resolvedModel,
                 done: false,
                 createdAt: DateTime.now(),
+                providerMetadata: metadata,
                 message: LLMChunkMessage(
                   content: null,
                   role: LLMRole.assistant,
-                  images: ['data:$mimeType;base64,$imageData'],
+                  toolCalls: split.valid.isEmpty ? null : split.valid,
+                  invalidToolCalls: split.invalid.isEmpty
+                      ? null
+                      : split.invalid,
                 ),
               );
-          }
-
-        // `usage` is cumulative for the interaction; `step_usage` covers only
-        // the step that just closed, so the cumulative one is kept.
-        case 'step.stop':
-          final stepUsage = data['usage'] as Map<String, dynamic>?;
-          if (stepUsage != null) usage = GeminiUsage.fromJson(stepUsage);
-
-        case 'interaction.completed':
-          final interaction =
-              data['interaction'] as Map<String, dynamic>? ?? const {};
-          interactionId = interaction['id'] as String? ?? interactionId;
-          interactionStatus =
-              interaction['status'] as String? ?? interactionStatus;
-          final completedUsage = interaction['usage'] as Map<String, dynamic>?;
-          if (completedUsage != null) {
-            usage = GeminiUsage.fromJson(completedUsage);
-          }
-
-          final metadata = <String, dynamic>{
-            'interaction_id': ?interactionId,
-            'status': ?interactionStatus,
-            if (thoughtSignatures.isNotEmpty)
-              'thought_signatures': <String, String>{
-                for (final entry in thoughtSignatures.entries)
-                  '${entry.key}': entry.value,
-              },
-            if (usage != null) ...usage.toProviderMetadata(),
-          };
-
-          if (functionCalls.isNotEmpty) {
-            // The steps-based API refuses an echoed function_call unless the
-            // model's thought signature is echoed with it, and LLMMessage has
-            // no signature channel — so the signature rides inside the call
-            // id (see GeminiMessageConverter.signatureSeparator), which
-            // round-trips untouched through StreamToolExecutor. Each call
-            // gets the signature accumulated at or before its step index.
-            String? signatureFor(int callIndex) {
-              String? best;
-              for (final entry in thoughtSignatures.entries) {
-                if (entry.key <= callIndex) best = entry.value;
-              }
-              return best;
             }
 
-            // Split by whether the arguments decode: an interaction cut
-            // short at `max_output_tokens` can end mid-JSON, and such a call
-            // is surfaced as invalid rather than run.
-            final split = LLMToolCall.partition([
-              for (final entry in functionCalls.entries)
-                entry.value.toToolCall(
-                  entry.key,
-                  signature: signatureFor(entry.key),
-                ),
-            ]);
             yield GeminiChunk(
               model: resolvedModel,
-              done: false,
+              done: true,
               createdAt: DateTime.now(),
-              providerMetadata: metadata,
-              message: LLMChunkMessage(
-                content: null,
-                role: LLMRole.assistant,
-                toolCalls: split.valid.isEmpty ? null : split.valid,
-                invalidToolCalls: split.invalid.isEmpty ? null : split.invalid,
+              promptEvalCount: usage?.inputTokens ?? 0,
+              evalCount: usage?.outputTokens ?? 0,
+              usage: usage?.toLLMUsage(),
+              finishReason: _finishReason(
+                interactionStatus,
+                sawFunctionCalls: functionCalls.isNotEmpty,
               ),
+              providerMetadata: metadata,
+              message: LLMChunkMessage(content: null, role: LLMRole.assistant),
             );
-          }
-
-          yield GeminiChunk(
-            model: resolvedModel,
-            done: true,
-            createdAt: DateTime.now(),
-            promptEvalCount: usage?.inputTokens ?? 0,
-            evalCount: usage?.outputTokens ?? 0,
-            usage: usage?.toLLMUsage(),
-            finishReason: _finishReason(
-              interactionStatus,
-              sawFunctionCalls: functionCalls.isNotEmpty,
-            ),
-            providerMetadata: metadata,
-            message: LLMChunkMessage(content: null, role: LLMRole.assistant),
-          );
+        }
       }
+    } on http.RequestAbortedException {
+      // A deliberate stop, not a failure. `http` signals an abort by
+      // injecting this into the response stream; surfacing it would make a
+      // cancelled turn look like a transport error, and `cancel()` itself
+      // complete with an error. Returning skips any end-of-stream flush
+      // below: an abandoned turn has no partial output worth surfacing.
+      return;
     }
   }
 
@@ -297,7 +309,11 @@ class GeminiStreamConverter {
       'NOT_FOUND' => 404,
       'QUOTA_EXCEEDED' || 'RESOURCE_EXHAUSTED' => 429,
       'INTERNAL' || 'UNKNOWN' => 500,
-      'UNAVAILABLE' => 503,
+      // `service_unavailable` captured from the live free tier alongside
+      // "gemini-3.5-flash-lite is currently experiencing high demand". Only
+      // the gRPC spelling `UNAVAILABLE` was mapped, so the capacity error
+      // Google actually sends left the status null and was never retried.
+      'UNAVAILABLE' || 'SERVICE_UNAVAILABLE' => 503,
       'DEADLINE_EXCEEDED' => 504,
       _ => null,
     };

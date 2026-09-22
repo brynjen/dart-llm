@@ -113,47 +113,43 @@ void main() {
       expect(response3, isNotEmpty);
     }, timeout: const Timeout(Duration(minutes: 5)));
 
-    test(
-      'context preservation across multiple turns',
-      () async {
-        if (modelPath == null) {
-          markTestSkipped('No model available');
-          return;
-        }
+    test('context preservation across multiple turns', () async {
+      if (modelPath == null) {
+        markTestSkipped('No model available');
+        return;
+      }
 
-        await repo.loadModel(modelPath!);
+      await repo.loadModel(modelPath!);
 
-        var messages = [
-          LLMMessage(role: LLMRole.user, content: 'Remember this number: 42'),
-        ];
+      var messages = [
+        LLMMessage(role: LLMRole.user, content: 'Remember this number: 42'),
+      ];
 
-        // Turn 1
-        String response1 = '';
-        await for (final chunk in repo.streamChat('test', messages: messages)) {
-          response1 += chunk.message?.content ?? '';
-        }
-        messages.add(LLMMessage(role: LLMRole.assistant, content: response1));
+      // Turn 1
+      String response1 = '';
+      await for (final chunk in repo.streamChat('test', messages: messages)) {
+        response1 += chunk.message?.content ?? '';
+      }
+      messages.add(LLMMessage(role: LLMRole.assistant, content: response1));
 
-        // Turn 2 - ask about the number
-        messages.add(
-          LLMMessage(
-            role: LLMRole.user,
-            content: 'What number did I ask you to remember?',
-          ),
-        );
-        String response2 = '';
-        await for (final chunk in repo.streamChat('test', messages: messages)) {
-          response2 += chunk.message?.content ?? '';
-        }
+      // Turn 2 - ask about the number
+      messages.add(
+        LLMMessage(
+          role: LLMRole.user,
+          content: 'What number did I ask you to remember?',
+        ),
+      );
+      String response2 = '';
+      await for (final chunk in repo.streamChat('test', messages: messages)) {
+        response2 += chunk.message?.content ?? '';
+      }
 
-        expect(
-          response2.contains('42'),
-          isTrue,
-          reason: 'Model should remember the number from context',
-        );
-      },
-      timeout: const Timeout(Duration(minutes: 3)),
-    );
+      expect(
+        response2.contains('42'),
+        isTrue,
+        reason: 'Model should remember the number from context',
+      );
+    }, timeout: const Timeout(Duration(minutes: 3)));
 
     test('mixed roles in conversation', () async {
       if (modelPath == null) {

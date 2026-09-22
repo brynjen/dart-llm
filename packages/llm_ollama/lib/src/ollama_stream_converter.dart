@@ -27,61 +27,70 @@ class OllamaStreamConverter {
     // request per round — so this never needs resetting.
     var turnCarriedToolCalls = false;
 
-    await for (final chunk
-        in response.stream
-            .transform(utf8.decoder)
-            .timeout(
-              readTimeout,
-              // The error must be pushed into the sink, not thrown. `onTimeout`
-              // runs from a timer, outside the stream's own error path, so a
-              // throw here escapes as an unhandled exception and takes the
-              // isolate down instead of failing this one request.
-              onTimeout: (sink) {
-                sink.addError(
-                  TimeoutException(
-                    'Stream read timed out after ${readTimeout.inSeconds} '
-                    'seconds',
-                    readTimeout,
-                  ),
-                );
-                sink.close();
-              },
-            )) {
-      carryBuffer.write(chunk);
-      final bufferedChunk = carryBuffer.toString();
-      final lines = bufferedChunk.split('\n');
-      carryBuffer
-        ..clear()
-        ..write(lines.removeLast());
+    try {
+      await for (final chunk
+          in response.stream
+              .transform(utf8.decoder)
+              .timeout(
+                readTimeout,
+                // The error must be pushed into the sink, not thrown. `onTimeout`
+                // runs from a timer, outside the stream's own error path, so a
+                // throw here escapes as an unhandled exception and takes the
+                // isolate down instead of failing this one request.
+                onTimeout: (sink) {
+                  sink.addError(
+                    TimeoutException(
+                      'Stream read timed out after ${readTimeout.inSeconds} '
+                      'seconds',
+                      readTimeout,
+                    ),
+                  );
+                  sink.close();
+                },
+              )) {
+        carryBuffer.write(chunk);
+        final bufferedChunk = carryBuffer.toString();
+        final lines = bufferedChunk.split('\n');
+        carryBuffer
+          ..clear()
+          ..write(lines.removeLast());
 
-      for (final line in lines) {
-        final trimmedLine = line.trim();
-        if (trimmedLine.isEmpty) {
-          continue;
-        }
+        for (final line in lines) {
+          final trimmedLine = line.trim();
+          if (trimmedLine.isEmpty) {
+            continue;
+          }
 
-        try {
-          final decoded = json.decode(trimmedLine);
-          if (decoded is Map<String, dynamic> && decoded['error'] != null) {
-            throw LLMApiException('Ollama stream error: ${decoded['error']}');
+          try {
+            final decoded = json.decode(trimmedLine);
+            if (decoded is Map<String, dynamic> && decoded['error'] != null) {
+              throw LLMApiException('Ollama stream error: ${decoded['error']}');
+            }
+            final ollamaChunk = OllamaChunk.fromJson(decoded);
+            if (ollamaChunk.message?.toolCalls?.isNotEmpty ?? false) {
+              turnCarriedToolCalls = true;
+            }
+            yield (ollamaChunk.done ?? false)
+                ? _withResolvedFinishReason(ollamaChunk, turnCarriedToolCalls)
+                : ollamaChunk;
+            malformedLineCount = 0;
+          } on LLMApiException {
+            rethrow;
+          } catch (_) {
+            malformedLineCount = _recordMalformedLine(
+              line: trimmedLine,
+              malformedLineCount: malformedLineCount,
+            );
           }
-          final ollamaChunk = OllamaChunk.fromJson(decoded);
-          if (ollamaChunk.message?.toolCalls?.isNotEmpty ?? false) {
-            turnCarriedToolCalls = true;
-          }
-          yield (ollamaChunk.done ?? false)
-              ? _withResolvedFinishReason(ollamaChunk, turnCarriedToolCalls)
-              : ollamaChunk;
-          malformedLineCount = 0;
-        } on LLMApiException {
-          rethrow;
-        } catch (_) {
-          malformedLineCount = _recordMalformedLine(
-            line: trimmedLine,
-            malformedLineCount: malformedLineCount,
-          );
         }
       }
+    } on http.RequestAbortedException {
+      // A deliberate stop, not a failure. `http` signals an abort by
+      // injecting this into the response stream; surfacing it would make a
+      // cancelled turn look like a transport error, and `cancel()` itself
+      // complete with an error. Returning skips any end-of-stream flush
+      // below: an abandoned turn has no partial output worth surfacing.
+      return;
     }
 
     final trailingLine = carryBuffer.toString().trim();

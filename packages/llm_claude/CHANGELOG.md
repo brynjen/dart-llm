@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-09-22
+
+### Added
+- `LLMUsage.cachedTokens` and `.cacheWriteTokens` from `cache_read_input_tokens` and `cache_creation_input_tokens`. The raw values remain on `providerMetadata`.
+- A tool result carrying `LLMToolResult.contentParts` is sent as Anthropic content blocks, so a tool can return an image rather than a description of one.
+
+### Fixed
+- `RetryConfig.retryableStatusCodes` never applied to streaming requests. A non-2xx arrives as a *returned* response rather than a thrown error, so the retry around the send never saw it and a 429 or 503 from Anthropic failed on the first attempt.
+- A failure reported in-band — `200`, then an `error` event on the stream — was not retried either, because it arrives after the send has returned. Both are now re-issued while nothing has reached the caller.
+- `promptTokens` under-reported every cached request. Anthropic's `input_tokens` counts only the tokens after the last cache breakpoint — `total = cache_read + cache_creation + input_tokens` — and the raw value was used as-is, so `totalTokens` was wrong too. **Cost calculations based on `promptTokens` will see different numbers.**
+- A tool call rejected for undecodable arguments reached Anthropic without `is_error`, so the model read the parse error as data. Failure is now read from `LLMToolResult.isError`; the old text match remains as a fallback for histories this package did not build.
+- A successful tool whose output happened to begin `Tool <name> failed:` was flagged as an error.
+- Cancelling a `streamChat` subscription aborts the request.
+
+### Changed
+- The tool name is read from `LLMMessage.toolName`, falling back to `status`.
+- All packages bumped to `0.7.0`; `llm_core` constraint updated to `^0.7.0`.
+
 ## [0.6.0] - 2026-09-17
 
 ### Changed

@@ -187,6 +187,158 @@ void main() {
       expect(imageBlock['source']['data'], fakeBase64);
     });
   });
+
+  group('tool_result is_error', () {
+    Map<String, dynamic> resultBlock(LLMMessage toolMessage) {
+      final result = ClaudeMessageConverter.convert([
+        LLMMessage(role: LLMRole.user, content: 'Use a tool'),
+        LLMMessage(
+          role: LLMRole.assistant,
+          toolCalls: [
+            {
+              'id': 'id1',
+              'function': {'name': 'calculator', 'arguments': '{}'},
+            },
+          ],
+        ),
+        toolMessage,
+      ]);
+      final content = result.messages.last['content'] as List;
+      return content.first as Map<String, dynamic>;
+    }
+
+    test('comes from toolResult.isError when present', () {
+      final block = resultBlock(
+        LLMMessage(
+          role: LLMRole.tool,
+          content: 'anything at all',
+          toolCallId: 'id1',
+          toolName: 'calculator',
+          toolResult: const LLMToolResult.failure('anything at all'),
+        ),
+      );
+
+      expect(block['is_error'], isTrue);
+    });
+
+    test('a successful result is not flagged, whatever its text says', () {
+      // The old text match flagged any output starting 'Tool x failed:', even
+      // when the tool had succeeded and was merely reporting about one.
+      final block = resultBlock(
+        LLMMessage(
+          role: LLMRole.tool,
+          content: 'Tool calculator failed: is what the log said',
+          toolCallId: 'id1',
+          toolName: 'calculator',
+          toolResult: const LLMToolResult(
+            content: 'Tool calculator failed: is what the log said',
+          ),
+        ),
+      );
+
+      expect(block.containsKey('is_error'), isFalse);
+    });
+
+    test('an invalid call now reaches Anthropic flagged', () {
+      // Regression: StreamToolExecutor words this 'was not called', which the
+      // 'Tool <name> failed:' match missed, so a parse error was sent as a
+      // successful result and the model read the error message as data.
+      final block = resultBlock(
+        LLMMessage(
+          role: LLMRole.tool,
+          content:
+              'Tool calculator was not called: its arguments are not valid '
+              'JSON (Unexpected end of input).',
+          toolCallId: 'id1',
+          toolName: 'calculator',
+          toolResult: const LLMToolResult.failure(
+            'Tool calculator was not called: its arguments are not valid JSON.',
+          ),
+        ),
+      );
+
+      expect(block['is_error'], isTrue);
+    });
+
+    test('falls back to the text match for a caller-built history', () {
+      final block = resultBlock(
+        LLMMessage(
+          role: LLMRole.tool,
+          content: 'Tool calculator failed: boom',
+          toolCallId: 'id1',
+          toolName: 'calculator',
+        ),
+      );
+
+      expect(block['is_error'], isTrue);
+    });
+
+    test('still reads status for a history serialized before toolName', () {
+      final block = resultBlock(
+        LLMMessage(
+          role: LLMRole.tool,
+          content: 'Tool calculator failed: boom',
+          toolCallId: 'id1',
+          status: 'calculator',
+        ),
+      );
+
+      expect(block['is_error'], isTrue);
+    });
+
+    test('content parts become Anthropic blocks', () {
+      // Anthropic accepts text/image/document/search_result blocks inside a
+      // tool_result, so a tool returning a screenshot sends the image itself.
+      final block = resultBlock(
+        LLMMessage(
+          role: LLMRole.tool,
+          content: 'a screenshot of the page',
+          toolCallId: 'id1',
+          toolName: 'screenshot',
+          toolResult: const LLMToolResult(
+            content: 'a screenshot of the page',
+            contentParts: [
+              LLMTextContent('a screenshot of the page'),
+              LLMImageContent('iVBORw0KGgo='),
+            ],
+          ),
+        ),
+      );
+
+      final content = block['content'] as List;
+      expect(content, hasLength(2));
+      expect(content[0], {'type': 'text', 'text': 'a screenshot of the page'});
+      expect(content[1]['type'], 'image');
+      expect(content[1]['source']['media_type'], 'image/png');
+    });
+
+    test('a text-only result still sends a plain string', () {
+      final block = resultBlock(
+        LLMMessage(
+          role: LLMRole.tool,
+          content: '4',
+          toolCallId: 'id1',
+          toolName: 'calculator',
+          toolResult: const LLMToolResult(content: '4'),
+        ),
+      );
+
+      expect(block['content'], '4');
+    });
+
+    test('an assistant turn never leaks its reasoning', () {
+      final result = ClaudeMessageConverter.convert([
+        LLMMessage(role: LLMRole.user, content: 'Hi'),
+        LLMMessage(
+          role: LLMRole.assistant,
+          content: 'Hello',
+          thinking: 'the user greeted me',
+        ),
+      ]);
+
+      expect(jsonEncode(result.messages), isNot(contains('greeted me')));
+    });
+  });
 }
 
 void _emptyContentTests() {

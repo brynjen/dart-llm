@@ -32,6 +32,7 @@ class GPTChunk extends LLMChunk {
                  completionTokens: gptUsage.completionTokens,
                  totalTokens: gptUsage.totalTokens,
                  reasoningTokens: gptUsage.reasoningTokens,
+                 cachedTokens: gptUsage.usageTokenDetails?.cachedTokens,
                )
              : null,
          providerMetadata: {'id': id, 'system_fingerprint': ?systemFingerprint},

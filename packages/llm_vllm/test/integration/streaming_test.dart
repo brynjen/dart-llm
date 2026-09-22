@@ -128,5 +128,71 @@ void main() {
         timeout: const Timeout(Duration(minutes: 2)),
       );
     });
+    group('Continuous usage stats', () {
+      test('usagePerChunk reports the server counter on every chunk', () async {
+        final messages = [
+          LLMMessage(
+            role: LLMRole.user,
+            content: 'Count from one to five in words.',
+          ),
+        ];
+
+        final chunks = await collectStreamWithTimeout(
+          repo.streamChat(
+            chatModel,
+            messages: messages,
+            options: const LLMChatOptions(
+              usagePerChunk: true,
+              maxOutputTokens: 64,
+            ),
+          ),
+          const Duration(seconds: 90),
+        );
+
+        final withUsage = chunks.where((c) => c.usage != null).toList();
+        expect(
+          withUsage.length,
+          greaterThan(1),
+          reason:
+              'continuous_usage_stats must put usage on more than the final '
+              'frame; one means the flag never reached the wire',
+        );
+
+        // The counter is a running total from the server, so it never
+        // decreases and the last value is the turn total.
+        var previous = -1;
+        for (final chunk in withUsage) {
+          final completion = chunk.usage!.completionTokens;
+          expect(
+            completion,
+            greaterThanOrEqualTo(previous),
+            reason: 'the running counter must not go backwards',
+          );
+          previous = completion;
+        }
+        expect(withUsage.last.usage!.promptTokens, greaterThan(0));
+      }, tags: ['integration']);
+
+      test('the default still reports usage only at the end', () async {
+        final messages = [
+          LLMMessage(role: LLMRole.user, content: 'Say hello.'),
+        ];
+
+        final chunks = await collectStreamWithTimeout(
+          repo.streamChat(
+            chatModel,
+            messages: messages,
+            options: const LLMChatOptions(maxOutputTokens: 32),
+          ),
+          const Duration(seconds: 90),
+        );
+
+        expect(
+          chunks.where((c) => c.usage != null).length,
+          1,
+          reason: 'without the flag only the terminal frame carries usage',
+        );
+      }, tags: ['integration']);
+    });
   });
 }

@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-09-22
+
+### Added
+- `LLMUsage.cachedTokens` from `prompt_tokens_details.cached_tokens`, which was parsed and then dropped.
+
+### Fixed
+- `RetryConfig.retryableStatusCodes` never applied to streaming requests. A non-2xx arrives as a *returned* response rather than a thrown error, so the retry around the send never saw it and a 429 or 503 from OpenAI failed on the first attempt.
+- A failure reported in-band — `200`, then an `error` event on the stream — was not retried either, because it arrives after the send has returned. Both are now re-issued while nothing has reached the caller.
+- Parsing `prompt_tokens_details` threw when OpenAI sent the object without `cached_tokens`.
+- Cancelling a `streamChat` subscription aborts the request.
+
+### Changed
+- `LLMChatOptions.usagePerChunk` is ignored: `continuous_usage_stats` is a vLLM extension and OpenAI's `stream_options` has no equivalent.
+- All packages bumped to `0.7.0`; `llm_core` constraint updated to `^0.7.0`.
+
 ## [0.6.0] - 2026-09-17
 
 ### Changed

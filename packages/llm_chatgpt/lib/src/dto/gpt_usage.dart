@@ -5,7 +5,12 @@ class GPTUsageTokenDetails {
   final int cachedTokens;
 
   factory GPTUsageTokenDetails.fromJson(Map<String, dynamic> json) =>
-      GPTUsageTokenDetails(cachedTokens: json['cached_tokens']);
+      GPTUsageTokenDetails(
+        // Unguarded, this threw mid-stream whenever OpenAI sent
+        // `prompt_tokens_details` without the key. vLLM's twin has always
+        // defaulted; this matches it.
+        cachedTokens: json['cached_tokens'] as int? ?? 0,
+      );
 
   Map<String, dynamic> toJson() => {'cached_tokens': cachedTokens};
 }

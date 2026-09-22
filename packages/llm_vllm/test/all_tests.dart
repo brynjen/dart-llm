@@ -31,6 +31,8 @@ import 'unit/vllm_repository_test.dart' as repository;
 import 'unit/vllm_request_shape_test.dart' as request_shape;
 import 'unit/vllm_stream_converter_test.dart' as stream_converter;
 import 'unit/retry_test.dart' as retry;
+import 'unit/vllm_cancellation_test.dart' as vllm_cancellation;
+import 'unit/vllm_midstream_retry_test.dart' as vllm_midstream_retry;
 
 void main() {
   vllm_chat_repository.main();
@@ -38,6 +40,8 @@ void main() {
   params.main();
   resilience.main();
   retry.main();
+  vllm_cancellation.main();
+  vllm_midstream_retry.main();
   dto.main();
   builder.main();
   embedding.main();

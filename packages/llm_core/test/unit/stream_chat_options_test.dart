@@ -161,6 +161,41 @@ void main() {
       expect(modified.autoExecuteTools, false);
     });
   });
+
+  group('usagePerChunk', () {
+    test('defaults to false', () {
+      expect(const LLMChatOptions().usagePerChunk, isFalse);
+      expect(const StreamChatOptions().usagePerChunk, isFalse);
+    });
+
+    test('is carried by both the public and back-compat constructors', () {
+      expect(const LLMChatOptions(usagePerChunk: true).usagePerChunk, isTrue);
+      expect(
+        const StreamChatOptions(usagePerChunk: true).usagePerChunk,
+        isTrue,
+      );
+    });
+
+    test('survives an unrelated copyWith', () {
+      const options = LLMChatOptions(usagePerChunk: true);
+
+      expect(options.copyWith().usagePerChunk, isTrue);
+      expect(options.copyWith(temperature: 0.4).usagePerChunk, isTrue);
+    });
+
+    test('copyWith can turn it on and off', () {
+      expect(
+        const LLMChatOptions().copyWith(usagePerChunk: true).usagePerChunk,
+        isTrue,
+      );
+      expect(
+        const LLMChatOptions(
+          usagePerChunk: true,
+        ).copyWith(usagePerChunk: false).usagePerChunk,
+        isFalse,
+      );
+    });
+  });
 }
 
 // Helper class for testing

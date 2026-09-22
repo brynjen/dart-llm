@@ -192,6 +192,34 @@ class VLLMChatRepository extends LLMChatRepository with LLMRepositoryFeatures {
     int? toolAttempts,
     bool think = false,
     LLMChatOptions? options,
+  }) => abortableStream(
+    (abortTrigger) => _streamChat(
+      model,
+      messages: messages,
+      abortTrigger: abortTrigger,
+      tools: tools,
+      extra: extra,
+      toolAttempts: toolAttempts,
+      think: think,
+      options: options,
+    ),
+  );
+
+  /// The body of [streamChat], with the abort trigger threaded through to the
+  /// HTTP request.
+  ///
+  /// Kept separate because [streamChat] must not be an `async*` generator: a
+  /// cancel arriving while a generator is suspended at an `await` does not
+  /// resume it, so nothing would ever fire the trigger. See [abortableStream].
+  Stream<LLMChunk> _streamChat(
+    String model, {
+    required List<LLMMessage> messages,
+    required Future<void> abortTrigger,
+    List<LLMTool> tools = const [],
+    dynamic extra,
+    int? toolAttempts,
+    bool think = false,
+    LLMChatOptions? options,
   }) async* {
     Validation.validateModelName(model);
     Validation.validateMessages(messages);
@@ -213,7 +241,20 @@ class VLLMChatRepository extends LLMChatRepository with LLMRepositoryFeatures {
         messages,
       ).map((msg) => msg.toJson()).toList(growable: false),
       'stream': true,
-      'stream_options': {'include_usage': true},
+      // `include_usage` asks for the terminal usage frame vLLM otherwise
+      // omits when streaming. `continuous_usage_stats` additionally puts the
+      // running counter on every chunk, which is what turns a live
+      // tokens-per-second readout from an estimate into a measurement.
+      //
+      // The two are sent together on purpose: vLLM does not reject
+      // `continuous_usage_stats` on its own, it returns 200 and silently
+      // ignores it — the same failure mode `vllm_params.dart` exists to
+      // prevent. The member is omitted entirely when off so the default
+      // request bytes are unchanged.
+      'stream_options': {
+        'include_usage': true,
+        if (merged.usagePerChunk) 'continuous_usage_stats': true,
+      },
     };
     if (merged.tools.isNotEmpty) {
       body['tools'] = merged.tools
@@ -246,6 +287,7 @@ class VLLMChatRepository extends LLMChatRepository with LLMRepositoryFeatures {
         operation: () async {
           vllmTrace(traceId, 'send.begin');
           final res = await _httpHelper.sendStreamingRequest(
+            abortTrigger: abortTrigger,
             method: 'POST',
             uri: uri,
             headers: _headers(accept: 'text/event-stream'),
@@ -277,101 +319,107 @@ class VLLMChatRepository extends LLMChatRepository with LLMRepositoryFeatures {
       ),
     );
 
-    var response = await send();
-    vllmTrace(traceId, 'send.done', 'status=${response.statusCode}');
+    // A provider can answer `200`, open the stream and only then report
+    // the failure in-band, as an `error` event. That arrives after the
+    // send has returned, so `executeWithRetry` above can never see it —
+    // the same 503 it would have retried three times went unretried.
+    // `sendSucceeded` keeps the two budgets from compounding: a transport
+    // failure is retried by the send, an in-band one by this.
+    var sendSucceeded = false;
+    yield* RetryUtil.retryingStream(
+      config: effectiveRetryConfig,
+      isRetryable: (error) =>
+          sendSucceeded &&
+          ErrorHandlers.isRetryableStreamError(error, effectiveRetryConfig),
+      build: () async* {
+        sendSucceeded = false;
+        var response = await send();
+        sendSucceeded = true;
+        vllmTrace(traceId, 'send.done', 'status=${response.statusCode}');
 
-    // Each served model validates `reasoning_effort` against its own
-    // vocabulary (Qwen3.8: low/medium/xhigh), discoverable only through the
-    // 400 it returns. Remap once to the nearest supported level and resend so
-    // the portable effort scale works regardless of the model's dialect.
-    if (response.statusCode == 400 && body['reasoning_effort'] is String) {
-      final errorBody = await _httpHelper.readErrorBody(response);
-      final remapped = remapVllmReasoningEffort(
-        body['reasoning_effort'] as String,
-        errorBody,
-      );
-      if (remapped == null) {
-        await VLLMErrorHandler.handleBadRequestError(
-          errorBody: errorBody,
-          model: model,
-          thinkRequested: merged.think,
-          toolsRequested: merged.tools.isNotEmpty,
-        );
-      }
-      body['reasoning_effort'] = remapped;
-      response = await send();
-    }
-
-    switch (response.statusCode) {
-      case 200:
-        vllmTrace(traceId, 'stream.open');
-        final chunkStream = VLLMStreamConverter.toLLMStream(
-          response,
-          timeoutConfig: timeoutConfig,
-          traceId: traceId,
-        );
-        if (merged.tools.isNotEmpty && merged.autoExecuteTools) {
-          final executor = StreamToolExecutor(
-            tools: merged.tools,
-            extra: merged.extra,
-            maxToolAttempts: merged.toolAttempts ?? maxToolAttempts,
-            streamChatCallback:
-                (
-                  String model,
-                  List<LLMMessage> messages,
-                  List<LLMTool> tools,
-                  dynamic extra,
-                  int toolAttempts,
-                ) => streamChat(
-                  model,
-                  messages: messages,
-                  tools: tools,
-                  extra: extra,
-                  options: LLMChatOptions(
-                    think: merged.think,
-                    tools: tools,
-                    extra: extra,
-                    toolAttempts: toolAttempts,
-                    autoExecuteTools: merged.autoExecuteTools,
-                    backendOptions: backendOptions,
-                    timeout: merged.timeout,
-                    retryConfig: effectiveRetryConfig,
-                    responseFormat: merged.responseFormat,
-                    temperature: merged.temperature,
-                    topP: merged.topP,
-                    topK: merged.topK,
-                    maxOutputTokens: merged.maxOutputTokens,
-                    stopSequences: merged.stopSequences,
-                    reasoningBudget: merged.reasoningBudget,
-                    reasoningEffort: merged.reasoningEffort,
-                  ),
-                ),
+        // Each served model validates `reasoning_effort` against its own
+        // vocabulary (Qwen3.8: low/medium/xhigh), discoverable only through the
+        // 400 it returns. Remap once to the nearest supported level and resend so
+        // the portable effort scale works regardless of the model's dialect.
+        if (response.statusCode == 400 && body['reasoning_effort'] is String) {
+          final errorBody = await _httpHelper.readErrorBody(response);
+          final remapped = remapVllmReasoningEffort(
+            body['reasoning_effort'] as String,
+            errorBody,
           );
-          yield* executor.executeTools(
-            chunkStream: chunkStream,
-            model: model,
-            initialMessages: messages,
-            toolAttempts: merged.toolAttempts ?? maxToolAttempts,
-          );
-        } else {
-          yield* chunkStream;
+          if (remapped == null) {
+            await VLLMErrorHandler.handleBadRequestError(
+              errorBody: errorBody,
+              model: model,
+              thinkRequested: merged.think,
+              toolsRequested: merged.tools.isNotEmpty,
+            );
+          }
+          body['reasoning_effort'] = remapped;
+          response = await send();
         }
-      case 400:
-        final errorBody = await _httpHelper.readErrorBody(response);
-        await VLLMErrorHandler.handleBadRequestError(
-          errorBody: errorBody,
-          model: model,
-          thinkRequested: merged.think,
-          toolsRequested: merged.tools.isNotEmpty,
-        );
-      default:
-        final errorBody = await _httpHelper.readErrorBody(response);
-        _httpHelper.handleHttpError(
-          statusCode: response.statusCode,
-          errorBody: errorBody,
-          defaultMessage: 'vLLM API error',
-        );
-    }
+
+        switch (response.statusCode) {
+          case 200:
+            vllmTrace(traceId, 'stream.open');
+            final chunkStream = VLLMStreamConverter.toLLMStream(
+              response,
+              timeoutConfig: timeoutConfig,
+              traceId: traceId,
+            );
+            if (merged.tools.isNotEmpty && merged.autoExecuteTools) {
+              final executor = StreamToolExecutor(
+                tools: merged.tools,
+                extra: merged.extra,
+                maxToolAttempts: merged.toolAttempts ?? maxToolAttempts,
+                streamChatCallback:
+                    (
+                      String model,
+                      List<LLMMessage> messages,
+                      List<LLMTool> tools,
+                      dynamic extra,
+                      int toolAttempts,
+                    ) => streamChat(
+                      model,
+                      messages: messages,
+                      tools: tools,
+                      extra: extra,
+                      options: merged.toChatOptions(
+                        tools: tools,
+                        extra: extra,
+                        toolAttempts: toolAttempts,
+                        retryConfig: effectiveRetryConfig,
+                        backendOptions: backendOptions,
+                      ),
+                    ),
+              );
+              yield* executor.executeTools(
+                chunkStream: chunkStream,
+                model: model,
+                initialMessages: messages,
+                toolAttempts: merged.toolAttempts ?? maxToolAttempts,
+              );
+            } else {
+              yield* chunkStream;
+            }
+          case 400:
+            final errorBody = await _httpHelper.readErrorBody(response);
+            await VLLMErrorHandler.handleBadRequestError(
+              errorBody: errorBody,
+              model: model,
+              thinkRequested: merged.think,
+              toolsRequested: merged.tools.isNotEmpty,
+            );
+          default:
+            final errorBody = await _httpHelper.readErrorBody(response);
+            _httpHelper.handleHttpError(
+              statusCode: response.statusCode,
+              errorBody: errorBody,
+              defaultMessage: 'vLLM API error',
+            );
+        }
+      },
+    );
   }
 
   /// Keys interpreted client-side by `embed`/`batchEmbed`; never sent.

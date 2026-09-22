@@ -180,14 +180,16 @@ class GeminiMessageConverter {
   /// Builds a `function_result` step from a tool-result message.
   ///
   /// [LLMMessage.toolCallId] carries the id of the call being answered
-  /// (stripped of any smuggled signature) and [LLMMessage.status] carries the
+  /// (stripped of any smuggled signature) and [LLMMessage.toolName] carries the
   /// tool name, matching how [StreamToolExecutor] populates tool messages.
+  /// [LLMMessage.status] is the fallback: it carried the tool name before
+  /// `toolName` existed, so histories serialized then still resolve.
   static Map<String, dynamic> _functionResultStep(LLMMessage msg) {
     final (callId, _) = _splitSignature(msg.toolCallId);
     return <String, dynamic>{
       'type': 'function_result',
       'call_id': callId ?? '',
-      'name': msg.status ?? '',
+      'name': msg.toolName ?? msg.status ?? '',
       'result': [_textBlock(msg.content ?? '')],
     };
   }

@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:llm_gemini/llm_gemini.dart';
 import 'package:test/test.dart';
 
@@ -228,6 +230,79 @@ void main() {
       expect(spec['parameters'], isA<Map>());
       // The Interactions API does not nest declarations.
       expect(spec.containsKey('functionDeclarations'), isFalse);
+    });
+  });
+
+  group('tool name on a function_result', () {
+    List<dynamic> resultSteps(LLMMessage toolMessage) =>
+        GeminiMessageConverter.buildStatelessInput([
+          LLMMessage(role: LLMRole.user, content: 'Use a tool'),
+          LLMMessage(
+            role: LLMRole.assistant,
+            toolCalls: [
+              {
+                'id': 'call_1',
+                'function': {'name': 'calculator', 'arguments': '{}'},
+              },
+            ],
+          ),
+          toolMessage,
+        ]);
+
+    test('comes from toolName', () {
+      final steps = resultSteps(
+        LLMMessage(
+          role: LLMRole.tool,
+          content: '4',
+          toolCallId: 'call_1',
+          toolName: 'calculator',
+        ),
+      );
+
+      final result = steps.firstWhere((s) => s['type'] == 'function_result');
+      expect(result['name'], 'calculator');
+    });
+
+    test('prefers toolName over the legacy status channel', () {
+      final steps = resultSteps(
+        LLMMessage(
+          role: LLMRole.tool,
+          content: '4',
+          toolCallId: 'call_1',
+          status: 'harness:injected',
+          toolName: 'calculator',
+        ),
+      );
+
+      final result = steps.firstWhere((s) => s['type'] == 'function_result');
+      expect(result['name'], 'calculator');
+    });
+
+    test('falls back to status for a pre-toolName history', () {
+      final steps = resultSteps(
+        LLMMessage(
+          role: LLMRole.tool,
+          content: '4',
+          toolCallId: 'call_1',
+          status: 'calculator',
+        ),
+      );
+
+      final result = steps.firstWhere((s) => s['type'] == 'function_result');
+      expect(result['name'], 'calculator');
+    });
+
+    test('an assistant turn never leaks its reasoning', () {
+      final steps = GeminiMessageConverter.buildStatelessInput([
+        LLMMessage(role: LLMRole.user, content: 'Hi'),
+        LLMMessage(
+          role: LLMRole.assistant,
+          content: 'Hello',
+          thinking: 'the user greeted me',
+        ),
+      ]);
+
+      expect(jsonEncode(steps), isNot(contains('greeted me')));
     });
   });
 }

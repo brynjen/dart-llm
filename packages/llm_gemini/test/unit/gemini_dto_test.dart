@@ -244,4 +244,39 @@ void main() {
       expect(usage.toLLMUsage().reasoningTokens, isNull);
     });
   });
+
+  group('cached prompt tokens', () {
+    test('reach LLMUsage', () {
+      final usage = GeminiUsage.fromJson(const {
+        'total_input_tokens': 100,
+        'total_output_tokens': 10,
+        'total_cached_tokens': 40,
+      });
+
+      expect(usage.toLLMUsage().cachedTokens, 40);
+    });
+
+    test('a zero count reports as null, matching thought tokens', () {
+      final usage = GeminiUsage.fromJson(const {
+        'total_input_tokens': 100,
+        'total_output_tokens': 10,
+        'total_cached_tokens': 0,
+      });
+
+      expect(usage.toLLMUsage().cachedTokens, isNull);
+    });
+
+    test('providerMetadata still carries the raw counter', () {
+      // Removing a key callers may already read would be a silent break; this
+      // is the same value from the same parse, not a competing source.
+      final usage = GeminiUsage.fromJson(const {
+        'total_input_tokens': 100,
+        'total_output_tokens': 10,
+        'total_cached_tokens': 40,
+      });
+
+      expect(usage.toProviderMetadata()['total_cached_tokens'], 40);
+      expect(usage.toLLMUsage().cacheWriteTokens, isNull);
+    });
+  });
 }

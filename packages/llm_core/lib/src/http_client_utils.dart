@@ -40,6 +40,7 @@ class HttpClientHelper {
     List<int>? body,
     bool applyTimeoutToSend = true,
     Duration? timeout,
+    Future<void>? abortTrigger,
   }) async {
     // A plain Request, not a StreamedRequest: every caller passes a
     // fully-materialised body, so there is nothing to stream. package:http
@@ -47,7 +48,18 @@ class HttpClientHelper {
     // part of send(). Setting the header by hand on a StreamedRequest instead
     // made IOClient negotiate chunked encoding and then undo it, and left the
     // body behind an unawaited sink close.
-    final request = http.Request(method, uri);
+    //
+    // With an [abortTrigger] the request is built as an `http.AbortableRequest`
+    // instead, so completing that future aborts the call at any point in its
+    // lifecycle: before the send it throws `RequestAbortedException` from
+    // `send()`, and mid-stream it injects that exception into the response
+    // stream and closes it, which tears down the socket. `IOClient`,
+    // `BrowserClient` and this package's `WriteGatedHttpClient` all honor it;
+    // a custom client may ignore it, in which case cancellation degrades to
+    // waiting for the response to end on its own.
+    final request = abortTrigger == null
+        ? http.Request(method, uri)
+        : http.AbortableRequest(method, uri, abortTrigger: abortTrigger);
     request.headers.addAll(headers);
     if (body != null) {
       request.bodyBytes = body;

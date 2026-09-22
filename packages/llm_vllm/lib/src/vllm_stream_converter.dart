@@ -42,154 +42,179 @@ class VLLMStreamConverter {
 
     var traceChunks = 0;
     vllmTrace(traceId, 'stream.read.begin');
-    await for (final chunk
-        in response.stream
-            .transform(utf8.decoder)
-            .timeout(
-              readTimeout,
-              // The error must be pushed into the sink, not thrown. `onTimeout`
-              // runs from a timer, outside the stream's own error path, so a
-              // throw here escapes as an unhandled exception and takes the
-              // isolate down instead of failing this one request.
-              onTimeout: (sink) {
-                sink.addError(
-                  TimeoutException(
-                    'Stream read timed out after ${readTimeout.inSeconds} '
-                    'seconds without receiving data',
-                    readTimeout,
-                  ),
-                );
-                sink.close();
-              },
-            )) {
-      if (deadline != null && DateTime.now().isAfter(deadline)) {
-        throw TimeoutException(
-          'Stream exceeded the total timeout of '
-          '${totalTimeout!.inSeconds} seconds. The server was still sending '
-          'data; raise TimeoutConfig.totalTimeout if long responses are '
-          'expected.',
-          totalTimeout,
-        );
-      }
-      traceChunks++;
-      if (traceChunks == 1) vllmTrace(traceId, 'stream.firstByte');
-      lineBuffer.write(chunk);
-      final lines = lineBuffer.toString().split('\n');
-      lineBuffer
-        ..clear()
-        ..write(lines.removeLast());
-
-      for (final rawLine in lines) {
-        final line = rawLine.trimRight();
-        if (!line.startsWith('data:')) {
-          continue;
+    try {
+      await for (final chunk
+          in response.stream
+              .transform(utf8.decoder)
+              .timeout(
+                readTimeout,
+                // The error must be pushed into the sink, not thrown. `onTimeout`
+                // runs from a timer, outside the stream's own error path, so a
+                // throw here escapes as an unhandled exception and takes the
+                // isolate down instead of failing this one request.
+                onTimeout: (sink) {
+                  sink.addError(
+                    TimeoutException(
+                      'Stream read timed out after ${readTimeout.inSeconds} '
+                      'seconds without receiving data',
+                      readTimeout,
+                    ),
+                  );
+                  sink.close();
+                },
+              )) {
+        if (deadline != null && DateTime.now().isAfter(deadline)) {
+          throw TimeoutException(
+            'Stream exceeded the total timeout of '
+            '${totalTimeout!.inSeconds} seconds. The server was still sending '
+            'data; raise TimeoutConfig.totalTimeout if long responses are '
+            'expected.',
+            totalTimeout,
+          );
         }
+        traceChunks++;
+        if (traceChunks == 1) vllmTrace(traceId, 'stream.firstByte');
+        lineBuffer.write(chunk);
+        final lines = lineBuffer.toString().split('\n');
+        lineBuffer
+          ..clear()
+          ..write(lines.removeLast());
 
-        final data = line.substring(5).trim();
-        if (data.isEmpty) {
-          continue;
-        }
-        if (data == '[DONE]') {
-          vllmTrace(traceId, 'stream.done', 'chunks=$traceChunks');
-          final carryChunk = _flushCarry(thinkingSplitter, lastChunk);
-          if (carryChunk != null) yield carryChunk;
-          final pendingCalls = _flushToolCalls(accumulatedToolCalls, lastChunk);
-          if (pendingCalls != null) yield pendingCalls;
-          return;
-        }
+        for (final rawLine in lines) {
+          final line = rawLine.trimRight();
+          if (!line.startsWith('data:')) {
+            continue;
+          }
 
-        try {
-          final decoded = json.decode(data);
-          if (decoded is! Map<String, dynamic>) {
+          final data = line.substring(5).trim();
+          if (data.isEmpty) {
+            continue;
+          }
+          if (data == '[DONE]') {
+            vllmTrace(traceId, 'stream.done', 'chunks=$traceChunks');
+            final carryChunk = _flushCarry(thinkingSplitter, lastChunk);
+            if (carryChunk != null) yield carryChunk;
+            final pendingCalls = _flushToolCalls(
+              accumulatedToolCalls,
+              lastChunk,
+            );
+            if (pendingCalls != null) yield pendingCalls;
+            return;
+          }
+
+          try {
+            final decoded = json.decode(data);
+            if (decoded is! Map<String, dynamic>) {
+              malformedEventCount = _recordMalformedEvent(
+                event: data,
+                malformedEventCount: malformedEventCount,
+              );
+              continue;
+            }
+            if (decoded['error'] != null) {
+              throw _streamError(decoded['error'], data);
+            }
+
+            final chunk = _splitThinkingTags(
+              VLLMChunk.fromJson(decoded),
+              thinkingSplitter,
+            );
+            lastChunk = chunk;
+            _accumulateToolCalls(chunk, accumulatedToolCalls, openToolCallAt);
+
+            final choice = chunk.choices.isEmpty ? null : chunk.choices.first;
+            final finishReason = choice?.finishReason;
+            // An empty content delta is vLLM's priming event announcing the
+            // assistant role, not output. Yielding it told consumers the model
+            // had started producing text before it had produced anything.
+            final hasContent = choice?.delta.content?.isNotEmpty ?? false;
+            final hasThinking = choice?.delta.thinking != null;
+            final rawToolCallDeltas = choice?.delta.toolCalls;
+            // vLLM's terminal `include_usage` frame: no choices, usage only.
+            //
+            // Testing `chunk.usage != null` here instead would be wrong the
+            // moment `stream_options.continuous_usage_stats` is on, because then
+            // *every* frame carries usage and this branch swallows the two below
+            // it. That would re-yield the empty priming delta 0.4.0 stopped
+            // yielding, and — worse — hand fragment-only events to consumers as
+            // finished chunks: vLLM's first tool-call fragment carries `name`
+            // with no `arguments`, `toLLMToolCalls` keeps any named fragment, and
+            // empty arguments decode to `{}`, so the executor would dispatch the
+            // tool once with no arguments and again when the call completes.
+            final usageOnlyFrame = chunk.choices.isEmpty && chunk.usage != null;
+
+            // Classification and emission are separate questions. Whether the
+            // turn is a tool-call turn is a protocol rule shared by every
+            // backend ([LLMFinishReason.resolve]); whether the accumulated calls
+            // get flushed is a question of the turn having ended at all.
+            final reported = finishReason == null
+                ? null
+                : LLMFinishReason.fromProvider(finishReason);
+            // A terminal frame is the only in-band turn boundary. The guard is
+            // load-bearing: `accumulatedToolCalls` is non-empty from the first
+            // fragment, so without it every mid-stream event would read as an
+            // end of turn.
+            final turnEnded = finishReason != null;
+            // A filter or refusal means the provider did not stand behind the
+            // calls, so they are not surfaced. Every other ending surfaces them.
+            final surfacesToolCalls =
+                turnEnded &&
+                accumulatedToolCalls.isNotEmpty &&
+                (reported == null ||
+                    reported.canBecomeToolCalls ||
+                    reported == LLMFinishReason.length);
+
+            if (surfacesToolCalls) {
+              // Accumulation above already folded in any fragment this same
+              // chunk carried, so this covers both terminal shapes vLLM emits:
+              // a lone `{}` delta, and a final fragment fused with the finish
+              // reason.
+              yield _toolCallChunk(
+                chunk,
+                accumulatedToolCalls,
+                finishReason: _correctedFinishReason(
+                  reported: reported,
+                  accumulated: accumulatedToolCalls,
+                ),
+              );
+              accumulatedToolCalls.clear();
+              openToolCallAt.clear();
+            } else if (turnEnded ||
+                hasContent ||
+                hasThinking ||
+                usageOnlyFrame) {
+              if (turnEnded) {
+                // A filter or refusal: the provider did not stand behind the
+                // accumulated calls. Drop them here so the end-of-stream flush
+                // cannot resurrect them.
+                accumulatedToolCalls.clear();
+                openToolCallAt.clear();
+              }
+              yield chunk;
+            } else if (rawToolCallDeltas != null &&
+                rawToolCallDeltas.isNotEmpty) {
+              // A fragment-only event, which previously yielded nothing at all.
+              yield _toolCallDeltaChunk(chunk, rawToolCallDeltas);
+            }
+            malformedEventCount = 0;
+          } on LLMApiException {
+            rethrow;
+          } catch (_) {
             malformedEventCount = _recordMalformedEvent(
               event: data,
               malformedEventCount: malformedEventCount,
             );
-            continue;
           }
-          if (decoded['error'] != null) {
-            throw _streamError(decoded['error'], data);
-          }
-
-          final chunk = _splitThinkingTags(
-            VLLMChunk.fromJson(decoded),
-            thinkingSplitter,
-          );
-          lastChunk = chunk;
-          _accumulateToolCalls(chunk, accumulatedToolCalls, openToolCallAt);
-
-          final choice = chunk.choices.isEmpty ? null : chunk.choices.first;
-          final finishReason = choice?.finishReason;
-          // An empty content delta is vLLM's priming event announcing the
-          // assistant role, not output. Yielding it told consumers the model
-          // had started producing text before it had produced anything.
-          final hasContent = choice?.delta.content?.isNotEmpty ?? false;
-          final hasThinking = choice?.delta.thinking != null;
-          final rawToolCallDeltas = choice?.delta.toolCalls;
-
-          // Classification and emission are separate questions. Whether the
-          // turn is a tool-call turn is a protocol rule shared by every
-          // backend ([LLMFinishReason.resolve]); whether the accumulated calls
-          // get flushed is a question of the turn having ended at all.
-          final reported = finishReason == null
-              ? null
-              : LLMFinishReason.fromProvider(finishReason);
-          // A terminal frame is the only in-band turn boundary. The guard is
-          // load-bearing: `accumulatedToolCalls` is non-empty from the first
-          // fragment, so without it every mid-stream event would read as an
-          // end of turn.
-          final turnEnded = finishReason != null;
-          // A filter or refusal means the provider did not stand behind the
-          // calls, so they are not surfaced. Every other ending surfaces them.
-          final surfacesToolCalls =
-              turnEnded &&
-              accumulatedToolCalls.isNotEmpty &&
-              (reported == null ||
-                  reported.canBecomeToolCalls ||
-                  reported == LLMFinishReason.length);
-
-          if (surfacesToolCalls) {
-            // Accumulation above already folded in any fragment this same
-            // chunk carried, so this covers both terminal shapes vLLM emits:
-            // a lone `{}` delta, and a final fragment fused with the finish
-            // reason.
-            yield _toolCallChunk(
-              chunk,
-              accumulatedToolCalls,
-              finishReason: _correctedFinishReason(
-                reported: reported,
-                accumulated: accumulatedToolCalls,
-              ),
-            );
-            accumulatedToolCalls.clear();
-            openToolCallAt.clear();
-          } else if (turnEnded ||
-              hasContent ||
-              hasThinking ||
-              chunk.usage != null) {
-            if (turnEnded) {
-              // A filter or refusal: the provider did not stand behind the
-              // accumulated calls. Drop them here so the end-of-stream flush
-              // cannot resurrect them.
-              accumulatedToolCalls.clear();
-              openToolCallAt.clear();
-            }
-            yield chunk;
-          } else if (rawToolCallDeltas != null &&
-              rawToolCallDeltas.isNotEmpty) {
-            // A fragment-only event, which previously yielded nothing at all.
-            yield _toolCallDeltaChunk(chunk, rawToolCallDeltas);
-          }
-          malformedEventCount = 0;
-        } on LLMApiException {
-          rethrow;
-        } catch (_) {
-          malformedEventCount = _recordMalformedEvent(
-            event: data,
-            malformedEventCount: malformedEventCount,
-          );
         }
       }
+    } on http.RequestAbortedException {
+      // A deliberate stop, not a failure. `http` signals an abort by
+      // injecting this into the response stream; surfacing it would make a
+      // cancelled turn look like a transport error, and `cancel()` itself
+      // complete with an error. Returning here also skips the end-of-stream
+      // flush below: an abandoned turn has no partial tool call worth
+      // surfacing, and the caller is no longer listening for it.
+      return;
     }
 
     final trailingLine = lineBuffer.toString().trimRight();
@@ -468,6 +493,10 @@ class VLLMStreamConverter {
       created: source.created,
       model: source.model,
       systemFingerprint: source.systemFingerprint,
+      // Carried through so a progress chunk reports usage under
+      // `continuous_usage_stats`. Without this the running token counter would
+      // be dropped on exactly the chunks a tool call spends its time in.
+      vllmUsage: source.vllmUsage,
       choices: [
         VLLMChunkChoice(
           index: 0,

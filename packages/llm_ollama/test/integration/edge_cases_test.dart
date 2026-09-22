@@ -20,15 +20,26 @@ void main() {
 
     group('Edge Case Tests', () {
       test(
-        'empty message content',
+        'empty message content is accepted, not rejected',
         () async {
+          // This asserted `emitsError` and had never passed. An empty user
+          // message is deliberately valid: `content: ''` derives a single
+          // empty text part, so `Validation.validateMessage`'s
+          // carries-nothing guard does not fire, and Ollama accepts the
+          // request. The library leans on that — Anthropic is the only backend
+          // that rejects an empty message, and `ClaudeMessageConverter`
+          // substitutes a placeholder so the same conversation does not fail
+          // on Claude alone. Rejecting it in core would make that unreachable.
+          //
+          // A message carrying nothing at all is still rejected; that is
+          // pinned in `llm_core`'s validation tests.
           final messages = [LLMMessage(role: LLMRole.user, content: '')];
 
-          // Validation rejects empty user messages before the API call
-          await expectLater(
-            repo.streamChat(chatModel, messages: messages),
-            emitsError(isA<LLMApiException>()),
-          );
+          final chunks = await repo
+              .streamChat(chatModel, messages: messages)
+              .toList();
+
+          expect(chunks, isNotEmpty, reason: 'the turn should complete');
         },
         tags: ['integration'],
         timeout: const Timeout(Duration(minutes: 2)),

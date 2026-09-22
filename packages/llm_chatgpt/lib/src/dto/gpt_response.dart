@@ -26,6 +26,7 @@ class GPTResponse extends LLMResponse {
            completionTokens: usage.completionTokens,
            totalTokens: usage.totalTokens,
            reasoningTokens: usage.reasoningTokens,
+           cachedTokens: usage.usageTokenDetails?.cachedTokens,
          ),
          providerMetadata: {'id': id, 'system_fingerprint': ?systemFingerprint},
          toolCalls: choices[0].message.toolCalls?.toLLMToolCalls,

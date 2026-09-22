@@ -27,127 +27,138 @@ class GPTStreamConverter {
     // created instead of inventing them.
     GPTChunk? lastChunk;
 
-    await for (final output
-        in response.stream
-            .transform(utf8.decoder)
-            .transform(GPTStreamDecoder.decoder)) {
-      if (output != '[DONE]') {
-        try {
-          final decoded = json.decode(output);
-          if (decoded is Map<String, dynamic> && decoded['error'] != null) {
-            // An in-stream error must surface as a thrown exception. Parsed as
-            // an ordinary frame it has no choices and no usage, so it was
-            // skipped and the stream ended as a *success* carrying a truncated
-            // answer.
-            throw _streamError(decoded['error'], output);
-          }
-          final chunk = GPTChunk.fromJson(decoded);
+    try {
+      await for (final output
+          in response.stream
+              .transform(utf8.decoder)
+              .transform(GPTStreamDecoder.decoder)) {
+        if (output != '[DONE]') {
+          try {
+            final decoded = json.decode(output);
+            if (decoded is Map<String, dynamic> && decoded['error'] != null) {
+              // An in-stream error must surface as a thrown exception. Parsed as
+              // an ordinary frame it has no choices and no usage, so it was
+              // skipped and the stream ended as a *success* carrying a truncated
+              // answer.
+              throw _streamError(decoded['error'], output);
+            }
+            final chunk = GPTChunk.fromJson(decoded);
 
-          if (chunk.choices.isEmpty) {
-            // Usage-only frame sent when `stream_options.include_usage` is on.
-            if (chunk.usage != null) {
+            if (chunk.choices.isEmpty) {
+              // Usage-only frame sent when `stream_options.include_usage` is on.
+              if (chunk.usage != null) {
+                yield chunk;
+              }
+              continue;
+            }
+
+            final rawToolCallDeltas = chunk.choices[0].delta.toolCalls;
+            for (final toolCall in rawToolCallDeltas ?? <GPTToolCall>[]) {
+              final position = openAt[toolCall.index];
+              final id = toolCall.id;
+              final startsNewCall =
+                  position == null ||
+                  (id != null &&
+                      id.isNotEmpty &&
+                      accumulated[position].id != id);
+              if (startsNewCall) {
+                openAt[toolCall.index] = accumulated.length;
+                accumulated.add(toolCall);
+              } else {
+                accumulated[position] = accumulated[position].copyWith(
+                  newFunction: toolCall.function,
+                );
+              }
+            }
+
+            final finishReason = chunk.choices[0].finishReason;
+            // An empty content delta is the priming event announcing the
+            // assistant role, not output.
+            final content = chunk.choices[0].delta.content;
+            final hasContent = content != null && content.isNotEmpty;
+            final thinking = chunk.choices[0].delta.thinking;
+            var emitted = false;
+
+            if ((hasContent || thinking != null) && finishReason == null) {
+              emitted = true;
               yield chunk;
             }
-            continue;
-          }
 
-          final rawToolCallDeltas = chunk.choices[0].delta.toolCalls;
-          for (final toolCall in rawToolCallDeltas ?? <GPTToolCall>[]) {
-            final position = openAt[toolCall.index];
-            final id = toolCall.id;
-            final startsNewCall =
-                position == null ||
-                (id != null && id.isNotEmpty && accumulated[position].id != id);
-            if (startsNewCall) {
-              openAt[toolCall.index] = accumulated.length;
-              accumulated.add(toolCall);
-            } else {
-              accumulated[position] = accumulated[position].copyWith(
-                newFunction: toolCall.function,
+            // Classification and emission are separate questions. Whether the
+            // turn is a tool-call turn is a protocol rule shared by every
+            // backend ([LLMFinishReason.resolve]); whether the accumulated calls
+            // get flushed is a question of the turn having ended at all.
+            final reported = finishReason == null
+                ? null
+                : LLMFinishReason.fromProvider(finishReason);
+            // The guard is load-bearing: `accumulated` is non-empty from the
+            // first fragment, so without it every mid-stream event would read as
+            // an end of turn.
+            final turnEnded = finishReason != null;
+            // A filter or refusal means the provider did not stand behind the
+            // calls, so they are not surfaced. Every other ending surfaces them
+            // — `length` included, as OpenAI returns them: the reason stays a
+            // truncation and the calls come back split by whether their
+            // arguments decode.
+            final surfacesToolCalls =
+                turnEnded &&
+                accumulated.isNotEmpty &&
+                (reported == null ||
+                    reported.canBecomeToolCalls ||
+                    reported == LLMFinishReason.length);
+
+            if (surfacesToolCalls) {
+              final toolCallChunk = _toolCallChunk(
+                chunk,
+                accumulated,
+                finishReason: LLMFinishReason.resolve(
+                  reported: reported,
+                  hasCompleteToolCalls: true,
+                )!,
               );
+              emitted = true;
+              accumulated.clear();
+              openAt.clear();
+              yield toolCallChunk;
+            } else if (turnEnded) {
+              // Every terminal frame yields exactly one terminal chunk. The old
+              // `finishReason != 'tool_calls'` guard meant a `tool_calls` finish
+              // with nothing accumulated matched neither branch, so the stream
+              // ended with no `done` chunk at all: `chatResponse` reported no
+              // usage and a fabricated `stop`, and StreamToolExecutor saw no
+              // final assistant answer and threw ToolLoopIncompleteException.
+              //
+              // Clearing here is what stops the end-of-stream flush resurrecting
+              // calls this frame rejected — a filter or refusal means the
+              // provider did not stand behind them.
+              emitted = true;
+              accumulated.clear();
+              openAt.clear();
+              yield chunk;
             }
+
+            if (!emitted &&
+                rawToolCallDeltas != null &&
+                rawToolCallDeltas.isNotEmpty) {
+              // A fragment-only event, which previously yielded nothing at all.
+              yield _toolCallDeltaChunk(chunk, rawToolCallDeltas);
+            }
+            lastChunk = chunk;
+          } on LLMApiException {
+            // A real API failure, not a malformed frame — never swallow it.
+            rethrow;
+          } catch (e) {
+            // Continue stream on parse errors
           }
-
-          final finishReason = chunk.choices[0].finishReason;
-          // An empty content delta is the priming event announcing the
-          // assistant role, not output.
-          final content = chunk.choices[0].delta.content;
-          final hasContent = content != null && content.isNotEmpty;
-          final thinking = chunk.choices[0].delta.thinking;
-          var emitted = false;
-
-          if ((hasContent || thinking != null) && finishReason == null) {
-            emitted = true;
-            yield chunk;
-          }
-
-          // Classification and emission are separate questions. Whether the
-          // turn is a tool-call turn is a protocol rule shared by every
-          // backend ([LLMFinishReason.resolve]); whether the accumulated calls
-          // get flushed is a question of the turn having ended at all.
-          final reported = finishReason == null
-              ? null
-              : LLMFinishReason.fromProvider(finishReason);
-          // The guard is load-bearing: `accumulated` is non-empty from the
-          // first fragment, so without it every mid-stream event would read as
-          // an end of turn.
-          final turnEnded = finishReason != null;
-          // A filter or refusal means the provider did not stand behind the
-          // calls, so they are not surfaced. Every other ending surfaces them
-          // — `length` included, as OpenAI returns them: the reason stays a
-          // truncation and the calls come back split by whether their
-          // arguments decode.
-          final surfacesToolCalls =
-              turnEnded &&
-              accumulated.isNotEmpty &&
-              (reported == null ||
-                  reported.canBecomeToolCalls ||
-                  reported == LLMFinishReason.length);
-
-          if (surfacesToolCalls) {
-            final toolCallChunk = _toolCallChunk(
-              chunk,
-              accumulated,
-              finishReason: LLMFinishReason.resolve(
-                reported: reported,
-                hasCompleteToolCalls: true,
-              )!,
-            );
-            emitted = true;
-            accumulated.clear();
-            openAt.clear();
-            yield toolCallChunk;
-          } else if (turnEnded) {
-            // Every terminal frame yields exactly one terminal chunk. The old
-            // `finishReason != 'tool_calls'` guard meant a `tool_calls` finish
-            // with nothing accumulated matched neither branch, so the stream
-            // ended with no `done` chunk at all: `chatResponse` reported no
-            // usage and a fabricated `stop`, and StreamToolExecutor saw no
-            // final assistant answer and threw ToolLoopIncompleteException.
-            //
-            // Clearing here is what stops the end-of-stream flush resurrecting
-            // calls this frame rejected — a filter or refusal means the
-            // provider did not stand behind them.
-            emitted = true;
-            accumulated.clear();
-            openAt.clear();
-            yield chunk;
-          }
-
-          if (!emitted &&
-              rawToolCallDeltas != null &&
-              rawToolCallDeltas.isNotEmpty) {
-            // A fragment-only event, which previously yielded nothing at all.
-            yield _toolCallDeltaChunk(chunk, rawToolCallDeltas);
-          }
-          lastChunk = chunk;
-        } on LLMApiException {
-          // A real API failure, not a malformed frame — never swallow it.
-          rethrow;
-        } catch (e) {
-          // Continue stream on parse errors
         }
       }
+    } on http.RequestAbortedException {
+      // A deliberate stop, not a failure. `http` signals an abort by
+      // injecting this into the response stream; surfacing it would make a
+      // cancelled turn look like a transport error, and `cancel()` itself
+      // complete with an error. Returning skips any end-of-stream flush
+      // below: an abandoned turn has no partial output worth surfacing.
+      return;
     }
 
     // The stream ended without a terminal frame ever arriving — a proxy cutoff

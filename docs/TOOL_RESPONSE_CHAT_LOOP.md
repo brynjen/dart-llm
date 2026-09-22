@@ -45,8 +45,19 @@ Consumers of `streamChat()` receive these kinds of chunks. Handle all of them to
 - `chunk.message?.role == LLMRole.tool`
 - `chunk.message?.content` - The tool's return value
 - `chunk.message?.toolCallId` - Links to the tool call (canonical identifier)
+- `chunk.message?.toolName` - The tool that produced this result
+- `chunk.message?.toolResult` - The structured outcome: `content` (what the
+  model sees), `isError`, and `metadata` (which the model never sees)
 
-Tool result chunks are emitted by the executor after each tool runs, before the next API request. To display "Tool X returned: Y", build a map from tool call chunks (`toolCallId -> toolName` from `message?.toolCalls` and `message?.invalidToolCalls`) and look up the name when processing tool result chunks.
+Tool result chunks are emitted by the executor after each tool runs, before the
+next API request. To display "Tool X returned: Y", read `toolName` and
+`content` off the chunk. Before 0.7.0 there was no tool name on a result, so
+consumers had to build a `toolCallId -> toolName` map from earlier tool-call
+chunks and look it up here; that is no longer necessary.
+
+To tell a failed run from a successful one, read `toolResult?.isError` rather
+than matching the text — the wording differs between a tool that threw and a
+call that was never run.
 
 An invalid call also gets a tool result chunk: a tool error saying the call was
 not run and why, with a hint to produce a shorter call when the turn hit the
@@ -86,13 +97,22 @@ differently, and one backend does not emit tool result chunks at all.
 - **vLLM:** Same OpenAI-compatible shape as ChatGPT. Requires the server to be
   started with `--enable-auto-tool-choice` and a matching `--tool-call-parser`;
   without those flags the model never emits a structured tool call.
-- **Ollama:** Uses `tool_name` for tool messages. The Ollama message converter derives `tool_name` from `toolCallId` (via preceding assistant's `tool_calls` or synthetic ID parsing) and sends both `tool_name` and `tool_call_id` when possible.
+- **Ollama:** Uses `tool_name` for tool messages, taken from
+  `LLMMessage.toolName`. For a history assembled by the caller, where that is
+  unset, the converter still derives it from `toolCallId` (via the preceding
+  assistant's `tool_calls`, or by parsing a synthetic ID) and sends both
+  `tool_name` and `tool_call_id` when possible.
 - **Claude:** Tool calls arrive as `tool_use` content blocks. Results go back as
   a **user** message containing `tool_result` blocks keyed by `tool_use_id`;
-  consecutive results are merged into one user message.
+  consecutive results are merged into one user message. A failed result is sent
+  with `is_error: true`, taken from `LLMToolResult.isError`. A result carrying
+  `LLMToolResult.contentParts` is sent as content blocks instead of a string,
+  so a tool can return an image; every other backend is text-only and falls
+  back to `LLMToolResult.content`.
 - **Gemini:** The Interactions API is steps-based. A call is a `function_call`
-  step and a result is a `function_result` step. The model's thought signature
-  must be echoed back with the call, so it is carried through the `toolCallId`.
+  step and a result is a `function_result` step, whose `name` comes from
+  `LLMMessage.toolName`. The model's thought signature must be echoed back with
+  the call, so it is carried through the `toolCallId`.
 - **llama.cpp:** There is no structured tool-call field — calls are parsed out of
   the raw token stream in whatever format the loaded model's family uses. The
   package runs the tool loop internally and **does not emit `role: tool` chunks**,

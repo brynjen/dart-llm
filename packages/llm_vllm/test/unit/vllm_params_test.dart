@@ -42,6 +42,17 @@ void main() {
       }
     });
 
+    test('points stream_options at the supported flag', () {
+      // "cannot be set through backendOptions" is a dead end for a caller who
+      // has a real need; usage on every chunk is supported, just not here.
+      final errors = validateVllmParams({
+        'stream_options': {'continuous_usage_stats': true},
+      });
+
+      expect(errors.single.issue, VllmParamIssue.reserved);
+      expect(errors.single.message, contains('usagePerChunk'));
+    });
+
     test('rejects guided_* names removed in vLLM 0.12', () {
       final errors = validateVllmParams({
         'guided_choice': ['a', 'b'],

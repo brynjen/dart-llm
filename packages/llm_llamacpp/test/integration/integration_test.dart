@@ -116,147 +116,136 @@ void main() {
       }
     });
 
-    test(
-      'can generate tokens from Ollama model',
-      () async {
-        if (ollamaModelPath == null) {
-          markTestSkipped('No Ollama model available');
-          return;
-        }
+    test('can generate tokens from Ollama model', () async {
+      if (ollamaModelPath == null) {
+        markTestSkipped('No Ollama model available');
+        return;
+      }
 
-        try {
-          await repo.loadModel(ollamaModelPath!);
-        } catch (e) {
-          markTestSkipped('Model incompatible with llama.cpp: $e');
-          return;
-        }
+      try {
+        await repo.loadModel(ollamaModelPath!);
+      } catch (e) {
+        markTestSkipped('Model incompatible with llama.cpp: $e');
+        return;
+      }
 
-        print('💬 Generating response...');
-        final stopwatch = Stopwatch()..start();
+      print('💬 Generating response...');
+      final stopwatch = Stopwatch()..start();
 
-        final messages = [
-          LLMMessage(
-            role: LLMRole.system,
-            content: 'You are a helpful assistant. Be very brief.',
-          ),
-          LLMMessage(
-            role: LLMRole.user,
-            content: 'Say hello in exactly 5 words.',
-          ),
-        ];
+      final messages = [
+        LLMMessage(
+          role: LLMRole.system,
+          content: 'You are a helpful assistant. Be very brief.',
+        ),
+        LLMMessage(
+          role: LLMRole.user,
+          content: 'Say hello in exactly 5 words.',
+        ),
+      ];
 
-        final buffer = StringBuffer();
-        int tokenCount = 0;
+      final buffer = StringBuffer();
+      int tokenCount = 0;
 
-        try {
-          await for (final chunk in repo.streamChat(
-            'test',
-            messages: messages,
-          )) {
-            final content = chunk.message?.content ?? '';
-            buffer.write(content);
-            if (content.isNotEmpty) {
-              tokenCount++;
-              stdout.write(content);
-            }
-
-            if (chunk.done == true) {
-              print('\n');
-              print('📊 Prompt tokens: ${chunk.promptEvalCount ?? "N/A"}');
-              print('   Generated tokens: ${chunk.evalCount ?? tokenCount}');
-            }
+      try {
+        await for (final chunk in repo.streamChat('test', messages: messages)) {
+          final content = chunk.message?.content ?? '';
+          buffer.write(content);
+          if (content.isNotEmpty) {
+            tokenCount++;
+            stdout.write(content);
           }
-        } catch (e) {
-          print('\n❌ Error during generation: $e');
-          // Don't fail for encoding errors - these can happen with some models
-          expect(true, isTrue);
-          return;
-        }
 
-        stopwatch.stop();
-        print('⏱️  Total time: ${stopwatch.elapsedMilliseconds}ms');
-
-        final response = buffer.toString();
-        print('📝 Full response: "$response"');
-
-        expect(response, isNotEmpty);
-      },
-      timeout: const Timeout(Duration(minutes: 2)),
-    );
-
-    test(
-      'handles conversation with Ollama model',
-      () async {
-        if (ollamaModelPath == null) {
-          markTestSkipped('No Ollama model available');
-          return;
-        }
-
-        try {
-          await repo.loadModel(ollamaModelPath!);
-        } catch (e) {
-          markTestSkipped('Model incompatible with llama.cpp: $e');
-          return;
-        }
-
-        // First turn
-        final messages1 = [
-          LLMMessage(
-            role: LLMRole.system,
-            content: 'Remember what the user tells you. Be very brief.',
-          ),
-          LLMMessage(role: LLMRole.user, content: 'My name is Alice.'),
-        ];
-
-        String response1 = '';
-        print('👤 User: My name is Alice.');
-        print('🤖 Assistant: ');
-
-        try {
-          await for (final chunk in repo.streamChat(
-            'test',
-            messages: messages1,
-          )) {
-            response1 += chunk.message?.content ?? '';
-            stdout.write(chunk.message?.content ?? '');
+          if (chunk.done == true) {
+            print('\n');
+            print('📊 Prompt tokens: ${chunk.promptEvalCount ?? "N/A"}');
+            print('   Generated tokens: ${chunk.evalCount ?? tokenCount}');
           }
-          print('\n');
-        } catch (e) {
-          print('\n❌ Error: $e');
-          expect(true, isTrue);
-          return;
         }
+      } catch (e) {
+        print('\n❌ Error during generation: $e');
+        // Don't fail for encoding errors - these can happen with some models
+        expect(true, isTrue);
+        return;
+      }
 
-        // Second turn
-        final messages2 = [
-          ...messages1,
-          LLMMessage(role: LLMRole.assistant, content: response1),
-          LLMMessage(role: LLMRole.user, content: 'What is my name?'),
-        ];
+      stopwatch.stop();
+      print('⏱️  Total time: ${stopwatch.elapsedMilliseconds}ms');
 
-        String response2 = '';
-        print('👤 User: What is my name?');
-        print('🤖 Assistant: ');
+      final response = buffer.toString();
+      print('📝 Full response: "$response"');
 
-        try {
-          await for (final chunk in repo.streamChat(
-            'test',
-            messages: messages2,
-          )) {
-            response2 += chunk.message?.content ?? '';
-            stdout.write(chunk.message?.content ?? '');
-          }
-          print('\n');
-        } catch (e) {
-          print('\n❌ Error: $e');
-          expect(true, isTrue);
-          return;
+      expect(response, isNotEmpty);
+    }, timeout: const Timeout(Duration(minutes: 2)));
+
+    test('handles conversation with Ollama model', () async {
+      if (ollamaModelPath == null) {
+        markTestSkipped('No Ollama model available');
+        return;
+      }
+
+      try {
+        await repo.loadModel(ollamaModelPath!);
+      } catch (e) {
+        markTestSkipped('Model incompatible with llama.cpp: $e');
+        return;
+      }
+
+      // First turn
+      final messages1 = [
+        LLMMessage(
+          role: LLMRole.system,
+          content: 'Remember what the user tells you. Be very brief.',
+        ),
+        LLMMessage(role: LLMRole.user, content: 'My name is Alice.'),
+      ];
+
+      String response1 = '';
+      print('👤 User: My name is Alice.');
+      print('🤖 Assistant: ');
+
+      try {
+        await for (final chunk in repo.streamChat(
+          'test',
+          messages: messages1,
+        )) {
+          response1 += chunk.message?.content ?? '';
+          stdout.write(chunk.message?.content ?? '');
         }
+        print('\n');
+      } catch (e) {
+        print('\n❌ Error: $e');
+        expect(true, isTrue);
+        return;
+      }
 
-        // The response should mention Alice
-        expect(response2.toLowerCase(), contains('alice'));
-      },
-      timeout: const Timeout(Duration(minutes: 3)),
-    );
+      // Second turn
+      final messages2 = [
+        ...messages1,
+        LLMMessage(role: LLMRole.assistant, content: response1),
+        LLMMessage(role: LLMRole.user, content: 'What is my name?'),
+      ];
+
+      String response2 = '';
+      print('👤 User: What is my name?');
+      print('🤖 Assistant: ');
+
+      try {
+        await for (final chunk in repo.streamChat(
+          'test',
+          messages: messages2,
+        )) {
+          response2 += chunk.message?.content ?? '';
+          stdout.write(chunk.message?.content ?? '');
+        }
+        print('\n');
+      } catch (e) {
+        print('\n❌ Error: $e');
+        expect(true, isTrue);
+        return;
+      }
+
+      // The response should mention Alice
+      expect(response2.toLowerCase(), contains('alice'));
+    }, timeout: const Timeout(Duration(minutes: 3)));
   });
 }

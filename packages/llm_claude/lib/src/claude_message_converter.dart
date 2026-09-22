@@ -128,7 +128,21 @@ class ClaudeMessageConverter {
       'type': 'tool_result',
       'tool_use_id': msg.toolCallId ?? '',
     };
-    if (msg.content != null) {
+    // Anthropic accepts `content` as a string or as a list of text/image/
+    // document/search_result blocks, so a tool that returned an image hands
+    // back the image itself rather than a description of it. Text-only
+    // providers fall back to `LLMToolResult.content`; here the richer form
+    // wins when the tool supplied one.
+    final parts = msg.toolResult?.contentParts ?? const <LLMMessageContent>[];
+    if (parts.isNotEmpty) {
+      block['content'] = [
+        for (final part in parts)
+          switch (part) {
+            LLMTextContent(:final text) => {'type': 'text', 'text': text},
+            LLMImageContent() => _imageBlock(part.imageUrl),
+          },
+      ];
+    } else if (msg.content != null) {
       block['content'] = msg.content;
     }
     // A failed tool must be reported as an error rather than as a successful
@@ -145,15 +159,26 @@ class ClaudeMessageConverter {
 
   /// Whether a tool-result message represents a failed execution.
   ///
-  /// [LLMMessage] carries no dedicated failure flag, so this matches the
-  /// message `StreamToolExecutor` produces when a tool throws:
-  /// `'Tool <name> failed: <error>'` (see `llm_core/src/tool_executor.dart`).
-  /// [LLMMessage.status] holds the tool name for executor-produced results,
-  /// which makes the match specific rather than a loose substring test.
+  /// [LLMToolResult.isError] is authoritative when present, which is the whole
+  /// point of that type: this used to decide by matching the text
+  /// `'Tool <name> failed: <error>'` that `StreamToolExecutor` produced, and
+  /// that was wrong twice over. A call rejected for undecodable arguments is
+  /// reported as `'Tool <name> was not called: …'`, which the pattern misses,
+  /// so a parse error reached the model without `is_error` and was read as
+  /// data. And a *successful* tool whose output happened to start that way was
+  /// flagged as a failure.
+  ///
+  /// The text match remains as a fallback for messages this package did not
+  /// build — a caller-assembled history, or one serialized before
+  /// [LLMMessage.toolResult] existed. [LLMMessage.toolName] names the tool
+  /// there, falling back to [LLMMessage.status], which carried it before.
   static bool _looksLikeToolError(LLMMessage msg) {
+    final result = msg.toolResult;
+    if (result != null) return result.isError;
+
     final content = msg.content;
     if (content == null) return false;
-    final toolName = msg.status;
+    final toolName = msg.toolName ?? msg.status;
     if (toolName != null && toolName.isNotEmpty) {
       return content.startsWith('Tool $toolName failed:');
     }

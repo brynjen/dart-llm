@@ -14,6 +14,8 @@ class LLMToolParam {
     this.minItems,
     this.maxItems,
     this.uniqueItems,
+    this.minimum,
+    this.maximum,
   });
 
   /// The parameter name.
@@ -48,6 +50,23 @@ class LLMToolParam {
 
   /// Whether array items must be unique.
   final bool? uniqueItems;
+
+  /// Smallest value accepted, for `integer` and `number` parameters.
+  ///
+  /// Emitted as JSON Schema `minimum` (inclusive). Ignored for every other
+  /// [type]: `minimum` has no meaning beside a string or a boolean, and a
+  /// model reading one there is being told something false. Use
+  /// [minItems]/[maxItems] to bound an array's length.
+  ///
+  /// A bound is a contract, not a guard. A model can satisfy `minimum: 0,
+  /// maximum: 1000` and still pass a number from the wrong coordinate space,
+  /// so a tool that cares must still validate on execution.
+  final num? minimum;
+
+  /// Largest value accepted, for `integer` and `number` parameters.
+  ///
+  /// Emitted as JSON Schema `maximum` (inclusive). See [minimum].
+  final num? maximum;
 
   /// Converts this parameter to a JSON Schema representation.
   Map<String, dynamic> toJsonSchema() {
@@ -87,8 +106,27 @@ class LLMToolParam {
         if (enums.isNotEmpty) {
           schema['enum'] = enums;
         }
+        if (type == 'integer' || type == 'number') {
+          if (minimum != null) schema['minimum'] = _bound(minimum!);
+          if (maximum != null) schema['maximum'] = _bound(maximum!);
+        }
     }
 
     return schema;
+  }
+
+  /// Narrows an integral bound to `int` when [type] is `integer`.
+  ///
+  /// `jsonEncode` writes a Dart `double` as `2.0`, and validators that take
+  /// JSON Schema literally reject a fractional bound on an integer type. The
+  /// field is [num] so a `number` parameter can be bounded fractionally, so the
+  /// narrowing happens here rather than at the field.
+  Object _bound(num value) {
+    if (type == 'integer' &&
+        value is double &&
+        value == value.roundToDouble()) {
+      return value.toInt();
+    }
+    return value;
   }
 }

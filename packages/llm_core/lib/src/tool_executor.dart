@@ -7,6 +7,7 @@ import 'package:llm_core/src/llm_response.dart';
 import 'package:llm_core/src/tool/llm_invalid_tool_call.dart';
 import 'package:llm_core/src/tool/llm_tool.dart';
 import 'package:llm_core/src/tool/llm_tool_call.dart';
+import 'package:llm_core/src/tool/llm_tool_result.dart';
 
 /// Executes tools from LLM chunks and manages the tool execution loop.
 ///
@@ -71,6 +72,7 @@ class StreamToolExecutor {
     final List<LLMInvalidToolCall> collectedInvalidToolCalls = [];
     LLMFinishReason? finishReason;
     var accumulatedContent = '';
+    var accumulatedThinking = '';
     var sawDoneChunk = false;
     var sawFinalAssistantResponse = false;
     var sawToolCallsInRound = false;
@@ -85,6 +87,14 @@ class StreamToolExecutor {
       // Accumulate content from chunks for the assistant message
       if (message?.role == LLMRole.assistant && message?.content != null) {
         accumulatedContent += message!.content!;
+      }
+      // Reasoning is accumulated the same way and for the same reason: without
+      // it, a turn that called a tool lost everything the model thought before
+      // deciding to call it, since only `content` survived into history.
+      // `LLMMessage.thinking` is never serialized, so this cannot reach a
+      // provider — it is for the caller's transcript.
+      if (message?.role == LLMRole.assistant && message?.thinking != null) {
+        accumulatedThinking += message!.thinking!;
       }
 
       // Collect tool calls from chunks
@@ -130,6 +140,7 @@ class StreamToolExecutor {
           LLMMessage(
             role: LLMRole.assistant,
             content: accumulatedContent.isEmpty ? null : accumulatedContent,
+            thinking: accumulatedThinking.isEmpty ? null : accumulatedThinking,
             toolCalls: [
               for (final tc in collectedToolCalls) tc.toApiFormat(),
               for (final tc in collectedInvalidToolCalls) tc.toApiFormat(),
@@ -145,16 +156,25 @@ class StreamToolExecutor {
             orElse: () => throw Exception('Tool ${toolCall.name} not found'),
           );
 
-          dynamic toolResponse;
+          LLMToolResult result;
           try {
-            toolResponse =
-                await tool.execute(toolCall.argumentsJson, extra: extra) ??
-                'Tool ${toolCall.name} returned null';
+            result = LLMToolResult.from(
+              await tool.execute(toolCall.argumentsJson, extra: extra),
+              toolName: toolCall.name,
+            );
           } catch (e) {
             // If a tool throws, capture the error as a tool message instead of
             // crashing the whole stream. This allows callers to handle tool
             // failures gracefully.
-            toolResponse = 'Tool ${toolCall.name} failed: $e';
+            //
+            // The text is unchanged from before `LLMToolResult` existed, both
+            // for callers matching on it and because `ClaudeMessageConverter`
+            // still falls back to matching it for messages this executor did
+            // not build.
+            result = LLMToolResult.failure(
+              'Tool ${toolCall.name} failed: $e',
+              metadata: {'exception': e.toString()},
+            );
           }
 
           // Ensure we always have a non-empty toolCallId, even if the backend
@@ -164,9 +184,7 @@ class StreamToolExecutor {
               ? toolCall.id!
               : 'tool_${toolCallIndex}_${toolCall.name}';
 
-          final toolResponseStr = toolResponse is String
-              ? toolResponse
-              : toolResponse.toString();
+          final toolResponseStr = result.content;
 
           // Emit tool result chunk so the chat can display it
           yield LLMChunk(
@@ -176,6 +194,8 @@ class StreamToolExecutor {
               content: toolResponseStr,
               role: LLMRole.tool,
               toolCallId: effectiveToolCallId,
+              toolName: toolCall.name,
+              toolResult: result,
             ),
             status: toolCall.name,
             done: false,
@@ -186,7 +206,11 @@ class StreamToolExecutor {
               content: toolResponseStr,
               role: LLMRole.tool,
               toolCallId: effectiveToolCallId,
+              // `status` predates `toolName` and is still set so a history
+              // serialized by an older consumer keeps naming its tools.
               status: toolCall.name,
+              toolName: toolCall.name,
+              toolResult: result,
             ),
           );
 
@@ -211,6 +235,20 @@ class StreamToolExecutor {
               : 'Tool ${invalidCall.name} was not called: its arguments are '
                     'not valid JSON (${invalidCall.error}).';
 
+          // An invalid call is a failure, and saying so in the text alone was
+          // not enough: `ClaudeMessageConverter` detected failures by matching
+          // 'Tool <name> failed:', which this wording does not match, so a
+          // parse error reached Anthropic without `is_error` and the model read
+          // the error message as data.
+          final result = LLMToolResult.failure(
+            toolResponseStr,
+            metadata: {
+              'invalid_arguments': invalidCall.arguments,
+              'parse_error': invalidCall.error,
+              if (finishReason != null) 'finish_reason': finishReason.name,
+            },
+          );
+
           yield LLMChunk(
             model: model,
             createdAt: DateTime.now(),
@@ -218,6 +256,8 @@ class StreamToolExecutor {
               content: toolResponseStr,
               role: LLMRole.tool,
               toolCallId: effectiveToolCallId,
+              toolName: invalidCall.name,
+              toolResult: result,
             ),
             status: invalidCall.name,
             done: false,
@@ -229,6 +269,8 @@ class StreamToolExecutor {
               role: LLMRole.tool,
               toolCallId: effectiveToolCallId,
               status: invalidCall.name,
+              toolName: invalidCall.name,
+              toolResult: result,
             ),
           );
 

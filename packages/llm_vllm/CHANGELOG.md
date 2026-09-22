@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-09-22
+
+### Added
+- `stream_options.continuous_usage_stats` is reachable through `LLMChatOptions(usagePerChunk: true)`, putting the server's running token counter on every streamed chunk. This is what makes a live tokens-per-second readout measured rather than estimated. `include_usage` is always sent alongside it, because vLLM answers `200` and silently ignores `continuous_usage_stats` on its own.
+- `LLMUsage.cachedTokens` is populated from `prompt_tokens_details.cached_tokens`, which was parsed and then dropped.
+- The "reserved parameter" error for `stream_options` now points at `usagePerChunk`.
+
+### Fixed
+- A failure reported in-band — `200`, then an `error` event on the stream — was not retried, because it arrives after the send has returned. It is now re-issued while nothing has reached the caller. A retryable HTTP status was already retried here and still is; the two budgets do not compound.
+- Cancelling a `streamChat` subscription aborts the request. Previously the socket stayed open, the server kept generating, and `await cancel()` did not return until the read timeout.
+- The stream converter's emission gate keyed off "a chunk carries usage" rather than "this is the terminal usage frame". With usage on every chunk that branch would have swallowed the two below it — re-yielding the empty priming delta, and surfacing an unfinished tool-call fragment as a complete call, which the tool loop would have executed with empty arguments and then executed again once the call finished.
+- Tool-call progress chunks now carry usage, so the counter is not lost during a long tool call.
+
+### Changed
+- All packages bumped to `0.7.0`; `llm_core` constraint updated to `^0.7.0`.
+
 ## [0.6.0] - 2026-09-17
 
 ### Fixed

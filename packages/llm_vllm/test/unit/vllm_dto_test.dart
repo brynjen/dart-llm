@@ -174,4 +174,43 @@ void main() {
       expect(withoutDetails.reasoningTokens, isNull);
     });
   });
+
+  group('cached prompt tokens', () {
+    test('reach LLMUsage from prompt_tokens_details', () {
+      final chunk = VLLMChunk.fromJson(const {
+        'id': 'chatcmpl-1',
+        'created': 1700000000,
+        'model': 'test-model',
+        'choices': <dynamic>[],
+        'usage': {
+          'prompt_tokens': 1000,
+          'completion_tokens': 10,
+          'total_tokens': 1010,
+          'prompt_tokens_details': {'cached_tokens': 920},
+        },
+      });
+
+      // Prefix-cache hit rate is the biggest lever on prefill latency here and
+      // cannot be recovered any other way; it used to be parsed and dropped.
+      expect(chunk.usage?.cachedTokens, 920);
+      expect(chunk.usage!.cachedTokens!, lessThan(chunk.usage!.promptTokens));
+      expect(chunk.usage?.cacheWriteTokens, isNull);
+    });
+
+    test('are null when the server reports no details', () {
+      final chunk = VLLMChunk.fromJson(const {
+        'id': 'chatcmpl-1',
+        'created': 1700000000,
+        'model': 'test-model',
+        'choices': <dynamic>[],
+        'usage': {
+          'prompt_tokens': 10,
+          'completion_tokens': 5,
+          'total_tokens': 15,
+        },
+      });
+
+      expect(chunk.usage?.cachedTokens, isNull);
+    });
+  });
 }

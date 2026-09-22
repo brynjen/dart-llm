@@ -55,28 +55,24 @@ void main() {
       expect(true, isTrue);
     }, timeout: const Timeout(Duration(minutes: 2)));
 
-    test(
-      'handles very long single message',
-      () async {
-        if (modelPath == null) {
-          markTestSkipped('No model available');
-          return;
-        }
+    test('handles very long single message', () async {
+      if (modelPath == null) {
+        markTestSkipped('No model available');
+        return;
+      }
 
-        await repo.loadModel(modelPath!);
+      await repo.loadModel(modelPath!);
 
-        final longMessage = 'This is a test. ' * 500; // ~7500 characters
-        final messages = [LLMMessage(role: LLMRole.user, content: longMessage)];
+      final longMessage = 'This is a test. ' * 500; // ~7500 characters
+      final messages = [LLMMessage(role: LLMRole.user, content: longMessage)];
 
-        final buffer = StringBuffer();
-        await for (final chunk in repo.streamChat('test', messages: messages)) {
-          buffer.write(chunk.message?.content ?? '');
-        }
+      final buffer = StringBuffer();
+      await for (final chunk in repo.streamChat('test', messages: messages)) {
+        buffer.write(chunk.message?.content ?? '');
+      }
 
-        expect(buffer.toString(), isNotEmpty);
-      },
-      timeout: const Timeout(Duration(minutes: 5)),
-    );
+      expect(buffer.toString(), isNotEmpty);
+    }, timeout: const Timeout(Duration(minutes: 5)));
 
     test('handles unicode edge cases', () async {
       if (modelPath == null) {
@@ -176,102 +172,79 @@ void main() {
       }
     }, timeout: const Timeout(Duration(minutes: 3)));
 
-    test(
-      'handles extremely long prompts',
-      () async {
-        if (modelPath == null) {
-          markTestSkipped('No model available');
-          return;
+    test('handles extremely long prompts', () async {
+      if (modelPath == null) {
+        markTestSkipped('No model available');
+        return;
+      }
+
+      await repo.loadModel(modelPath!);
+
+      // Create a very long prompt (may exceed context window)
+      final longPrompt = 'Repeat this word: test. ' * 1000; // ~5000 words
+      final messages = [LLMMessage(role: LLMRole.user, content: longPrompt)];
+
+      final buffer = StringBuffer();
+      try {
+        await for (final chunk in repo.streamChat('test', messages: messages)) {
+          buffer.write(chunk.message?.content ?? '');
         }
+      } catch (e) {
+        // May fail if prompt exceeds context, but should fail gracefully
+        // ignore: avoid_print
+        print('Long prompt test had error (may be expected): $e');
+      }
 
-        await repo.loadModel(modelPath!);
+      // Should either complete or fail gracefully
+      expect(true, isTrue);
+    }, timeout: const Timeout(Duration(minutes: 5)));
 
-        // Create a very long prompt (may exceed context window)
-        final longPrompt = 'Repeat this word: test. ' * 1000; // ~5000 words
-        final messages = [LLMMessage(role: LLMRole.user, content: longPrompt)];
+    test('handles rapid successive requests', () async {
+      if (modelPath == null) {
+        markTestSkipped('No model available');
+        return;
+      }
 
+      await repo.loadModel(modelPath!);
+
+      final messages = [LLMMessage(role: LLMRole.user, content: 'Say "test"')];
+
+      // Make rapid successive requests
+      for (int i = 0; i < 3; i++) {
         final buffer = StringBuffer();
-        try {
-          await for (final chunk in repo.streamChat(
-            'test',
-            messages: messages,
-          )) {
-            buffer.write(chunk.message?.content ?? '');
-          }
-        } catch (e) {
-          // May fail if prompt exceeds context, but should fail gracefully
-          // ignore: avoid_print
-          print('Long prompt test had error (may be expected): $e');
+        await for (final chunk in repo.streamChat('test', messages: messages)) {
+          buffer.write(chunk.message?.content ?? '');
         }
+        expect(buffer.toString(), isNotEmpty);
+      }
+    }, timeout: const Timeout(Duration(minutes: 5)));
 
-        // Should either complete or fail gracefully
-        expect(true, isTrue);
-      },
-      timeout: const Timeout(Duration(minutes: 5)),
-    );
+    test('handles special characters in prompts', () async {
+      if (modelPath == null) {
+        markTestSkipped('No model available');
+        return;
+      }
 
-    test(
-      'handles rapid successive requests',
-      () async {
-        if (modelPath == null) {
-          markTestSkipped('No model available');
-          return;
+      await repo.loadModel(modelPath!);
+
+      const specialChars = '!@#\$%^&*()_+-=[]{}|;:\'",.<>?/~`';
+      final messages = [
+        LLMMessage(role: LLMRole.user, content: 'Echo these: $specialChars'),
+      ];
+
+      final buffer = StringBuffer();
+      try {
+        await for (final chunk in repo.streamChat('test', messages: messages)) {
+          buffer.write(chunk.message?.content ?? '');
         }
+      } catch (e) {
+        // Some models may have issues with special characters
+        // ignore: avoid_print
+        print('Special chars test had issue (may be expected): $e');
+      }
 
-        await repo.loadModel(modelPath!);
-
-        final messages = [
-          LLMMessage(role: LLMRole.user, content: 'Say "test"'),
-        ];
-
-        // Make rapid successive requests
-        for (int i = 0; i < 3; i++) {
-          final buffer = StringBuffer();
-          await for (final chunk in repo.streamChat(
-            'test',
-            messages: messages,
-          )) {
-            buffer.write(chunk.message?.content ?? '');
-          }
-          expect(buffer.toString(), isNotEmpty);
-        }
-      },
-      timeout: const Timeout(Duration(minutes: 5)),
-    );
-
-    test(
-      'handles special characters in prompts',
-      () async {
-        if (modelPath == null) {
-          markTestSkipped('No model available');
-          return;
-        }
-
-        await repo.loadModel(modelPath!);
-
-        const specialChars = '!@#\$%^&*()_+-=[]{}|;:\'",.<>?/~`';
-        final messages = [
-          LLMMessage(role: LLMRole.user, content: 'Echo these: $specialChars'),
-        ];
-
-        final buffer = StringBuffer();
-        try {
-          await for (final chunk in repo.streamChat(
-            'test',
-            messages: messages,
-          )) {
-            buffer.write(chunk.message?.content ?? '');
-          }
-        } catch (e) {
-          // Some models may have issues with special characters
-          // ignore: avoid_print
-          print('Special chars test had issue (may be expected): $e');
-        }
-
-        // Should complete or fail gracefully
-        expect(true, isTrue);
-      },
-      timeout: const Timeout(Duration(minutes: 2)),
-    );
+      // Should complete or fail gracefully
+      expect(true, isTrue);
+    }, timeout: const Timeout(Duration(minutes: 2)));
   });
 }

@@ -236,36 +236,32 @@ void main() {
       expect(chunks.length, greaterThanOrEqualTo(0));
     }, timeout: const Timeout(Duration(minutes: 2)));
 
-    test(
-      'multiple chunks for longer responses',
-      () async {
-        if (modelPath == null) {
-          markTestSkipped('No model available');
-          return;
-        }
+    test('multiple chunks for longer responses', () async {
+      if (modelPath == null) {
+        markTestSkipped('No model available');
+        return;
+      }
 
-        await repo.loadModel(modelPath!);
+      await repo.loadModel(modelPath!);
 
-        final messages = [
-          LLMMessage(
-            role: LLMRole.user,
-            content: 'Write a paragraph about artificial intelligence.',
-          ),
-        ];
+      final messages = [
+        LLMMessage(
+          role: LLMRole.user,
+          content: 'Write a paragraph about artificial intelligence.',
+        ),
+      ];
 
-        final chunks = <LLMChunk>[];
-        await for (final chunk in repo.streamChat('test', messages: messages)) {
-          chunks.add(chunk);
-        }
+      final chunks = <LLMChunk>[];
+      await for (final chunk in repo.streamChat('test', messages: messages)) {
+        chunks.add(chunk);
+      }
 
-        // Longer responses should have multiple chunks
-        expect(
-          chunks.length,
-          greaterThan(1),
-          reason: 'Should receive multiple chunks for longer response',
-        );
-      },
-      timeout: const Timeout(Duration(minutes: 2)),
-    );
+      // Longer responses should have multiple chunks
+      expect(
+        chunks.length,
+        greaterThan(1),
+        reason: 'Should receive multiple chunks for longer response',
+      );
+    }, timeout: const Timeout(Duration(minutes: 2)));
   });
 }

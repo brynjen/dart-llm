@@ -71,6 +71,73 @@ class RetryUtil {
     throw lastError!;
   }
 
+  /// Re-runs [build] when it fails **before emitting anything**.
+  ///
+  /// [executeWithRetry] covers a request that fails while it is being sent. It
+  /// cannot cover one that fails afterwards, because by then it has already
+  /// returned the response and the stream is being consumed — and providers
+  /// routinely report a failure that way. A streaming endpoint answers `200`,
+  /// opens the stream and then delivers the error in-band, as an `error`
+  /// event:
+  ///
+  /// ```
+  /// data: {"error":{"message":"gemini-3.5-flash-lite is currently
+  ///        experiencing high demand","code":"service_unavailable"}}
+  /// ```
+  ///
+  /// That is the same `503` the HTTP layer would have retried three times,
+  /// and without this it was not retried at all — the turn simply failed.
+  ///
+  /// **Only while nothing has been emitted.** Once an event has reached the
+  /// caller, re-running would deliver the turn's opening twice, so an error
+  /// after that point is rethrown untouched however retryable it looks. In
+  /// practice this covers exactly the window a caller cannot see: the model
+  /// has produced no tokens yet, so a retry is indistinguishable from the
+  /// request having taken longer.
+  ///
+  /// [isRetryable] decides which errors qualify. Backends pass a predicate
+  /// that also requires the send to have already succeeded, so the attempts
+  /// here do not multiply with [executeWithRetry]'s: each error is retried by
+  /// one of the two, never both.
+  static Stream<T> retryingStream<T>({
+    required Stream<T> Function() build,
+    RetryConfig? config,
+    bool Function(Object error)? isRetryable,
+  }) async* {
+    if (config == null || !config.enabled) {
+      yield* build();
+      return;
+    }
+
+    var attempt = 0;
+    while (true) {
+      var emitted = false;
+      try {
+        await for (final event in build()) {
+          emitted = true;
+          yield event;
+        }
+        return;
+      } catch (error, stackTrace) {
+        if (emitted ||
+            attempt >= config.maxAttempts ||
+            !_isRetryableError(error, config, isRetryable)) {
+          Error.throwWithStackTrace(error, stackTrace);
+        }
+
+        final delay = config.getDelayForAttempt(attempt);
+        logger.warning(
+          'retrying stream after attempt ${attempt + 1}/'
+          '${config.maxAttempts + 1} failed before emitting anything; '
+          'waiting ${delay.inMilliseconds}ms',
+          error,
+        );
+        await Future.delayed(delay);
+        attempt++;
+      }
+    }
+  }
+
   /// Check if an error is retryable.
   static bool _isRetryableError(
     Object error,

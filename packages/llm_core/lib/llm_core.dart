@@ -32,6 +32,7 @@ export 'src/tool/llm_tool_param.dart';
 export 'src/tool/llm_invalid_tool_call.dart';
 export 'src/tool/llm_tool_call.dart';
 export 'src/tool/llm_tool_call_delta.dart';
+export 'src/tool/llm_tool_result.dart';
 
 // Repository interface
 export 'src/llm_chat_repository.dart';
@@ -72,6 +73,7 @@ export 'src/llm_metrics.dart';
 export 'src/http_client_utils.dart';
 export 'src/http_client_factory.dart';
 export 'src/write_gated_http_client.dart';
+export 'src/abortable_stream.dart';
 
 // Tool execution
 export 'src/tool_executor.dart';

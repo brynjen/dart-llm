@@ -473,6 +473,69 @@ void main() {
       pool.dispose();
     });
   });
+
+  group('VLLMPool cancellation', () {
+    test('cancelling a pooled stream frees the slot', () async {
+      final client = _SilentPoolClient();
+      final pool = VLLMPool(
+        instances: [
+          VLLMInstanceConfig(
+            baseUrl: 'http://gpu1:8000',
+            maxConcurrent: 1,
+            httpClient: client,
+          ),
+        ],
+      );
+      addTearDown(pool.dispose);
+
+      final subscription = pool
+          .streamChat(
+            'test-model',
+            messages: [LLMMessage(role: LLMRole.user, content: 'hi')],
+          )
+          .listen(null, onError: (Object _) {});
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+
+      expect(pool.stats().instances.first.activeConcurrent, 1);
+
+      await subscription.cancel().timeout(
+        const Duration(seconds: 2),
+        onTimeout: () => fail('cancel() hung, so the slot is never released'),
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+
+      // The slot must come back even though the turn was abandoned, or a pool
+      // with maxConcurrent: 1 would be wedged by a single interrupt.
+      expect(pool.stats().instances.first.activeConcurrent, 0);
+      expect(client.aborted, isTrue);
+    });
+
+    test(
+      'a stream nobody listens to issues no request and holds no slot',
+      () async {
+        final client = _SilentPoolClient();
+        final pool = VLLMPool(
+          instances: [
+            VLLMInstanceConfig(
+              baseUrl: 'http://gpu1:8000',
+              maxConcurrent: 1,
+              httpClient: client,
+            ),
+          ],
+        );
+        addTearDown(pool.dispose);
+
+        pool.streamChat(
+          'test-model',
+          messages: [LLMMessage(role: LLMRole.user, content: 'hi')],
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+
+        expect(client.sent, isFalse);
+        expect(pool.stats().instances.first.activeConcurrent, 0);
+      },
+    );
+  });
 }
 
 Future<void> _pumpEventQueue() => Future<void>.delayed(Duration.zero);
@@ -646,4 +709,31 @@ class _EchoTool extends LLMTool {
   @override
   Future<dynamic> execute(Map<String, dynamic> args, {dynamic extra}) async =>
       args['message'];
+}
+
+/// Accepts a request and then goes silent, honoring `abortTrigger`.
+class _SilentPoolClient extends http.BaseClient {
+  bool sent = false;
+  bool aborted = false;
+  final _body = StreamController<List<int>>();
+
+  @override
+  Future<http.StreamedResponse> send(http.BaseRequest request) async {
+    sent = true;
+    if (request case http.Abortable(:final abortTrigger?)) {
+      unawaited(
+        abortTrigger.whenComplete(() {
+          aborted = true;
+          if (_body.isClosed) return;
+          _body.addError(http.RequestAbortedException(request.url));
+          _body.close();
+        }),
+      );
+    }
+    return http.StreamedResponse(
+      _body.stream,
+      200,
+      headers: {'content-type': 'text/event-stream'},
+    );
+  }
 }

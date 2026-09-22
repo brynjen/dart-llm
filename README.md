@@ -202,7 +202,7 @@ Core abstractions shared by all backends:
 - `LLMChatRepository` - Interface for chat repositories
 - `LLMMessage`, `LLMMessageContent`, `LLMRole` - Typed message content and role types
 - `LLMChunk`, `LLMChunkMessage` - Streaming chunk types
-- `LLMTool`, `LLMToolParam`, `LLMToolCall` - Tool/function calling types
+- `LLMTool`, `LLMToolParam`, `LLMToolCall`, `LLMToolResult` - Tool/function calling types
 - `LLMToolCallDelta`, `LLMInvalidToolCall` - Tool calls still streaming, and finished calls whose arguments don't decode
 - `LLMEmbedding` - Embedding types
 - `LLMResponse`, `LLMUsage`, `LLMFinishReason` - Response metadata, usage, and finish details

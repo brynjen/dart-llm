@@ -28,6 +28,7 @@ class VLLMChunk extends LLMChunk {
                  completionTokens: vllmUsage.completionTokens,
                  totalTokens: vllmUsage.totalTokens,
                  reasoningTokens: vllmUsage.reasoningTokens,
+                 cachedTokens: vllmUsage.usageTokenDetails?.cachedTokens,
                )
              : null,
          providerMetadata: {'id': id, 'system_fingerprint': ?systemFingerprint},

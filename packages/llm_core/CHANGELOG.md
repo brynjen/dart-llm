@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-09-22
+
+### Added
+- `RetryUtil.retryingStream` and `ErrorHandlers.isRetryableStreamError`: a streaming turn that fails **before emitting anything** is re-issued, whether the failure arrived as a non-2xx response or in-band as an `error` event. Once output has reached the caller the error is surfaced untouched, because re-running would deliver the turn's opening twice. A read timeout is deliberately excluded — it has already waited `readTimeout`, and retrying it reads as a hang.
+- `LLMToolResult`: a typed return for `LLMTool.execute`, carrying the text the model sees, an `isError` flag, `metadata` the model never sees, and `contentParts` for providers that accept more than text. `execute` still returns `dynamic`, so existing tools are unaffected.
+- `LLMMessage.thinking`, `.toolName` and `.toolResult`; `LLMChunkMessage.toolName` and `.toolResult`. `toolName` removes the `toolCallId` -> name join every backend and every consumer was re-implementing.
+- `LLMUsage.cachedTokens` and `.cacheWriteTokens`, both a subset of `promptTokens`.
+- `LLMToolParam.minimum` and `.maximum`, emitted in `toJsonSchema()` for `integer` and `number`.
+- `LLMChatOptions.usagePerChunk`: asks for token usage on every streamed chunk rather than only the final one. Honored by `llm_vllm`; ignored elsewhere. Deliberately excluded from the cache key, since it cannot change the generated text.
+- `abortableStream`, and `abortTrigger` on `HttpClientHelper.sendStreamingRequest`: cancelling a `streamChat` subscription now aborts the in-flight request instead of leaving it running.
+- `MergedOptions.toChatOptions`, which backends use to rebuild a tool round's options.
+
+### Fixed
+- `Validation.validateMessage` documented a guard it could not enforce: `LLMMessage(role: user, content: '')` derives a single empty text part, so the empty-user-message check never fired for it. The behaviour is correct and deliberate — every backend accepts an empty user message except Anthropic, where `ClaudeMessageConverter` substitutes a placeholder — and is now documented and pinned by tests rather than left to be rediscovered.
+- An invalid tool call was answered with text a backend could not recognize as a failure, so `llm_claude` sent it to Anthropic without `is_error` and the model read the error message as data.
+- `StreamToolExecutor` dropped the model's reasoning when it assembled an assistant turn that called a tool, so it was unrecoverable from history.
+- Every backend rebuilt a tool round's options by hand and all five omitted `useCache`, `cacheTtl` and `recordMetrics`, so those settings stopped applying from the second round on.
+- `ErrorHandlers.isRetryableError` now rejects `RequestAbortedException` explicitly rather than by accident of string matching.
+
+### Changed
+- `LLMMessage.status` is documented as strictly application-level and never serialized, with the exact key set `toJson()` emits pinned by a test. `toolName` replaces its former double duty as the tool-name channel; it is still populated and still read as a fallback.
+- `LLMChunk.usage`, `.promptEvalCount` and `.evalCount` may now appear on every chunk (see `usagePerChunk`); take the latest rather than accumulating.
+- All packages bumped to `0.7.0`.
+
 ## [0.6.0] - 2026-09-17
 
 ### Added

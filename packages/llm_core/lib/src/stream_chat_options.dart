@@ -33,6 +33,7 @@ class LLMChatOptions {
     bool useCache = false,
     Duration? cacheTtl,
     bool recordMetrics = true,
+    bool usagePerChunk = false,
   }) : this._(
          think: think,
          tools: tools ?? const [],
@@ -53,6 +54,7 @@ class LLMChatOptions {
          useCache: useCache,
          cacheTtl: cacheTtl,
          recordMetrics: recordMetrics,
+         usagePerChunk: usagePerChunk,
          toolsProvided: tools != null,
          backendOptionsProvided: backendOptions != null,
        );
@@ -64,6 +66,7 @@ class LLMChatOptions {
     required this.backendOptions,
     required this.useCache,
     required this.recordMetrics,
+    required this.usagePerChunk,
     required this._toolsProvided,
     required this._backendOptionsProvided,
     this.extra,
@@ -162,6 +165,26 @@ class LLMChatOptions {
   /// Whether metrics should be recorded for this request when configured.
   final bool recordMetrics;
 
+  /// Whether to ask the provider for token usage on **every** streamed chunk
+  /// rather than only at the end of the turn.
+  ///
+  /// Streaming APIs report token counts once, in a final frame, so a live
+  /// tokens-per-second readout has to be estimated from characters until the
+  /// turn ends. With this set, `LLMChunk.usage` carries the server's own
+  /// running `completion_tokens` on each chunk — the difference between a
+  /// measured rate and a guessed one.
+  ///
+  /// **Honored by `llm_vllm` only**, where it maps to
+  /// `stream_options.continuous_usage_stats`. Every other backend ignores it:
+  /// it is a vLLM extension, and OpenAI's `stream_options` has no equivalent
+  /// member, so `llm_chatgpt` in particular must not forward it.
+  ///
+  /// Costs nothing when off, and the extra frames are small. It does not
+  /// change what the model generates — only how often the counter is
+  /// reported — which is why it is deliberately excluded from
+  /// `CacheKeyGenerator.optionsHash`.
+  final bool usagePerChunk;
+
   /// Create a copy of these options with some fields changed.
   ///
   /// Nullable fields use sentinel parameters so passing `null` explicitly clears
@@ -186,6 +209,7 @@ class LLMChatOptions {
     bool? useCache,
     Object? cacheTtl = _unset,
     bool? recordMetrics,
+    bool? usagePerChunk,
   }) {
     return LLMChatOptions._(
       think: think ?? this.think,
@@ -225,6 +249,7 @@ class LLMChatOptions {
           ? this.cacheTtl
           : cacheTtl as Duration?,
       recordMetrics: recordMetrics ?? this.recordMetrics,
+      usagePerChunk: usagePerChunk ?? this.usagePerChunk,
       toolsProvided: tools != null || _toolsProvided,
       backendOptionsProvided: backendOptions != null || _backendOptionsProvided,
     );
@@ -257,5 +282,6 @@ class StreamChatOptions extends LLMChatOptions {
     super.useCache,
     super.cacheTtl,
     super.recordMetrics,
+    super.usagePerChunk,
   });
 }

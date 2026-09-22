@@ -397,7 +397,35 @@ works regardless of the model's dialect.
 If both knobs are set, the budget wins (vLLM is budget-native). Explicit
 `backendOptions['thinking_token_budget']` / `['reasoning_effort']` override
 both. Reasoning-token usage is surfaced as `LLMUsage.reasoningTokens` when the
-server reports `completion_tokens_details.reasoning_tokens`.
+server reports `completion_tokens_details.reasoning_tokens`, and prefix-cache
+hits as `LLMUsage.cachedTokens` from `prompt_tokens_details.cached_tokens`.
+
+## Token usage on every chunk
+
+vLLM reports usage once, in a terminal frame, so a live tokens-per-second
+readout has to be estimated until the turn ends.
+`LLMChatOptions(usagePerChunk: true)` sets
+`stream_options.continuous_usage_stats`, which puts the server's own running
+`completion_tokens` on **every** chunk — a measured rate instead of a guessed
+one:
+
+```dart
+final stream = repo.streamChat(
+  model,
+  messages: messages,
+  options: const LLMChatOptions(usagePerChunk: true),
+);
+await for (final chunk in stream) {
+  final generated = chunk.usage?.completionTokens; // running total
+}
+```
+
+Take the latest value rather than accumulating; it is a running count, not a
+delta. The terminal usage frame still arrives, so `chatResponse` is unaffected.
+
+`include_usage` is always sent alongside it. vLLM does not reject
+`continuous_usage_stats` on its own — it answers `200` and silently ignores it
+— which is why `stream_options` stays reserved and this flag is the only way in.
 
 Known upstream caveats: the budget is not enforced when MTP speculative
 decoding is enabled (vllm#39573), and a tight budget can truncate tool-call

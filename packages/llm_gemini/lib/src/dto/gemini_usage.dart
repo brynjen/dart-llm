@@ -66,13 +66,16 @@ class GeminiUsage {
       completionTokens: outputTokens,
       totalTokens: totalTokens > 0 ? totalTokens : null,
       reasoningTokens: thoughtTokens > 0 ? thoughtTokens : null,
+      cachedTokens: cachedTokens > 0 ? cachedTokens : null,
     );
   }
 
-  /// Usage counters that have no first-class slot on [LLMUsage].
+  /// Usage counters kept in `LLMChunk.providerMetadata`.
   ///
-  /// Surfaced through `LLMChunk.providerMetadata` so thinking, cache, and
-  /// tool-use accounting is not lost.
+  /// `total_cached_tokens` now also has a first-class slot on
+  /// [LLMUsage.cachedTokens], but stays here too: removing a key that callers
+  /// may already read would be a silent break, and it is the same value from
+  /// the same parse rather than a competing source.
   Map<String, dynamic> toProviderMetadata() {
     return <String, dynamic>{
       'total_tokens': totalTokens,

@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:llm_core/src/tool/llm_tool_call.dart';
+import 'package:llm_core/src/tool/llm_tool_result.dart';
 
 /// A typed content part inside an [LLMMessage].
 sealed class LLMMessageContent {
@@ -84,6 +85,9 @@ class LLMMessage {
     List<dynamic>? toolCalls,
     List<LLMMessageContent>? contentParts,
     this.status,
+    this.thinking,
+    this.toolName,
+    this.toolResult,
   }) : toolCalls = _normalizeToolCalls(toolCalls),
        contentParts = contentParts ?? _contentPartsFromCompat(content, images);
 
@@ -105,13 +109,64 @@ class LLMMessage {
   /// Typed tool calls made by the assistant.
   final List<LLMToolCall>? toolCalls;
 
-  /// Status is used in application to inform user about what is happening.
+  /// Application-level display state, for example what a UI should show while
+  /// a turn is in flight.
+  ///
+  /// **Never serialized.** [toJson] omits it and no backend converter reads it,
+  /// so a value here cannot reach a provider. Callers rely on that to tag
+  /// messages their own harness injected without the tag becoming part of the
+  /// prompt.
+  ///
+  /// This field used to carry double duty: [StreamToolExecutor] wrote the tool
+  /// name into it on tool-role messages, and the Claude, Gemini and Ollama
+  /// converters read it back — which *did* put it on the wire. [toolName] is
+  /// where the tool name lives now. `status` is still populated alongside it,
+  /// and the converters still fall back to it, so histories serialized before
+  /// [toolName] existed keep working.
   final String? status;
+
+  /// Reasoning the model produced for this turn, assembled from the stream.
+  ///
+  /// **Never serialized.** [toJson] omits it, which is correctness rather than
+  /// caution: Anthropic only accepts reasoning replayed as signed `thinking`
+  /// blocks, and OpenAI's Chat Completions API accepts none at all. The field
+  /// exists so a transcript can keep what the model thought — `LLMChunkMessage`
+  /// and `LLMResponse` both carry reasoning, and without this it was lost the
+  /// moment a turn was assembled into history.
+  final String? thinking;
+
+  /// For a [LLMRole.tool] message, the tool that produced it.
+  ///
+  /// Providers need this and none of them can derive it: Ollama sends
+  /// `tool_name`, Gemini's `function_result` needs `name`, and Anthropic uses
+  /// it to decide whether a result describes a failure. Before this field
+  /// existed each backend rebuilt it differently — Ollama by walking the
+  /// history backwards to the matching call and regex-parsing a synthetic id,
+  /// Claude and Gemini by reading [status] — and callers were told to build the
+  /// `toolCallId` → name map themselves.
+  ///
+  /// [toolCallId] identifies *which* call this answers; this names *what* ran.
+  final String? toolName;
+
+  /// For a [LLMRole.tool] message, the structured outcome of the run.
+  ///
+  /// Carries the failure flag and any metadata the tool reported. [content] is
+  /// still the text sent to the model; this is what a caller — and Anthropic's
+  /// `is_error` — reads instead of parsing that text. Null for messages not
+  /// built by [StreamToolExecutor].
+  final LLMToolResult? toolResult;
 
   /// Converts this message to a JSON map suitable for API requests.
   ///
   /// Note: This produces a format compatible with OpenAI's API.
   /// Backend-specific repositories may override or transform this.
+  ///
+  /// This is the **wire** format, not a transcript format. [status], [thinking],
+  /// [toolName] and [toolResult] are deliberately absent: they are for the
+  /// application, and a value that reached a provider by accident would become
+  /// part of the prompt. A caller persisting a conversation should serialize
+  /// the fields it needs itself rather than reusing this. The exact key set is
+  /// pinned by a test.
   Map<String, dynamic> toJson() {
     final json = <String, dynamic>{'role': role.name};
     switch (role) {

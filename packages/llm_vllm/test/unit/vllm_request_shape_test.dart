@@ -389,6 +389,75 @@ void main() {
       });
     });
   });
+
+  group('stream_options', () {
+    test('asks for the terminal usage frame by default', () async {
+      final body = await capture();
+
+      // Pins the default request bytes: adding
+      // here would change every existing user's request for no benefit.
+      expect(body['stream_options'], {'include_usage': true});
+    });
+
+    test('usagePerChunk adds continuous_usage_stats', () async {
+      final body = await capture(
+        options: const LLMChatOptions(usagePerChunk: true),
+      );
+
+      // Both members, always together: vLLM ignores
+      // without  and still answers 200.
+      expect(body['stream_options'], {
+        'include_usage': true,
+        'continuous_usage_stats': true,
+      });
+    });
+
+    test('stream_options stays unreachable through backendOptions', () async {
+      // The typed flag is the only door; the reserved check still rejects the
+      // raw key, and now points at the flag.
+      expect(
+        () => capture(
+          options: const LLMChatOptions(
+            backendOptions: {
+              'stream_options': {'include_usage': false},
+            },
+          ),
+        ),
+        throwsA(
+          isA<ArgumentError>().having(
+            (e) => e.message.toString(),
+            'message',
+            contains('usagePerChunk'),
+          ),
+        ),
+      );
+    });
+
+    test('usagePerChunk survives into the second tool round', () async {
+      // Regression guard: every backend used to rebuild the child round's
+      // options by hand, so a new field was silently dropped after round one
+      // and continuous usage would switch itself off mid-conversation.
+      final client = _ToolLoopClient();
+      final repo = VLLMChatRepository(httpClient: client);
+
+      await repo
+          .streamChat(
+            'test-model',
+            messages: [LLMMessage(role: LLMRole.user, content: 'hi')],
+            tools: [_CalculatorTool()],
+            options: const LLMChatOptions(usagePerChunk: true),
+          )
+          .toList();
+
+      expect(client.bodies, hasLength(2));
+      for (final body in client.bodies) {
+        expect(body['stream_options'], {
+          'include_usage': true,
+          'continuous_usage_stats': true,
+        });
+      }
+    });
+  });
 }
 
 class _StreamCapturingClient extends http.BaseClient {
@@ -504,4 +573,85 @@ class _CalculatorTool extends LLMTool {
   @override
   Future<dynamic> execute(Map<String, dynamic> args, {dynamic extra}) async =>
       '4';
+}
+
+/// Answers the first request with a tool call and the second with text, so a
+/// full tool round-trip can be observed and both request bodies captured.
+class _ToolLoopClient extends http.BaseClient {
+  final List<Map<String, dynamic>> bodies = [];
+
+  @override
+  Future<http.StreamedResponse> send(http.BaseRequest request) async {
+    final bytes = await request.finalize().toBytes();
+    bodies.add(json.decode(utf8.decode(bytes)) as Map<String, dynamic>);
+
+    final frames = bodies.length == 1
+        ? [
+            {
+              'choices': [
+                {
+                  'index': 0,
+                  'delta': {
+                    'role': 'assistant',
+                    'tool_calls': [
+                      {
+                        'id': 'call_1',
+                        'index': 0,
+                        'type': 'function',
+                        'function': {
+                          'name': 'calculator',
+                          'arguments': '{"expression": "2+2"}',
+                        },
+                      },
+                    ],
+                  },
+                  'finish_reason': null,
+                },
+              ],
+            },
+            {
+              'choices': [
+                {
+                  'index': 0,
+                  'delta': <String, dynamic>{},
+                  'finish_reason': 'tool_calls',
+                },
+              ],
+            },
+          ]
+        : [
+            {
+              'choices': [
+                {
+                  'index': 0,
+                  'delta': {'role': 'assistant', 'content': '4'},
+                  'finish_reason': null,
+                },
+              ],
+            },
+            {
+              'choices': [
+                {
+                  'index': 0,
+                  'delta': <String, dynamic>{},
+                  'finish_reason': 'stop',
+                },
+              ],
+            },
+          ];
+
+    final sse = StringBuffer();
+    for (final frame in frames) {
+      sse.writeln(
+        'data: ${json.encode({'id': 'chatcmpl-test', 'created': 1700000000, 'model': 'test-model', ...frame})}',
+      );
+      sse.writeln();
+    }
+    sse.writeln('data: [DONE]');
+    return http.StreamedResponse(
+      Stream.value(utf8.encode(sse.toString())),
+      200,
+      headers: {'content-type': 'text/event-stream'},
+    );
+  }
 }

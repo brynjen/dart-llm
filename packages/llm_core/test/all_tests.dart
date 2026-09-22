@@ -33,6 +33,15 @@ import 'unit/validation_comprehensive_test.dart' as validation_comprehensive;
 import 'unit/retry_util_test.dart' as retry_util;
 import 'unit/mock_llm_chat_repository_test.dart' as mock_repo_test;
 import 'unit/repository_features_test.dart' as repository_features;
+import 'unit/http_client_utils_test.dart' as http_client_utils;
+import 'unit/llm_response_format_test.dart' as llm_response_format;
+import 'unit/llm_tool_result_test.dart' as llm_tool_result;
+import 'unit/reasoning_effort_test.dart' as reasoning_effort;
+import 'unit/response_cache_test.dart' as response_cache;
+import 'unit/stream_tool_executor_test.dart' as stream_tool_executor;
+import 'unit/tool_call_delta_test.dart' as tool_call_delta;
+import 'unit/write_gated_http_client_test.dart' as write_gated_http_client;
+import 'unit/abortable_stream_test.dart' as abortable_stream;
 
 void main() {
   validation.main();
@@ -55,4 +64,13 @@ void main() {
   interface_consistency.main();
   mock_repo_test.main();
   repository_features.main();
+  http_client_utils.main();
+  llm_response_format.main();
+  llm_tool_result.main();
+  reasoning_effort.main();
+  response_cache.main();
+  stream_tool_executor.main();
+  tool_call_delta.main();
+  write_gated_http_client.main();
+  abortable_stream.main();
 }

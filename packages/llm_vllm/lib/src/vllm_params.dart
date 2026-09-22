@@ -105,6 +105,18 @@ const Set<String> reservedVllmParams = {
   'stream_options',
 };
 
+/// Sentences appended to a [VllmParamIssue.reserved] error, pointing at the
+/// supported way to get what the caller was reaching for.
+///
+/// Without one, "cannot be set through backendOptions" is a dead end for a
+/// caller who has a real need — asking for usage on every streamed chunk is
+/// supported, just not through this door.
+const Map<String, String> _reservedHints = {
+  'stream_options':
+      ' Use LLMChatOptions(usagePerChunk: true) to receive token usage on '
+      'every streamed chunk.',
+};
+
 /// Every parameter accepted by vLLM's `/v1/embeddings` endpoint.
 ///
 /// From the `EmbeddingChatRequest`/`EmbeddingCompletionRequest` schemas
@@ -211,7 +223,8 @@ class VllmParamValidationError {
   /// A message naming the problem and the fix.
   String get message => switch (issue) {
     VllmParamIssue.reserved =>
-      '"$key" is built by VLLMChatRepository and cannot be set through $path.',
+      '"$key" is built by VLLMChatRepository and cannot be set through $path.'
+          '${_reservedHints[key] ?? ''}',
     VllmParamIssue.legacyGuided =>
       '"$key" was removed in vLLM 0.12. The server ignores it silently and '
           'returns unconstrained output rather than an error. Use '

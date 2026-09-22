@@ -209,6 +209,46 @@ Precedence when both knobs are set: effort wins on effort-native backends
 both. Reasoning-token usage, when the provider reports it, is surfaced as
 `LLMUsage.reasoningTokens` (a subset of `completionTokens`).
 
+### Token usage
+
+`LLMUsage` carries `promptTokens`, `completionTokens`, `totalTokens`, and three
+optional counters that are each a **subset** of one of those, never additional
+to it:
+
+- **`reasoningTokens`** — a subset of `completionTokens`.
+- **`cachedTokens`** — prompt tokens served from the provider's cache. Hit rate
+  is `cachedTokens / promptTokens`, the single biggest lever on prefill
+  latency. Null where a provider reports no cache counter (Ollama, llama.cpp).
+- **`cacheWriteTokens`** — prompt tokens written into the cache. Anthropic is
+  currently the only provider that reports this, and it bills cache writes at a
+  premium, so cost cannot be derived from `promptTokens` alone.
+
+Providers disagree on whether their input count includes cached tokens: OpenAI,
+vLLM and Gemini report a subset, while Anthropic's `input_tokens` excludes them
+(`total = cache_read + cache_creation + input_tokens`). `llm_claude` normalizes
+to the total, so the subset relationship holds on every backend.
+
+Usage normally arrives only on the final chunk. `LLMChatOptions(usagePerChunk:
+true)` asks for it on every chunk instead — the server's own running counter,
+which is what makes a live tokens-per-second readout measured rather than
+estimated. Honored by `llm_vllm`; ignored elsewhere. Take the latest value
+rather than accumulating.
+
+### Cancelling a generation
+
+Cancelling the subscription aborts the request and closes its socket, so the
+server stops generating:
+
+```dart
+final subscription = repo.streamChat(model, messages: messages).listen(render);
+// ...on user interrupt:
+await subscription.cancel();
+```
+
+`cancel()` completes promptly and never throws. Use `listen` rather than
+`await for`, which cannot be interrupted from outside. A tool already executing
+runs to completion, because its `Future` belongs to the caller.
+
 ```dart
 // Portable: works against every backend, clamped to what each supports.
 LLMChatOptions(think: true, reasoningEffort: ReasoningEffort.medium)
