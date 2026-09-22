@@ -254,6 +254,10 @@ class _ThrowingClient extends http.BaseClient {
 /// Opens a stream and then never sends anything.
 class _SilentBodyClient extends http.BaseClient {
   int attempts = 0;
+
+  /// Never closed on purpose: the point is a response that opens and then
+  /// stays silent, so the read timeout is what ends the turn.
+  // ignore: close_sinks
   final _body = StreamController<List<int>>();
 
   @override

@@ -244,54 +244,50 @@ class ChatGPTChatRepository extends LLMChatRepository
           ),
         );
         sendSucceeded = true;
-        try {
-          switch (response.statusCode) {
-            case 200:
-              final chunkStream = GPTStreamConverter.toLLMStream(response);
-              if (merged.tools.isNotEmpty && merged.autoExecuteTools) {
-                final executor = StreamToolExecutor(
-                  tools: merged.tools,
-                  extra: merged.extra,
-                  maxToolAttempts: merged.toolAttempts ?? maxToolAttempts,
-                  streamChatCallback:
-                      (
-                        String model,
-                        List<LLMMessage> messages,
-                        List<LLMTool> tools,
-                        dynamic extra,
-                        int toolAttempts,
-                      ) => streamChat(
-                        model,
-                        messages: messages,
+        switch (response.statusCode) {
+          case 200:
+            final chunkStream = GPTStreamConverter.toLLMStream(response);
+            if (merged.tools.isNotEmpty && merged.autoExecuteTools) {
+              final executor = StreamToolExecutor(
+                tools: merged.tools,
+                extra: merged.extra,
+                maxToolAttempts: merged.toolAttempts ?? maxToolAttempts,
+                streamChatCallback:
+                    (
+                      String model,
+                      List<LLMMessage> messages,
+                      List<LLMTool> tools,
+                      dynamic extra,
+                      int toolAttempts,
+                    ) => streamChat(
+                      model,
+                      messages: messages,
+                      tools: tools,
+                      extra: extra,
+                      options: merged.toChatOptions(
                         tools: tools,
                         extra: extra,
-                        options: merged.toChatOptions(
-                          tools: tools,
-                          extra: extra,
-                          toolAttempts: toolAttempts,
-                          retryConfig: effectiveRetryConfig,
-                        ),
+                        toolAttempts: toolAttempts,
+                        retryConfig: effectiveRetryConfig,
                       ),
-                );
-                yield* executor.executeTools(
-                  chunkStream: chunkStream,
-                  model: model,
-                  initialMessages: messages,
-                  toolAttempts: merged.toolAttempts ?? maxToolAttempts,
-                );
-              } else {
-                yield* chunkStream;
-              }
-            default:
-              final errorBody = await _httpHelper.readErrorBody(response);
-              _httpHelper.handleHttpError(
-                statusCode: response.statusCode,
-                errorBody: errorBody,
-                defaultMessage: 'OpenAI API error',
+                    ),
               );
-          }
-        } catch (e) {
-          rethrow;
+              yield* executor.executeTools(
+                chunkStream: chunkStream,
+                model: model,
+                initialMessages: messages,
+                toolAttempts: merged.toolAttempts ?? maxToolAttempts,
+              );
+            } else {
+              yield* chunkStream;
+            }
+          default:
+            final errorBody = await _httpHelper.readErrorBody(response);
+            _httpHelper.handleHttpError(
+              statusCode: response.statusCode,
+              errorBody: errorBody,
+              defaultMessage: 'OpenAI API error',
+            );
         }
       },
     );
